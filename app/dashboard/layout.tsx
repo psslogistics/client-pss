@@ -99,9 +99,9 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
                 <Link href="/dashboard/profileAccountManagement" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent rounded-md mx-1 transition-colors">
                   <User className="size-4 opacity-60" />Profile
                 </Link>
-                <button onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent rounded-md mx-1 w-[calc(100%-0.5rem)] transition-colors">
+                <Link href="/dashboard/userSettings" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent rounded-md mx-1 transition-colors">
                   <Settings className="size-4 opacity-60" />Settings
-                </button>
+                </Link>
               </div>
             )}
           </div>
