@@ -340,15 +340,17 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* BRIGHT RED PULSING ALERTS BUTTON */}
+          {/* URGENT POLICE EMERGENCY SIREN ALERTS BUTTON */}
           <button
             onClick={() => setIsAlertsModalOpen(true)}
-            className="relative inline-flex items-center justify-center whitespace-nowrap text-sm font-semibold transition-all bg-destructive text-destructive-foreground hover:bg-destructive/90 h-9 rounded-md px-3 gap-2 cursor-pointer shadow-md shadow-destructive/30 animate-pulse ring-2 ring-destructive/40"
+            className="relative overflow-hidden inline-flex items-center justify-center whitespace-nowrap text-sm font-bold transition-all h-9 rounded-md px-3.5 gap-2 cursor-pointer shadow-lg animate-police-siren"
           >
-            <Bell className="h-4 w-4 stroke-[2.5]" />
-            <span>Alerts</span>
+            {/* 360-degree beacon sweep reflection overlay */}
+            <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-siren-sweep pointer-events-none" />
+            <Bell className="h-4 w-4 stroke-[2.5] relative z-10" />
+            <span className="relative z-10">Alerts</span>
             {alerts.length > 0 && (
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-white text-destructive font-bold text-[11px] px-1 shadow-xs">
+              <span className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-white text-slate-900 font-extrabold text-[11px] px-1 shadow-md">
                 {alerts.length}
               </span>
             )}

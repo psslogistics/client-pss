@@ -222,3 +222,40 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(156, 163, 175, 0.35) transparent;
 }
+
+/* Professional Executive Siren Ambient Morphing Animation */
+@keyframes police-siren-strobe {
+  0%, 100% {
+    /* Elegant Deep Crimson Red Glow */
+    background-color: rgb(185, 28, 28);
+    color: #ffffff;
+    border-color: rgba(239, 68, 68, 0.6);
+    box-shadow: 0 0 16px rgba(185, 28, 28, 0.45), 0 0 30px rgba(185, 28, 28, 0.2);
+    outline: 2px solid rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    /* Elegant Deep Royal Blue Glow */
+    background-color: rgb(30, 64, 175);
+    color: #ffffff;
+    border-color: rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 16px rgba(30, 64, 175, 0.45), 0 0 30px rgba(30, 64, 175, 0.2);
+    outline: 2px solid rgba(59, 130, 246, 0.4);
+  }
+}
+
+@keyframes siren-beacon-sweep {
+  0% {
+    transform: translateX(-100%) rotate(25deg);
+  }
+  100% {
+    transform: translateX(200%) rotate(25deg);
+  }
+}
+
+.animate-police-siren {
+  animation: police-siren-strobe 3.6s ease-in-out infinite;
+}
+
+.animate-siren-sweep {
+  animation: siren-beacon-sweep 2.4s ease-in-out infinite;
+}
