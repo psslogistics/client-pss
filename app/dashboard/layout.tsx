@@ -9,14 +9,13 @@ import {
   SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
 import {
-  LayoutDashboard, Package, Truck, History, HandHelping, RotateCcw,
-  Wallet, FileText, LifeBuoy, Receipt, ChevronRight, User, Settings, Bell, Search,
+  LayoutDashboard, Package, Truck, HandHelping, RotateCcw,
+  Wallet, FileText, LifeBuoy, Receipt, ChevronRight, User, Settings, Bell, Search, Moon, Sun,
 } from "lucide-react";
 
 const shipments = [
   { title: "Booking", icon: Package, href: "/dashboard/shipmentBooking" },
   { title: "Tracking", icon: Truck, href: "/dashboard/shipmentTracking" },
-  { title: "History", icon: History, href: "/dashboard/shipmentHistory" },
   { title: "Pickup", icon: HandHelping, href: "/dashboard/pickupRequests" },
   { title: "RTO", icon: RotateCcw, href: "/dashboard/returnShipments" },
 ];
@@ -63,9 +62,28 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   const collapsed = state === "collapsed";
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [themeReady, setThemeReady] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const currentRoute = allRoutes.find((r) => r.href === pathname)?.title ?? "Dashboard";
+
+  useEffect(() => {
+    const saved = localStorage.getItem("pss-theme");
+    const next = saved === "dark" || saved === "light" ? saved : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    document.documentElement.classList.toggle("dark", next === "dark");
+    const timer = window.setTimeout(() => { setTheme(next); setThemeReady(true); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.classList.add("theme-transition");
+    document.documentElement.classList.toggle("dark", next === "dark");
+    localStorage.setItem("pss-theme", next);
+    window.setTimeout(() => document.documentElement.classList.remove("theme-transition"), 450);
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -87,9 +105,12 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Sidebar collapsible="icon" variant="sidebar" className="border-r border-sidebar-border/50">
+      <Sidebar collapsible="icon" variant="sidebar" className="border-r border-sidebar-border/70 dark:border-r-2 dark:border-sidebar-border dark:shadow-[1px_0_0_0_var(--sidebar-border)]">
         {/* User Profile */}
-        <SidebarHeader className={`items-center gap-1 border-sidebar-border/40 ${collapsed ? "p-2" : "pt-6 pb-4"}`}>
+        <SidebarHeader className={`relative items-center gap-1 border-sidebar-border/40 ${collapsed ? "p-2" : "pt-6 pb-4"}`}>
+          <button type="button" onClick={toggleTheme} disabled={!themeReady} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Light mode" : "Dark mode"} className="absolute left-3 top-3 grid size-8 place-items-center rounded-lg text-sidebar-foreground/60 transition-all duration-300 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none">
+            {!themeReady ? <span className="size-4" aria-hidden="true" /> : theme === "dark" ? <Sun className="size-4 animate-in zoom-in-75 duration-300" /> : <Moon className="size-4 animate-in zoom-in-75 duration-300" />}
+          </button>
           <div className="relative" ref={menuRef}>
             <button onClick={() => setMenuOpen(!menuOpen)} className={`rounded-full bg-sidebar-foreground/10 grid place-items-center transition-all cursor-pointer hover:bg-sidebar-foreground/15 ${collapsed ? "size-8" : "size-14 mb-1"}`}>
               <User className={collapsed ? "size-4 opacity-50" : "size-6 opacity-50"} />

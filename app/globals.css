@@ -197,6 +197,20 @@
   }
 }
 
+html.theme-transition,
+html.theme-transition * {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 420ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transition,
+  html.theme-transition * {
+    transition-duration: 1ms;
+  }
+}
+
 /* Universal Apple macOS-Style Minimal Scrollbars across html, body, and all scrollable containers */
 ::-webkit-scrollbar {
   width: 6px;
