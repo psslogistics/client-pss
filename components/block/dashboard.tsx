@@ -307,20 +307,17 @@ export default function Dashboard() {
     12: [{ title: "Overdue Invoice Settlement", type: "Finance", badge: "Billing", color: "text-amber-500 bg-amber-500/10" }],
     13: [{ title: "Rotterdam Hub Capacity Expansion", type: "Facility", badge: "Planned", color: "text-sky-500 bg-sky-500/10" }],
   };
+  const totalShipments = SHIPMENT_SUMMARY.reduce((total, item) => total + item.count, 0);
+  const activeShipments = SHIPMENT_SUMMARY.filter((item) => ["Booked", "Picked Up", "In Transit", "Out for Delivery"].includes(item.status)).reduce((total, item) => total + item.count, 0);
+  const delayedShipments = SHIPMENT_SUMMARY.find((item) => item.status === "Delayed")?.count ?? 0;
+  const exceptionShipments = SHIPMENT_SUMMARY.find((item) => item.status === "Exception")?.count ?? 0;
 
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full space-y-4">
       {/* Header Section */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Operations Dashboard
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Real-time overview of your logistics operations
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span className="font-semibold text-foreground">{totalShipments} shipments</span><span>·</span><span>{activeShipments} active</span><span className="text-amber-600 dark:text-amber-300">· {delayedShipments} delayed</span><span className="text-destructive">· {exceptionShipments} exception{exceptionShipments === 1 ? "" : "s"}</span></div>
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
           {/* URGENT POLICE EMERGENCY SIREN ALERTS BUTTON */}
           <button
             onClick={() => setIsAlertsModalOpen(true)}
