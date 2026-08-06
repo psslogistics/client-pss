@@ -11,14 +11,9 @@ import {
   TriangleAlert,
   Clock,
   ArrowRight,
-  Wallet,
-  Plus,
   Bell,
-  CirclePlus,
   Truck,
   MapPin,
-  FileText,
-  LifeBuoy,
   ChevronLeft,
   ChevronRight,
   Package,
@@ -30,8 +25,6 @@ import {
   Layers,
   PieChart,
   BarChart3,
-  AlertCircle,
-  CheckCircle2,
 } from "lucide-react";
 import {
   ALL_KPI_METRICS,
@@ -43,7 +36,6 @@ import {
   DELAYED_SHIPMENTS,
   TODAY_PICKUPS,
   ACTION_ALERTS,
-  QUICK_ACTIONS,
   RECENT_ACTIVITIES,
   VOLUME_DATA,
   DashboardAlert,
@@ -113,13 +105,41 @@ export default function Dashboard() {
   // Interactive Schedule Calendar State
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(4);
 
-  // KPI Customization State
-  const [selectedKpiIds, setSelectedKpiIds] = useState<string[]>(DEFAULT_SELECTED_KPI_IDS);
+  // KPI Customization State (initialized lazily from localStorage, if present)
+  const [selectedKpiIds, setSelectedKpiIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return DEFAULT_SELECTED_KPI_IDS;
+    try {
+      const saved = localStorage.getItem("pss_selected_kpis");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.length <= 5) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Fallback
+    }
+    return DEFAULT_SELECTED_KPI_IDS;
+  });
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
   const [tempSelectedIds, setTempSelectedIds] = useState<string[]>(DEFAULT_SELECTED_KPI_IDS);
 
-  // Volume Chart Multi-Series Customization State (Max 3 metrics)
-  const [selectedVolumeKeys, setSelectedVolumeKeys] = useState<string[]>(DEFAULT_SELECTED_VOLUME_KEYS);
+  // Volume Chart Multi-Series Customization State (Max 3 metrics, initialized lazily from localStorage)
+  const [selectedVolumeKeys, setSelectedVolumeKeys] = useState<string[]>(() => {
+    if (typeof window === "undefined") return DEFAULT_SELECTED_VOLUME_KEYS;
+    try {
+      const saved = localStorage.getItem("pss_selected_volume_keys");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.length <= 3) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Fallback
+    }
+    return DEFAULT_SELECTED_VOLUME_KEYS;
+  });
   const [isVolumeMetricsOpen, setIsVolumeMetricsOpen] = useState(false);
 
   // Pulsing Alerts Modal State
@@ -138,27 +158,6 @@ export default function Dashboard() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Load saved KPIs & Volume Series from localStorage on mount
-  useEffect(() => {
-    try {
-      const savedKpis = localStorage.getItem("pss_selected_kpis");
-      if (savedKpis) {
-        const parsed = JSON.parse(savedKpis);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed.length <= 5) {
-          setSelectedKpiIds(parsed);
-        }
-      }
-      const savedVol = localStorage.getItem("pss_selected_volume_keys");
-      if (savedVol) {
-        const parsed = JSON.parse(savedVol);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed.length <= 3) {
-          setSelectedVolumeKeys(parsed);
-        }
-      }
-    } catch {
-      // Fallback
-    }
-  }, []);
 
   const handleOpenCustomize = () => {
     setTempSelectedIds([...selectedKpiIds]);
@@ -232,24 +231,6 @@ export default function Dashboard() {
     .filter((m): m is VolumeMetricDef => m !== undefined)
     .slice(0, 3);
 
-  const renderQuickActionIcon = (iconName: string) => {
-    switch (iconName) {
-      case "CirclePlus":
-        return <CirclePlus className="h-[18px] w-[18px]" />;
-      case "Truck":
-        return <Truck className="h-[18px] w-[18px]" />;
-      case "MapPin":
-        return <MapPin className="h-[18px] w-[18px]" />;
-      case "FileText":
-        return <FileText className="h-[18px] w-[18px]" />;
-      case "Wallet":
-        return <Wallet className="h-[18px] w-[18px]" />;
-      case "LifeBuoy":
-        return <LifeBuoy className="h-[18px] w-[18px]" />;
-      default:
-        return <CirclePlus className="h-[18px] w-[18px]" />;
-    }
-  };
 
   const renderActivityIcon = (iconName: string) => {
     switch (iconName) {
@@ -346,7 +327,7 @@ export default function Dashboard() {
             className="relative overflow-hidden inline-flex items-center justify-center whitespace-nowrap text-sm font-bold transition-all h-9 rounded-md px-3.5 gap-2 cursor-pointer shadow-lg animate-police-siren"
           >
             {/* 360-degree beacon sweep reflection overlay */}
-            <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-siren-sweep pointer-events-none" />
+            <span className="absolute inset-0 bg-linear-to-r from-transparent via-white/40 to-transparent animate-siren-sweep pointer-events-none" />
             <Bell className="h-4 w-4 stroke-[2.5] relative z-10" />
             <span className="relative z-10">Alerts</span>
             {alerts.length > 0 && (
@@ -896,7 +877,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-primary" />
-              <h3 className="text-sm font-semibold text-foreground">Today's Pickups</h3>
+              <h3 className="text-sm font-semibold text-foreground">Today&apos;s Pickups</h3>
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary border border-primary/20">
                 11 Active
               </span>
@@ -917,7 +898,7 @@ export default function Dashboard() {
                 className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/40 group"
               >
                 {/* Time slot gradient badge */}
-                <div className="flex w-14 shrink-0 flex-col items-center rounded-lg bg-gradient-to-b from-primary/15 to-primary/5 border border-primary/20 py-1.5 shadow-2xs">
+                <div className="flex w-14 shrink-0 flex-col items-center rounded-lg bg-linear-to-b from-primary/15 to-primary/5 border border-primary/20 py-1.5 shadow-2xs">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-primary">Time</span>
                   <span className="text-xs font-extrabold tabular-nums text-foreground">{pku.timeSlot}</span>
                 </div>
@@ -998,7 +979,6 @@ export default function Dashboard() {
                 {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
                   const isToday = day === 4;
                   const isSelected = selectedCalendarDay === day;
-                  const hasEvents = calendarDayEvents[day] !== undefined;
                   const hasAmberDots = [1, 6, 8, 12].includes(day);
                   const hasInfoDots = [9, 10, 13].includes(day);
                   const hasSuccessDots = [4, 9, 11].includes(day);
@@ -1228,7 +1208,7 @@ export default function Dashboard() {
                           : "border-input bg-background"
                       }`}
                     >
-                      {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
+                      {isSelected && <Check className="h-3 w-3 stroke-3" />}
                     </div>
                     <div className="flex-1 min-w-0 leading-tight">
                       <div className="flex items-center justify-between gap-2">
