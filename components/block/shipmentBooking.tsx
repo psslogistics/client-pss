@@ -239,7 +239,8 @@ export default function ShipmentBooking() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("pss_saved_pickup_address");
-      if (saved) setSavedPickup(JSON.parse(saved));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved) setSavedPickup(JSON.parse(saved) as Address);
     } catch { /* local storage is optional */ }
   }, []);
 
