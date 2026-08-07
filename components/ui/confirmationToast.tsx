@@ -19,5 +19,5 @@ export default function ConfirmationToast({ message, tone = "success", onClose, 
   }[tone];
   const Icon = styles.icon;
 
-  return <div role="status" aria-live="polite" className={`fixed bottom-5 right-5 z-[70] flex max-w-sm items-center gap-2 rounded-xl border px-3.5 py-3 text-xs font-medium shadow-xl backdrop-blur-xl ${styles.className}`}><Icon className="h-4 w-4 shrink-0" /><span>{message}</span><button type="button" aria-label="Dismiss notification" onClick={onClose} className="ml-2 rounded-md p-1 opacity-70 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"><X className="h-3.5 w-3.5" /></button></div>;
+  return <div role="status" aria-live="polite" className={`fixed bottom-5 right-5 z-70 flex max-w-sm items-center gap-2 rounded-xl border px-3.5 py-3 text-xs font-medium shadow-xl backdrop-blur-xl ${styles.className}`}><Icon className="h-4 w-4 shrink-0" /><span>{message}</span><button type="button" aria-label="Dismiss notification" onClick={onClose} className="ml-2 rounded-md p-1 opacity-70 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"><X className="h-3.5 w-3.5" /></button></div>;
 }
