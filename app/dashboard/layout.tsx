@@ -12,6 +12,7 @@ import {
   LayoutDashboard, Package, Truck, HandHelping, RotateCcw,
   Wallet, FileText, LifeBuoy, Receipt, ChevronRight, User, Settings, Bell, Search, Moon, Sun,
 } from "lucide-react";
+import { defaultUnreadIds, notifications, NOTIFICATIONS_EVENT, readIdsFromStorage } from "@/components/block/notifications-data";
 
 const shipments = [
   { title: "Booking", icon: Package, href: "/dashboard/shipmentBooking" },
@@ -64,9 +65,17 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [themeReady, setThemeReady] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(defaultUnreadIds.length);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const currentRoute = allRoutes.find((r) => r.href === pathname)?.title ?? "Dashboard";
+
+  useEffect(() => {
+    const syncUnreadCount = () => setUnreadCount(notifications.filter((item) => !readIdsFromStorage().includes(item.id)).length);
+    const timer = window.setTimeout(syncUnreadCount, 0);
+    window.addEventListener(NOTIFICATIONS_EVENT, syncUnreadCount);
+    return () => { window.clearTimeout(timer); window.removeEventListener(NOTIFICATIONS_EVENT, syncUnreadCount); };
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem("pss-theme");
@@ -108,9 +117,6 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
       <Sidebar collapsible="icon" variant="sidebar" className="border-r border-sidebar-border/70 dark:border-r-2 dark:border-sidebar-border dark:shadow-[1px_0_0_0_var(--sidebar-border)]">
         {/* User Profile */}
         <SidebarHeader className={`relative items-center gap-1 border-sidebar-border/40 ${collapsed ? "p-2" : "pt-6 pb-4"}`}>
-          <button type="button" onClick={toggleTheme} disabled={!themeReady} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Light mode" : "Dark mode"} className="absolute left-3 top-3 grid size-8 place-items-center rounded-lg text-sidebar-foreground/60 transition-all duration-300 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:pointer-events-none">
-            {!themeReady ? <span className="size-4" aria-hidden="true" /> : theme === "dark" ? <Sun className="size-4 animate-in zoom-in-75 duration-300" /> : <Moon className="size-4 animate-in zoom-in-75 duration-300" />}
-          </button>
           <div className="relative" ref={menuRef}>
             <button onClick={() => setMenuOpen(!menuOpen)} className={`rounded-full bg-sidebar-foreground/10 grid place-items-center transition-all cursor-pointer hover:bg-sidebar-foreground/15 ${collapsed ? "size-8" : "size-14 mb-1"}`}>
               <User className={collapsed ? "size-4 opacity-50" : "size-6 opacity-50"} />
@@ -213,9 +219,13 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             <span className="flex-1 text-left truncate">Search shipments, references...</span>
             <kbd className="hidden sm:inline-flex h-5 items-center justify-center gap-2 px-1.5 text-[10px] font-medium text-muted-foreground leading-none"><span className="text-[10px]">⌘</span><span>K</span></kbd>
           </button>
-          <Link href="/dashboard/notificationsAlerts" className="shrink-0 size-8 grid place-items-center rounded-lg hover:bg-accent transition-colors">
+          <Link href="/dashboard/notificationsAlerts" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} className="relative shrink-0 size-8 grid place-items-center rounded-lg hover:bg-accent transition-colors">
             <Bell className="size-[18px] opacity-60" />
+            {unreadCount > 0 && <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full border-2 border-background bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground">{unreadCount > 99 ? "99+" : unreadCount}</span>}
           </Link>
+          <button type="button" onClick={toggleTheme} disabled={!themeReady} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Light mode" : "Dark mode"} className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-all duration-300 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none">
+            {!themeReady ? <span className="size-4" aria-hidden="true" /> : theme === "dark" ? <Sun className="size-4 animate-in zoom-in-75 duration-300" /> : <Moon className="size-4 animate-in zoom-in-75 duration-300" />}
+          </button>
         </div>
         <div className="p-4">{children}</div>
 

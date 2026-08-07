@@ -105,41 +105,24 @@ export default function Dashboard() {
   // Interactive Schedule Calendar State
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(4);
 
-  // KPI Customization State (initialized lazily from localStorage, if present)
-  const [selectedKpiIds, setSelectedKpiIds] = useState<string[]>(() => {
-    if (typeof window === "undefined") return DEFAULT_SELECTED_KPI_IDS;
-    try {
-      const saved = localStorage.getItem("pss_selected_kpis");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed.length <= 5) {
-          return parsed;
-        }
-      }
-    } catch {
-      // Fallback
-    }
-    return DEFAULT_SELECTED_KPI_IDS;
-  });
+  // Keep the first render identical on the server and client.
+  const [selectedKpiIds, setSelectedKpiIds] = useState<string[]>(DEFAULT_SELECTED_KPI_IDS);
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
   const [tempSelectedIds, setTempSelectedIds] = useState<string[]>(DEFAULT_SELECTED_KPI_IDS);
 
-  // Volume Chart Multi-Series Customization State (Max 3 metrics, initialized lazily from localStorage)
-  const [selectedVolumeKeys, setSelectedVolumeKeys] = useState<string[]>(() => {
-    if (typeof window === "undefined") return DEFAULT_SELECTED_VOLUME_KEYS;
-    try {
-      const saved = localStorage.getItem("pss_selected_volume_keys");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed.length <= 3) {
-          return parsed;
-        }
-      }
-    } catch {
-      // Fallback
-    }
-    return DEFAULT_SELECTED_VOLUME_KEYS;
-  });
+  // Load browser-only preferences after hydration.
+  const [selectedVolumeKeys, setSelectedVolumeKeys] = useState<string[]>(DEFAULT_SELECTED_VOLUME_KEYS);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const kpis = JSON.parse(localStorage.getItem("pss_selected_kpis") || "null");
+        if (Array.isArray(kpis) && kpis.length > 0 && kpis.length <= 5) setSelectedKpiIds(kpis);
+        const volumes = JSON.parse(localStorage.getItem("pss_selected_volume_keys") || "null");
+        if (Array.isArray(volumes) && volumes.length > 0 && volumes.length <= 3) setSelectedVolumeKeys(volumes);
+      } catch { /* Ignore invalid saved preferences. */ }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [isVolumeMetricsOpen, setIsVolumeMetricsOpen] = useState(false);
 
   // Pulsing Alerts Modal State
