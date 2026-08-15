@@ -9,29 +9,32 @@ import {
   SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
 import {
-  LayoutDashboard, Package, Truck, HandHelping, RotateCcw,
-  Wallet, FileText, LifeBuoy, Receipt, ChevronRight, User, Settings, Bell, Search, Moon, Sun,
+  ChevronRight, User, Settings, Bell, Search, Moon, Sun,
 } from "lucide-react";
+import { PssIcon } from "@/components/ui/icon";
+import type { IconName } from "@/lib/iconography";
 import { defaultUnreadIds, notifications, NOTIFICATIONS_EVENT, readIdsFromStorage } from "@/components/block/notifications-data";
 
-const shipments = [
-  { title: "Booking", icon: Package, href: "/dashboard/shipmentBooking" },
-  { title: "Tracking", icon: Truck, href: "/dashboard/shipmentTracking" },
-  { title: "Pickup", icon: HandHelping, href: "/dashboard/pickupRequests" },
-  { title: "RTO", icon: RotateCcw, href: "/dashboard/returnShipments" },
+type NavItem = { title: string; icon: IconName; href: string };
+
+const shipments: NavItem[] = [
+  { title: "Booking", icon: "bookings", href: "/dashboard/shipmentBooking" },
+  { title: "Tracking", icon: "tracking", href: "/dashboard/shipmentTracking" },
+  { title: "Pickup", icon: "pickups", href: "/dashboard/pickupRequests" },
+  { title: "RTO", icon: "returns", href: "/dashboard/returnShipments" },
 ];
 
-const walletBilling = [
-  { title: "Wallet", icon: Wallet, href: "/dashboard/walletManagement" },
-  { title: "Billing", icon: Receipt, href: "/dashboard/billingInvoiceManagement" },
+const walletBilling: NavItem[] = [
+  { title: "Wallet", icon: "wallets", href: "/dashboard/walletManagement" },
+  { title: "Billing", icon: "billing", href: "/dashboard/billingInvoiceManagement" },
 ];
 
-const report = [
-  { title: "Reports", icon: FileText, href: "/dashboard/reportsAnalytics" },
+const report: NavItem[] = [
+  { title: "Reports", icon: "reports", href: "/dashboard/reportsAnalytics" },
 ];
 
-const support = [
-  { title: "Support", icon: LifeBuoy, href: "/dashboard/supportTicketCreation" },
+const support: NavItem[] = [
+  { title: "Support", icon: "support", href: "/dashboard/supportTicketCreation" },
 ];
 
 const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...shipments, ...walletBilling, ...report, ...support,
@@ -39,15 +42,13 @@ const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...shipments, ...
   { title: "Notifications", href: "/dashboard/notificationsAlerts" },
 ];
 
-type NavItem = { title: string; icon: React.ComponentType<{ className?: string }>; href: string };
-
 function NavItems({ items, pathname }: { items: NavItem[]; pathname: string }) {
   return (
     <SidebarMenu>
       {items.map((r) => (
         <SidebarMenuItem key={r.title}>
           <SidebarMenuButton isActive={pathname === r.href} render={<Link href={r.href} />} tooltip={r.title}>
-            <r.icon className="shrink-0 opacity-70" />
+            <PssIcon name={r.icon} size="lg" className="shrink-0 opacity-70" />
             <span>{r.title}</span>
             {pathname === r.href && <ChevronRight className="ml-auto size-3.5 opacity-40" />}
           </SidebarMenuButton>
@@ -122,7 +123,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
               <User className={collapsed ? "size-4 opacity-50" : "size-6 opacity-50"} />
             </button>
             {menuOpen && (
-              <div className={`absolute z-50 w-44 bg-popover border border-border rounded-lg shadow-lg py-1 ${collapsed ? "left-full top-0 ml-2" : "top-full left-1/2 -translate-x-1/2 mt-1"}`}>
+              <div className={`absolute z-50 w-44 animate-in fade-in zoom-in-95 duration-150 bg-popover border border-border rounded-lg shadow-lg py-1 motion-reduce:animate-none ${collapsed ? "left-full top-0 ml-2" : "top-full left-1/2 -translate-x-1/2 mt-1"}`}>
                 <Link href="/dashboard/profileAccountManagement" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent rounded-md mx-1 transition-colors">
                   <User className="size-4 opacity-60" />Profile
                 </Link>
@@ -146,8 +147,8 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
-                  <SidebarMenuButton isActive={pathname === "/dashboard"} render={<Link href="/dashboard" />} tooltip="Dashboard">
-                    <LayoutDashboard className="shrink-0 opacity-70" />
+                    <SidebarMenuButton isActive={pathname === "/dashboard"} render={<Link href="/dashboard" />} tooltip="Dashboard">
+                    <PssIcon name="dashboard" size="lg" className="shrink-0 opacity-70" />
                     <span>Dashboard</span>
                     {pathname === "/dashboard" && <ChevronRight className="ml-auto size-3.5 opacity-40" />}
                   </SidebarMenuButton>
@@ -231,9 +232,9 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
 
         {/* Search Overlay */}
         {searchOpen && (
-          <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]" onClick={() => setSearchOpen(false)}>
+          <div className="fixed inset-0 z-50 flex animate-in fade-in duration-150 items-start justify-center pt-[20vh] motion-reduce:animate-none" onClick={() => setSearchOpen(false)}>
             <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
-            <div className="relative w-full max-w-lg mx-4 bg-popover border border-border rounded-xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="relative w-full max-w-lg mx-4 animate-in fade-in zoom-in-95 duration-150 bg-popover border border-border rounded-xl shadow-2xl motion-reduce:animate-none" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center gap-3 px-4 h-12 border-b border-border/60">
                 <Search className="size-[18px] opacity-40 shrink-0" />
                 <input ref={searchRef} type="text" placeholder="Search shipments, references, pages..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60" />
