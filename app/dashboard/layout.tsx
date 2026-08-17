@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
@@ -14,6 +14,7 @@ import {
 import { PssIcon } from "@/components/ui/icon";
 import type { IconName } from "@/lib/iconography";
 import { defaultUnreadIds, notifications, NOTIFICATIONS_EVENT, readIdsFromStorage } from "@/components/block/notifications-data";
+import { searchClientMaster } from "@/lib/master-search";
 
 type NavItem = { title: string; icon: IconName; href: string };
 
@@ -29,6 +30,12 @@ const walletBilling: NavItem[] = [
   { title: "Billing", icon: "billing", href: "/dashboard/billingInvoiceManagement" },
 ];
 
+const operations: NavItem[] = [
+  { title: "Warehouses", icon: "warehouse", href: "/dashboard/warehouseManagement" },
+  { title: "NDR", icon: "ndr", href: "/dashboard/ndrManagement" },
+  { title: "Exceptions", icon: "exceptions", href: "/dashboard/exceptionsManagement" },
+];
+
 const report: NavItem[] = [
   { title: "Reports", icon: "reports", href: "/dashboard/reportsAnalytics" },
 ];
@@ -37,7 +44,7 @@ const support: NavItem[] = [
   { title: "Support", icon: "support", href: "/dashboard/supportTicketCreation" },
 ];
 
-const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...shipments, ...walletBilling, ...report, ...support,
+const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...shipments, ...operations, ...walletBilling, ...report, ...support,
   { title: "Profile", href: "/dashboard/profileAccountManagement" },
   { title: "Notifications", href: "/dashboard/notificationsAlerts" },
 ];
@@ -64,12 +71,14 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   const collapsed = state === "collapsed";
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [themeReady, setThemeReady] = useState(false);
   const [unreadCount, setUnreadCount] = useState(defaultUnreadIds.length);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const currentRoute = allRoutes.find((r) => r.href === pathname)?.title ?? "Dashboard";
+  const searchResults = useMemo(() => searchClientMaster(searchQuery), [searchQuery]);
 
   useEffect(() => {
     const syncUnreadCount = () => setUnreadCount(notifications.filter((item) => !readIdsFromStorage().includes(item.id)).length);
@@ -167,6 +176,16 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             </SidebarGroupContent>
           </SidebarGroup>
 
+          {/* Operations */}
+          <SidebarGroup>
+            <SidebarGroupLabel className="px-3 text-xs font-medium uppercase tracking-widest text-sidebar-foreground/40">
+              Operations
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <NavItems items={operations} pathname={pathname} />
+            </SidebarGroupContent>
+          </SidebarGroup>
+
           {/* Wallet and Billing */}
           <SidebarGroup>
             <SidebarGroupLabel className="text-xs uppercase tracking-widest font-medium text-sidebar-foreground/40 px-3">
@@ -231,16 +250,18 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
         <div className="p-4">{children}</div>
 
         {/* Search Overlay */}
-        {searchOpen && (
+      {searchOpen && (
           <div className="fixed inset-0 z-50 flex animate-in fade-in duration-150 items-start justify-center pt-[20vh] motion-reduce:animate-none" onClick={() => setSearchOpen(false)}>
             <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
             <div className="relative w-full max-w-lg mx-4 animate-in fade-in zoom-in-95 duration-150 bg-popover border border-border rounded-xl shadow-2xl motion-reduce:animate-none" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center gap-3 px-4 h-12 border-b border-border/60">
                 <Search className="size-[18px] opacity-40 shrink-0" />
-                <input ref={searchRef} type="text" placeholder="Search shipments, references, pages..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60" />
+                <input ref={searchRef} type="text" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search shipments, invoices, pickups..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60" />
                 <kbd className="hidden sm:inline-flex h-5 items-center justify-center gap-0.5 px-1.5 text-[10px] font-medium text-muted-foreground leading-none"><span className="text-[10px]">ESC</span></kbd>
               </div>
-              <div className="p-3 text-xs text-muted-foreground/60 text-center">Start typing to search...</div>
+              <div className="max-h-80 overflow-y-auto p-2">
+                {!searchQuery.trim() ? <p className="p-4 text-center text-xs text-muted-foreground">Search across shipments, invoices, pickups, and pages.</p> : searchResults.length ? searchResults.map((result) => <Link key={result.id} href={result.href} onClick={() => { setSearchOpen(false); setSearchQuery(""); }} className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent"><Search className="mt-0.5 size-4 shrink-0 text-primary" /><span className="min-w-0"><span className="flex items-center gap-2 text-xs font-semibold"><span className="truncate">{result.title}</span><span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">{result.type}</span></span><span className="mt-0.5 block truncate text-[10px] text-muted-foreground">{result.detail}</span></span></Link>) : <p className="p-4 text-center text-xs text-muted-foreground">No matching company records or pages.</p>}
+              </div>
             </div>
           </div>
         )}

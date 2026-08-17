@@ -31,10 +31,7 @@ import {
   DEFAULT_SELECTED_KPI_IDS,
   ALL_VOLUME_METRICS,
   DEFAULT_SELECTED_VOLUME_KEYS,
-  SHIPMENT_SUMMARY,
   TRANSPORT_MODES,
-  DELAYED_SHIPMENTS,
-  TODAY_PICKUPS,
   ACTION_ALERTS,
   RECENT_ACTIVITIES,
   VOLUME_DATA,
@@ -42,6 +39,7 @@ import {
   KpiMetric,
   VolumeMetricDef,
 } from "./dashboard-data";
+import { COMPANY_DELAYED_SHIPMENTS, COMPANY_SHIPMENT_SUMMARY, COMPANY_TODAY_PICKUPS } from "@/lib/company-dashboard-data";
 
 // Monotone cubic Bézier curve calculation for silky-smooth Recharts-grade charts
 function getSmoothSplinePath(points: { x: number; y: number }[]): { areaPath: string; linePath: string } {
@@ -290,10 +288,10 @@ export default function Dashboard() {
     12: [{ title: "Overdue Invoice Settlement", type: "Finance", badge: "Billing", color: "text-amber-500 bg-amber-500/10" }],
     13: [{ title: "Rotterdam Hub Capacity Expansion", type: "Facility", badge: "Planned", color: "text-sky-500 bg-sky-500/10" }],
   };
-  const totalShipments = SHIPMENT_SUMMARY.reduce((total, item) => total + item.count, 0);
-  const activeShipments = SHIPMENT_SUMMARY.filter((item) => ["Booked", "Picked Up", "In Transit", "Out for Delivery"].includes(item.status)).reduce((total, item) => total + item.count, 0);
-  const delayedShipments = SHIPMENT_SUMMARY.find((item) => item.status === "Delayed")?.count ?? 0;
-  const exceptionShipments = SHIPMENT_SUMMARY.find((item) => item.status === "Exception")?.count ?? 0;
+  const totalShipments = COMPANY_SHIPMENT_SUMMARY.reduce((total, item) => total + item.count, 0);
+  const activeShipments = COMPANY_SHIPMENT_SUMMARY.filter((item) => ["Booked", "Picked Up", "In Transit", "Out for Delivery"].includes(item.status)).reduce((total, item) => total + item.count, 0);
+  const delayedShipments = COMPANY_DELAYED_SHIPMENTS.length;
+  const exceptionShipments: number = 0;
 
   return (
     <div className="w-full space-y-4">
@@ -683,7 +681,7 @@ export default function Dashboard() {
                 <span>Status Breakdown</span>
                 <span className="font-semibold text-foreground">48 Shipments</span>
               </div>
-              {SHIPMENT_SUMMARY.map((item) => (
+              {COMPANY_SHIPMENT_SUMMARY.map((item) => (
                 <div key={item.status} className="flex items-center gap-2 py-1">
                   <span
                     className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap w-28 justify-start shrink-0 ${item.badgeClass}`}
@@ -801,9 +799,9 @@ export default function Dashboard() {
       </div>
 
       {/* AWWWARDS-GRADE LOWER OPERATIONS GRID */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:h-[32rem] lg:grid-cols-3">
         {/* 1. Delayed Shipments (High-Priority Exception Radar Card) */}
-        <div className="rounded-xl border border-border bg-card text-card-foreground shadow-sm flex flex-col justify-between overflow-hidden">
+        <div className="flex h-full min-h-0 flex-col rounded-xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2.5 w-2.5">
@@ -820,8 +818,8 @@ export default function Dashboard() {
               <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
-          <div className="divide-y divide-border/60 flex-1">
-            {DELAYED_SHIPMENTS.map((shp) => (
+          <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto custom-scrollbar">
+            {COMPANY_DELAYED_SHIPMENTS.map((shp) => (
               <Link
                 key={shp.id}
                 href={`/dashboard/shipmentTracking?id=${shp.id}`}
@@ -853,7 +851,7 @@ export default function Dashboard() {
         </div>
 
         {/* 2. Today's Pickups (Live Operational Dispatch Tracker Card) */}
-        <div className="rounded-xl border border-border bg-card text-card-foreground shadow-sm flex flex-col justify-between overflow-hidden">
+        <div className="flex h-full min-h-0 flex-col rounded-xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-primary" />
@@ -870,8 +868,8 @@ export default function Dashboard() {
               <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
-          <div className="divide-y divide-border/60 flex-1">
-            {TODAY_PICKUPS.map((pku) => (
+          <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto custom-scrollbar">
+            {COMPANY_TODAY_PICKUPS.map((pku) => (
               <Link
                 key={pku.id}
                 href="/dashboard/pickupRequests"
@@ -909,7 +907,7 @@ export default function Dashboard() {
         </div>
 
         {/* 3. Schedule (Interactive Operations Heatmap & Event Calendar) */}
-        <div className="rounded-xl border border-border bg-card text-card-foreground shadow-sm flex flex-col justify-between">
+        <div className="flex h-full min-h-0 flex-col rounded-xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <div className="flex items-center gap-2">
               <CalendarIcon className="h-4 w-4 text-primary" />
@@ -933,7 +931,7 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          <div className="p-4 flex-1 flex flex-col justify-between">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 custom-scrollbar">
             <div>
               <div className="mb-2 grid grid-cols-7 gap-1">
                 {["M", "T", "W", "T", "F", "S", "S"].map((day, i) => (

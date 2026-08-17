@@ -61,6 +61,8 @@ export const iconRegistry = {
   file: FileText,
   wallet: Wallet,
   pickupHelp: HandHelping,
+  warehouse: Building2,
+  ndr: AlertTriangle,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof iconRegistry;

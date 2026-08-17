@@ -6,11 +6,9 @@ import {
   ArrowUp,
   CalendarDays,
   Check,
-  ChevronDown,
   Clock3,
   Download,
   FileText,
-  Filter,
   MapPin,
   Package,
   Plus,
@@ -22,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Dropdown from "@/components/ui/dropdown";
+import companyData from "@/data/company-demo/company-data.json";
 
 type PickupStatus = "Scheduled" | "Driver Assigned" | "En Route" | "Completed" | "Failed" | "Cancelled";
 type SortKey = "reference" | "customer" | "status" | "date" | "location" | "driver" | "pieces" | "weight";
@@ -57,18 +56,23 @@ type NewPickup = {
   notes: string;
 };
 
-const initialPickups: Pickup[] = [
-  { id: "1", reference: "PKU20260011", customer: "Brightline Distributors", status: "Cancelled", date: "Aug 5", window: "8:30 PM – 10:30 PM", location: "New York", country: "United States", driver: "Not assigned", pieces: 44, weight: "851 kg", contact: "+1 (133) 681-9354", address: "227 Madison Avenue", notes: "Customer cancelled after the booking window changed.", createdFrom: "Shipment booking" },
-  { id: "2", reference: "PKU20260013", customer: "Brightline Distributors", status: "En Route", date: "Aug 5", window: "8:30 PM – 10:30 PM", location: "Singapore", country: "Singapore", driver: "Elena Petrov", pieces: 25, weight: "659 kg", contact: "+1 (841) 316-6066", address: "18 Robinson Road", notes: "Driver is heading to the loading dock.", createdFrom: "Shipment booking" },
-  { id: "3", reference: "PKU20260016", customer: "Summit Retail Group", status: "Scheduled", date: "Aug 6", window: "1:30 PM – 3:30 PM", location: "Los Angeles", country: "United States", driver: "Not assigned", pieces: 6, weight: "816 kg", contact: "+1 (295) 374-3844", address: "540 South Spring Street", notes: "Call the receiving desk on arrival.", createdFrom: "Shipment booking" },
-  { id: "4", reference: "PKU20260009", customer: "Atlas Manufacturing", status: "Scheduled", date: "Aug 6", window: "2:30 PM – 4:30 PM", location: "Rotterdam", country: "Netherlands", driver: "Not assigned", pieces: 30, weight: "1.15 t", contact: "+1 (771) 851-1207", address: "Waalhaven Zuidzijde 19", notes: "Pallet pickup; loading bay 3.", createdFrom: "Shipment booking" },
-  { id: "5", reference: "PKU20260015", customer: "Meridian Traders", status: "Driver Assigned", date: "Aug 6", window: "5:30 PM – 7:30 PM", location: "Toronto", country: "Canada", driver: "Maria Santos", pieces: 7, weight: "176 kg", contact: "+1 (796) 354-6344", address: "120 Front Street East", notes: "Fragile cartons, keep upright.", createdFrom: "Shipment booking" },
-  { id: "6", reference: "PKU20260007", customer: "Atlas Manufacturing", status: "Failed", date: "Aug 7", window: "2:30 PM – 4:30 PM", location: "Frankfurt", country: "Germany", driver: "Elena Petrov", pieces: 32, weight: "562 kg", contact: "+1 (213) 497-2677", address: "Cargo City Süd, Building 539", notes: "Pickup failed because the cargo was not ready.", createdFrom: "Shipment booking" },
-  { id: "7", reference: "PKU20260008", customer: "Meridian Traders", status: "Scheduled", date: "Aug 7", window: "2:30 PM – 4:30 PM", location: "Sydney", country: "Australia", driver: "Not assigned", pieces: 4, weight: "1.09 t", contact: "+1 (862) 446-3102", address: "44 Market Street", notes: "Warehouse access code is available in the customer profile.", createdFrom: "Shipment booking" },
-  { id: "8", reference: "PKU20260004", customer: "Summit Retail Group", status: "Completed", date: "Aug 7", window: "3:30 PM – 5:30 PM", location: "Frankfurt", country: "Germany", driver: "Omar Hassan", pieces: 40, weight: "1.15 t", contact: "+1 (297) 552-6498", address: "Kaiserstrasse 14", notes: "Signed proof of pickup received.", createdFrom: "Shipment booking" },
-  { id: "9", reference: "PKU20260003", customer: "Brightline Distributors", status: "En Route", date: "Aug 7", window: "4:30 PM – 6:30 PM", location: "Hamburg", country: "Germany", driver: "David Liu", pieces: 42, weight: "591 kg", contact: "+1 (626) 693-8942", address: "Am Sandtorkai 50", notes: "Driver has confirmed the pickup location.", createdFrom: "Shipment booking" },
-  { id: "10", reference: "PKU20260005", customer: "Coastal Exports Ltd", status: "Cancelled", date: "Aug 7", window: "5:30 PM – 7:30 PM", location: "Shanghai", country: "China", driver: "Not assigned", pieces: 50, weight: "114 kg", contact: "+1 (222) 866-5663", address: "88 Pudong Avenue", notes: "Pickup cancelled by customer.", createdFrom: "Shipment booking" },
-];
+const initialPickups: Pickup[] = companyData.pickups.map((pickup) => ({
+  id: pickup.id,
+  reference: pickup.reference,
+  customer: pickup.customer,
+  status: pickup.status as PickupStatus,
+  date: pickup.date,
+  window: pickup.window,
+  location: pickup.location,
+  country: pickup.country,
+  driver: pickup.driver,
+  pieces: pickup.pieces,
+  weight: pickup.weight,
+  contact: pickup.contact,
+  address: pickup.address,
+  notes: pickup.notes,
+  createdFrom: pickup.createdFrom as Pickup["createdFrom"],
+}));
 
 const emptyForm: NewPickup = { customer: "", contact: "", address: "", city: "", country: "", date: "2026-08-08", window: "9:00 AM – 11:00 AM", pieces: "1", weight: "", notes: "" };
 
@@ -111,6 +115,7 @@ export default function PickupRequests() {
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [statusOpen]);
+
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -238,10 +243,6 @@ function PickupRow({ pickup, visibleColumns, selected, toggleSelected, open }: {
 }
 
 function StatusBadge({ status }: { status: PickupStatus }) { return <span className={cn("inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold", statusStyles[status])}><span className="h-1.5 w-1.5 rounded-full bg-current" />{status}</span>; }
-
-function StatusOption({ label, value, selected, select }: { label: string; value: PickupStatus | ""; selected: boolean; select: () => void }) {
-  return <button type="button" role="option" aria-selected={selected} onClick={select} className={cn("flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition", selected ? "bg-primary/10 font-semibold text-primary" : "hover:bg-accent")}><span className="flex items-center gap-2">{value && <span className={cn("h-1.5 w-1.5 rounded-full", statusStyles[value].split(" ").find((token) => token.startsWith("bg-")) || "bg-muted-foreground")} />}{label}</span>{selected && <Check className="h-3.5 w-3.5" />}</button>;
-}
 
 function ColumnPanel({ visibleColumns, toggleColumn, close }: { visibleColumns: SortKey[]; toggleColumn: (key: SortKey) => void; close: () => void }) {
   return <div className="absolute right-0 top-full z-30 mt-2 w-52 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-xl"><div className="mb-2 flex items-center justify-between border-b border-border pb-2"><p className="text-xs font-semibold">Visible columns</p><button type="button" onClick={close} aria-label="Close column controls"><X className="h-3.5 w-3.5 text-muted-foreground" /></button></div><div className="space-y-1">{columns.map((column) => <label key={column.key} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-accent"><input type="checkbox" checked={visibleColumns.includes(column.key)} onChange={() => toggleColumn(column.key)} className="accent-primary" />{column.label}</label>)}</div></div>;
