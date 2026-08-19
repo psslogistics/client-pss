@@ -15,6 +15,7 @@ import {
   type NotificationItem,
   type NotificationTone,
 } from "@/components/block/notifications-data";
+import { readWorkflowNotifications, WORKFLOW_EVENT } from "@/lib/client-workflow-store";
 
 type Filter = "All" | "Unread" | NotificationCategory;
 
@@ -46,6 +47,7 @@ export default function NotificationsAlerts() {
   const [filter, setFilter] = useState<Filter>("All");
   const [readIds, setReadIds] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [workflowNotifications, setWorkflowNotifications] = useState<NotificationItem[]>([]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -56,14 +58,16 @@ export default function NotificationsAlerts() {
     window.addEventListener(NOTIFICATIONS_EVENT, sync);
     return () => { window.clearTimeout(timer); window.removeEventListener(NOTIFICATIONS_EVENT, sync); };
   }, []);
+  useEffect(() => { const sync = () => setWorkflowNotifications(readWorkflowNotifications().map((item) => ({ ...item, tone: item.category === "Billing" ? "success" : item.category === "Operations" ? "warning" : "info", unread: !item.read, actionLabel: "Open", actionHref: item.actionHref || "/dashboard/notificationsAlerts" }))); sync(); window.addEventListener(WORKFLOW_EVENT, sync); return () => window.removeEventListener(WORKFLOW_EVENT, sync); }, []);
 
-  const unreadIds = hydrated ? notifications.filter((item) => !readIds.includes(item.id)).map((item) => item.id) : defaultUnreadIds;
+  const allNotifications = useMemo(() => [...workflowNotifications, ...notifications], [workflowNotifications]);
+  const unreadIds = hydrated ? allNotifications.filter((item) => !readIds.includes(item.id)).map((item) => item.id) : defaultUnreadIds;
   const isRead = (id: string) => hydrated ? readIds.includes(id) : !defaultUnreadIds.includes(id);
-  const visibleNotifications = useMemo(() => notifications.filter((item) => {
+  const visibleNotifications = useMemo(() => allNotifications.filter((item) => {
     const matchesFilter = filter === "All" || (filter === "Unread" ? unreadIds.includes(item.id) : item.category === filter);
     const haystack = `${item.title} ${item.message} ${item.category}`.toLowerCase();
     return matchesFilter && haystack.includes(query.toLowerCase());
-  }), [filter, query, unreadIds]);
+  }), [allNotifications, filter, query, unreadIds]);
   const urgentNotifications = visibleNotifications.filter((item) => item.tone === "critical" || item.tone === "warning").slice(0, 3);
 
   const markRead = (item: NotificationItem) => {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Clock3, FileText, LifeBuoy, Mail, MessageSquare, Search, Send, ShieldCheck, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { addWorkflowTicket, readWorkflowTickets, WORKFLOW_EVENT } from "@/lib/client-workflow-store";
 
 type Tab = "tickets" | "new" | "contact";
 type TicketStatus = "Open" | "Pending" | "Resolved" | "Closed";
@@ -67,7 +68,10 @@ export default function SupportTicketCreation() {
   const [chatDraft, setChatDraft] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [menuOpen, setMenuOpen] = useState<"category" | "priority" | null>(null);
+  const [workflowTickets, setWorkflowTickets] = useState<Ticket[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { const sync = () => setWorkflowTickets(readWorkflowTickets().map((ticket) => ({ id: ticket.id, subject: ticket.subject, status: ticket.status === "Resolved" ? "Resolved" : "Open", priority: ticket.priority === "Top" ? "Urgent" : ticket.priority === "Normal" ? "Low" : "High", category: ticket.source, messages: 1, updated: "Just now" }))); sync(); window.addEventListener(WORKFLOW_EVENT, sync); return () => window.removeEventListener(WORKFLOW_EVENT, sync); }, []);
 
   useEffect(() => {
     const close = (event: PointerEvent) => {
@@ -84,12 +88,13 @@ export default function SupportTicketCreation() {
   }, [notice]);
 
   const filteredTickets = useMemo(() => {
+    const allTickets = [...workflowTickets, ...tickets];
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return tickets;
-    return tickets.filter((ticket) => [ticket.id, ticket.subject, ticket.category, ticket.requester].filter(Boolean).some((value) => value!.toLowerCase().includes(normalized)));
-  }, [query]);
+    if (!normalized) return allTickets;
+    return allTickets.filter((ticket) => [ticket.id, ticket.subject, ticket.category, ticket.requester].filter(Boolean).some((value) => value!.toLowerCase().includes(normalized)));
+  }, [query, workflowTickets]);
 
-  const selectedTicket = tickets.find((ticket) => ticket.id === selectedId) || tickets[0];
+  const selectedTicket = [...workflowTickets, ...tickets].find((ticket) => ticket.id === selectedId) || tickets[0];
   const sendChatMessage = () => {
     const text = chatDraft.trim();
     if (!text) return;
@@ -102,6 +107,9 @@ export default function SupportTicketCreation() {
       setNotice("Add a subject and description before submitting.");
       return;
     }
+    const id = `TKT-${Date.now()}`;
+    addWorkflowTicket({ id, subject, details: description, priority: priority === "Urgent" ? "Top" : priority === "Low" ? "Normal" : "High", status: "Open", source: category, date: new Date().toISOString().slice(0, 10) });
+    setSelectedId(id);
     setNotice("Ticket created successfully. Our support team will respond shortly.");
     setSubject("");
     setDescription("");

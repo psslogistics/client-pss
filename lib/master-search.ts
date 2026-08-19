@@ -38,6 +38,7 @@ export function getClientSearchIndex(): ClientSearchResult[] {
     ["Support", "/dashboard/supportTicketCreation"],
     ["Notifications", "/dashboard/notificationsAlerts"],
     ["Profile", "/dashboard/profileAccountManagement"],
+    ["Settings", "/dashboard/userSettings"],
   ].map(([title, href]) => ({ id: `page-${href}`, type: "Page", title, detail: "Open workspace page", href, keywords: `${title} page workspace` }));
 
   const shipments = companyData.deliveries.flatMap((shipment) => {

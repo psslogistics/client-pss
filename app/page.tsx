@@ -1,9 +1,5 @@
-import Hero from "@/components/block/hero";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return (
-    <div>
-      <Hero />
-    </div>
-  );
+  redirect("/sign-in");
 }

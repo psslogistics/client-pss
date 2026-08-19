@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import Dropdown from "@/components/ui/dropdown";
 import companyData from "@/data/company-demo/company-data.json";
+import { addWorkflowPickup, readWorkflowPickups } from "@/lib/client-workflow-store";
 
 type PickupStatus = "Scheduled" | "Driver Assigned" | "En Route" | "Completed" | "Failed" | "Cancelled";
 type SortKey = "reference" | "customer" | "status" | "date" | "location" | "driver" | "pieces" | "weight";
@@ -108,6 +109,14 @@ export default function PickupRequests() {
   const statusMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const stored = readWorkflowPickups() as Pickup[];
+      if (stored.length) setPickups((current) => [...stored, ...current.filter((item) => !stored.some((saved) => saved.id === item.id))]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (!statusOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
       if (statusMenuRef.current && !statusMenuRef.current.contains(event.target as Node)) setStatusOpen(false);
@@ -183,6 +192,7 @@ export default function PickupRequests() {
       createdFrom: "Standalone request",
     };
     setPickups((current) => [pickup, ...current]);
+    addWorkflowPickup(pickup);
     setForm(emptyForm);
     setScheduleOpen(false);
     setSelectedPickup(pickup);

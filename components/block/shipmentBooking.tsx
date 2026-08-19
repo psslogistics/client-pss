@@ -10,18 +10,17 @@ import {
   Download,
   FileText,
   Info,
-  MapPin,
   Package,
-  Pencil,
-  Save,
   ShieldCheck,
   TriangleAlert,
   Upload,
+  Save,
   UserRound,
   X,
 } from "lucide-react";
 import Dropdown from "@/components/ui/dropdown";
 import ConfirmationToast, { type ConfirmationToastTone } from "@/components/ui/confirmationToast";
+import { addWorkflowPickup, addWorkflowShipment, addWorkflowWalletTransaction } from "@/lib/client-workflow-store";
 
 type Address = { line: string; city: string; state: string; pincode: string; country: string };
 type Contact = { name: string; phone: string; email: string };
@@ -77,9 +76,6 @@ const bulkHeaders = ["from", "to", "origin_pincode", "destination_pincode", "con
 
 const csvRows = (text: string) => text.trim().split(/\r?\n/).map((line) => line.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/).map((cell) => cell.trim().replace(/^\"|\"$/g, "")));
 const serviceable = (pincode: string) => /^\d{6}$/.test(pincode) && pincode !== "000000" && !pincode.startsWith("9");
-const validateBulkRow = (row: BulkShipment) => [
-  ...(!row.from ? ["From address is missing"] : []), ...(!row.to ? ["To address is missing"] : []), ...(!row.consignor ? ["Consignor is missing"] : []), ...(!row.consignee ? ["Consignee is missing"] : []), ...(!validPhone(normalizePhone(row.consignorPhone)) ? ["Consignor phone is invalid"] : []), ...(!validPhone(normalizePhone(row.consigneePhone)) ? ["Consignee phone is invalid"] : []), ...(!row.description ? ["Shipment description is missing"] : []), ...(!row.weight || Number(row.weight) <= 0 ? ["Weight must be greater than 0"] : []), ...(!row.pieces || Number(row.pieces) < 1 ? ["Pieces must be at least 1"] : []), ...(!row.shipmentValue || Number(row.shipmentValue) <= 0 ? ["Shipment value must be greater than 0"] : []), ...(!/^\d{6}$/.test(row.originPincode) ? ["Origin PIN code must be 6 digits"] : []), ...(!/^\d{6}$/.test(row.destinationPincode) ? ["Destination PIN code must be 6 digits"] : []), ...(!serviceable(row.destinationPincode) ? ["Destination PIN code is not serviceable"] : []), ...((row.paymentMode === "COD" && (!row.codAmount || Number(row.codAmount) <= 0)) ? ["COD amount must be greater than 0"] : []), ...((Number(row.shipmentValue) >= EWAY_THRESHOLD && !row.ewayBill && !row.ewayBillAvailable) ? ["E-Way bill is compulsory at or above ₹50,000"] : []),
-];
 const makeBulkRows = (rows: string[][]): BulkShipment[] => {
   const headers = rows.shift()?.map((header) => header.trim().toLowerCase()) || [];
   const index = (name: string) => headers.indexOf(name);
@@ -173,39 +169,8 @@ const parseXlsx = async (file: File) => {
 const update = <T extends object>(setter: React.Dispatch<React.SetStateAction<T>>, key: keyof T, value: string) =>
   setter((current) => ({ ...current, [key]: value }));
 
-function AddressFields({ value, setValue, label, saved, savedPickup, onSave, pinStatus, onPincodeChange }: { value: Address; setValue: React.Dispatch<React.SetStateAction<Address>>; label: string; saved?: boolean; savedPickup: Address | null; onSave?: () => void; pinStatus: { state: PinStatus; message: string }; onPincodeChange: (value: string) => void }) {
-  return (
-    <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-xs">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary"><MapPin className="h-3.5 w-3.5" /></span><h2 className="text-sm font-semibold">{label}</h2></div>
-        {saved && savedPickup && <button type="button" onClick={() => setValue(savedPickup)} className="text-xs font-medium text-primary hover:underline">Reuse saved</button>}
-      </div>
-      <input required className={field} placeholder="Address line 1" value={value.line} onChange={(e) => update(setValue, "line", e.target.value)} />
-      <div className="grid grid-cols-2 gap-2"><input required className={field} placeholder="City" value={value.city} onChange={(e) => update(setValue, "city", e.target.value)} /><input required className={field} placeholder="State" value={value.state} onChange={(e) => update(setValue, "state", e.target.value)} /></div>
-      <div className="grid grid-cols-2 gap-2"><div><input required inputMode="numeric" maxLength={6} className={field} placeholder="PIN code" value={value.pincode} onChange={(e) => onPincodeChange(e.target.value)} />{pinStatus.state === "loading" && <p className="mt-1 text-[11px] text-muted-foreground">Finding city and state…</p>}{pinStatus.state === "success" && <p className="mt-1 text-[11px] text-emerald-600">City and state updated automatically</p>}{pinStatus.state === "error" && <p className="mt-1 text-[11px] text-destructive">{pinStatus.message}</p>}</div><input required className={field} placeholder="Country" value={value.country} onChange={(e) => update(setValue, "country", e.target.value)} /></div>
-      {saved && onSave && <button type="button" onClick={onSave} className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"><Save className="h-3.5 w-3.5" /> Save this pickup address</button>}
-    </section>
-  );
-}
-
 const normalizePhone = (value: string) => { let digits = value.replace(/\D/g, "").replace(/^0+/, ""); if (digits.startsWith("91") && digits.length > 10) digits = digits.slice(2); return digits.slice(0, 10); };
 const validPhone = (value: string) => /^[6-9]\d{9}$/.test(value);
-
-function PersonFields({ value, setValue, label, tone }: { value: Contact; setValue: React.Dispatch<React.SetStateAction<Contact>>; label: string; tone: string }) {
-  const phoneInvalid = value.phone.length > 0 && !validPhone(value.phone);
-  return (
-    <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-xs">
-      <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-lg ${tone}`}><UserRound className="h-3.5 w-3.5" /></span><h2 className="text-sm font-semibold">{label}</h2></div>
-      <input required className={field} placeholder="Full name" value={value.name} onChange={(e) => update(setValue, "name", e.target.value)} />
-      <div className="grid grid-cols-2 gap-2"><div><input required type="tel" inputMode="numeric" maxLength={10} aria-invalid={phoneInvalid} className={`${field} ${phoneInvalid ? "border-destructive focus:border-destructive focus:ring-destructive/10" : ""}`} placeholder="10-digit mobile number" value={value.phone} onChange={(e) => update(setValue, "phone", normalizePhone(e.target.value))} onBlur={(e) => update(setValue, "phone", normalizePhone(e.target.value))} />{phoneInvalid && <p className="mt-1 text-[11px] text-destructive">Enter a valid 10-digit number starting with 6–9.</p>}</div><input type="email" className={field} placeholder="Email (optional)" value={value.email} onChange={(e) => update(setValue, "email", e.target.value.trim())} /></div>
-    </section>
-  );
-}
-
-function PartyFields({ title, tone, address, setAddress, person, setPerson, pinStatus, onPincodeChange, savedPickups, selectedSavedPickupId, onSelectSaved, onSave, showReuse }: { title: string; tone: string; address: Address; setAddress: React.Dispatch<React.SetStateAction<Address>>; person: Contact; setPerson: React.Dispatch<React.SetStateAction<Contact>>; pinStatus: { state: PinStatus; message: string }; onPincodeChange: (value: string) => void; savedPickups: SavedPickup[]; selectedSavedPickupId: string; onSelectSaved: (id: string) => void; onSave?: () => void; showReuse?: boolean }) {
-  const phoneInvalid = person.phone.length > 0 && !validPhone(person.phone);
-  return <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-xs"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-lg ${tone}`}><UserRound className="h-3.5 w-3.5" /></span><h2 className="text-sm font-semibold">{title}</h2></div>{showReuse && <Dropdown label="Reuse saved" value={selectedSavedPickupId} options={savedPickups.map((saved) => ({ value: saved.id, label: saved.name }))} onChange={onSelectSaved} className="w-52" />}</div><input required className={field} placeholder="Name" value={person.name} onChange={(event) => update(setPerson, "name", event.target.value)} /><div className="grid grid-cols-2 gap-2"><div><input required type="tel" inputMode="numeric" maxLength={10} aria-invalid={phoneInvalid} className={`${field} ${phoneInvalid ? "border-destructive focus:border-destructive focus:ring-destructive/10" : ""}`} placeholder="Phone" value={person.phone} onChange={(event) => update(setPerson, "phone", normalizePhone(event.target.value))} onBlur={(event) => update(setPerson, "phone", normalizePhone(event.target.value))} />{phoneInvalid && <p className="mt-1 text-[11px] text-destructive">Use a valid 10-digit mobile number.</p>}</div><input type="email" className={field} placeholder="Email" value={person.email} onChange={(event) => update(setPerson, "email", event.target.value.trim())} /></div><input required className={field} placeholder="Address" value={address.line} onChange={(event) => update(setAddress, "line", event.target.value)} /><div className="grid grid-cols-2 gap-2"><div><input required className={field} placeholder="City" value={address.city} onChange={(event) => update(setAddress, "city", event.target.value)} /></div><input required className={field} placeholder="State" value={address.state} onChange={(event) => update(setAddress, "state", event.target.value)} /></div><div className="grid grid-cols-2 gap-2"><div><input required inputMode="numeric" maxLength={6} className={field} placeholder="PIN code" value={address.pincode} onChange={(event) => onPincodeChange(event.target.value)} />{pinStatus.state === "loading" && <p className="mt-1 text-[11px] text-muted-foreground">Finding city and state…</p>}{pinStatus.state === "success" && <p className="mt-1 text-[11px] text-emerald-600">City and state updated</p>}{pinStatus.state === "error" && <p className="mt-1 text-[11px] text-destructive">{pinStatus.message}</p>}</div><input required className={field} placeholder="Country" value={address.country} onChange={(event) => update(setAddress, "country", event.target.value)} /></div>{showReuse && onSave && <button type="button" onClick={onSave} className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"><Save className="h-3.5 w-3.5" /> Save this {title.toLowerCase()} address</button>}</section>;
-}
 
 function PartyFieldsCompact({ title, tone, address, setAddress, person, setPerson, pinStatus, onPincodeChange, savedPickups, selectedSavedPickupId, onSelectSaved, onSave, savedName, isRenaming, onSavedNameChange, onRename, onStartRename, onCancelRename, onDelete }: { title: string; tone: string; address: Address; setAddress: React.Dispatch<React.SetStateAction<Address>>; person: Contact; setPerson: React.Dispatch<React.SetStateAction<Contact>>; pinStatus: { state: PinStatus; message: string }; onPincodeChange: (value: string) => void; savedPickups: SavedPickup[]; selectedSavedPickupId: string; onSelectSaved: (id: string) => void; onSave: () => void; savedName: string; isRenaming: boolean; onSavedNameChange: (value: string) => void; onRename: () => void; onStartRename: () => void; onCancelRename: () => void; onDelete: () => void }) {
   const phoneInvalid = person.phone.length > 0 && !validPhone(person.phone);
@@ -261,9 +226,11 @@ export default function ShipmentBooking() {
   useEffect(() => {
     try {
       const savedList = localStorage.getItem("pss_saved_pickup_addresses");
+      const savedWarehouses = localStorage.getItem("pss_saved_warehouses");
       const savedConsigneeList = localStorage.getItem("pss_saved_consignee_addresses");
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (savedList) setSavedPickups(JSON.parse(savedList) as SavedPickup[]);
+      else if (savedWarehouses) setSavedPickups(JSON.parse(savedWarehouses) as SavedPickup[]);
       else { const legacy = localStorage.getItem("pss_saved_pickup_address"); if (legacy) { const address = JSON.parse(legacy) as Address; setSavedPickups([{ id: "legacy-pickup", name: `Pickup · ${address.city || "Address"} · ${address.state || ""} · ${address.pincode || ""}`, address, contact: emptyContact }]); } }
       if (savedConsigneeList) setSavedConsignees(JSON.parse(savedConsigneeList) as SavedPickup[]);
     } catch { /* local storage is optional */ }
@@ -390,9 +357,9 @@ export default function ShipmentBooking() {
     if (dcs.length) void createChallanPdf(dcs).catch(() => setBulkNotice("Unable to create the bulk Delivery Challan PDF"));
   };
 
-  const confirmSingle = () => { if (!selectedCourier || !selectedSlot) return; setSingleCompleted(true); setBookingNotice("Demo booking confirmed locally. No backend request was made."); };
-  const revalidateBulkRow = (id: string) => setBulkRows((current) => current.map((row) => row.id === id ? { ...row, errors: validateBulkRow(row) } : row));
-  const confirmBulk = () => { const validRows = bulkRows.filter((row) => !row.errors.length); if (!validRows.length || validRows.some((row) => !row.courier || (row.invoiceAvailable && !row.invoice))) return; setBulkCompleted(true); setBookingNotice(`${validRows.length} demo bookings confirmed locally. No backend request was made.`); };
+  const confirmSingle = () => { if (!selectedCourier || !selectedSlot) return; const courier = couriers.find((item) => item.id === selectedCourier) || couriers[0]; const id = `PSS-${Date.now()}`; const date = new Date().toISOString().slice(0, 10); const declaredWeight = Number(shipmentDetails.weight) || 1; const record = { id, pssTracking: id, courierTracking: `COURIER-${id.slice(-6)}`, bookingDate: date, pickupDate: "Not provided", deliveryDate: "Not delivered", status: "Booked", client: "PSS Logistics Client", consignor: pickupPerson.name || "Saved consignor", consignee: deliveryPerson.name || "Saved consignee", courier: courier.name, origin: pickup.city || "Pickup location", destination: delivery.city || "Delivery location", declaredWeight, measuredWeight: declaredWeight, billableWeight: declaredWeight, baseCharge: Number(courier.rate.replace(/[^0-9]/g, "")), weightCharge: 0, tax: Number(courier.rate.replace(/[^0-9]/g, "")) * 0.18, total: Number(courier.rate.replace(/[^0-9]/g, "")) * 1.18, payment: paymentMode, cod: paymentMode === "COD" ? Number(codAmount) || 0 : 0, pod: "POD unavailable", mode: "Domestic", service: courier.service, originCountry: pickup.country || "India", destinationCountry: delivery.country || "India", pieces: Number(shipmentDetails.pieces) || 1, weight: `${declaredWeight} kg`, eta: courier.eta, expected: "Not provided", value: `₹${Number(shipmentDetails.value) || 0}`, updated: date, deliveredDate: "Not delivered", shipmentStatus: "Booked" };
+    addWorkflowShipment(record); addWorkflowPickup({ id: `pickup-${id}`, reference: `PKU-${id}`, customer: pickupPerson.name || "Saved consignor", status: "Scheduled", date, window: selectedSlot, location: pickup.city || "Pickup location", country: pickup.country || "India", driver: "Awaiting assignment", pieces: record.pieces, weight: record.weight, contact: pickupPerson.phone, address: pickup.line, notes: "Created from shipment booking", createdFrom: "Shipment booking" }); addWorkflowWalletTransaction({ id: `WLT-${Date.now()}`, date, reference: id, type: "Shipment booking", description: "Demo wallet debit for shipment booking", amount: record.total, direction: "debit", status: "Completed", balance: 50000 - record.total }); setSingleCompleted(true); setBookingNotice("Demo booking confirmed and added to the client workflow."); };
+  const confirmBulk = () => { const validRows = bulkRows.filter((row) => !row.errors.length); if (!validRows.length || validRows.some((row) => !row.courier || (row.invoiceAvailable && !row.invoice))) return; const date = new Date().toISOString().slice(0, 10); validRows.forEach((row, index) => { const courier = couriers.find((item) => item.id === row.courier) || couriers[0]; const id = `PSS-BULK-${Date.now()}-${index + 1}`; const weight = Number(row.weight) || 1; const pieces = Number(row.pieces) || 1; const baseCharge = Number(courier.rate.replace(/[^0-9]/g, "")) || 0; const record = { id, pssTracking: id, courierTracking: `COURIER-${id.slice(-8)}`, bookingDate: date, pickupDate: "Not provided", deliveryDate: "Not delivered", status: "Booked", client: "PSS Logistics Client", consignor: row.consignor || row.from, consignee: row.consignee || row.to, courier: courier.name, origin: row.from, destination: row.to, declaredWeight: weight, measuredWeight: weight, billableWeight: weight, baseCharge, weightCharge: 0, tax: baseCharge * 0.18, total: baseCharge * 1.18, payment: row.paymentMode, cod: row.paymentMode === "COD" ? Number(row.codAmount) || 0 : 0, pod: "POD unavailable", mode: "Domestic", service: courier.service, originCountry: "India", destinationCountry: "India", pieces, weight: `${weight} kg`, eta: courier.eta, expected: "Not provided", value: `₹${Number(row.shipmentValue) || 0}`, updated: date, deliveredDate: "Not delivered", shipmentStatus: "Booked" }; addWorkflowShipment(record); addWorkflowPickup({ id: `pickup-${id}`, reference: `PKU-${id}`, customer: row.consignor || row.from, status: "Scheduled", date, window: "Preferred window", location: row.from, country: "India", driver: "Awaiting assignment", pieces, weight: `${weight} kg`, contact: row.consignorPhone, address: row.from, notes: "Created from bulk shipment booking", createdFrom: "Shipment booking" }); addWorkflowWalletTransaction({ id: `WLT-${Date.now()}-${index}`, date, reference: id, type: "Shipment booking", description: "Demo wallet debit for bulk shipment booking", amount: record.total, direction: "debit", status: "Completed", balance: 50000 - record.total }); }); setBulkCompleted(true); setBookingNotice(`${validRows.length} demo bookings confirmed locally and added to the client workflow.`); };
   const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoice(null); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setCodAmount(""); setSelectedCourier(null); setSelectedSlot(null); setShowReview(false); setSingleCompleted(false); setBookingNotice(""); setNotice(""); };
   const milestoneStep = showReview ? 4 : selectedCourier && selectedSlot ? 3 : invoice || documentMode === "dc" ? 2 : 1;
   const milestones = ["Shipment details", "Documentation", "Courier & slot", "Review"];

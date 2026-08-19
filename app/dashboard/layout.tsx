@@ -15,6 +15,7 @@ import { PssIcon } from "@/components/ui/icon";
 import type { IconName } from "@/lib/iconography";
 import { defaultUnreadIds, notifications, NOTIFICATIONS_EVENT, readIdsFromStorage } from "@/components/block/notifications-data";
 import { searchClientMaster } from "@/lib/master-search";
+import { readAuthIdentity, type AuthIdentity } from "@/lib/auth-identity";
 
 type NavItem = { title: string; icon: IconName; href: string };
 
@@ -46,6 +47,7 @@ const support: NavItem[] = [
 
 const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...shipments, ...operations, ...walletBilling, ...report, ...support,
   { title: "Profile", href: "/dashboard/profileAccountManagement" },
+  { title: "Settings", href: "/dashboard/userSettings" },
   { title: "Notifications", href: "/dashboard/notificationsAlerts" },
 ];
 
@@ -74,11 +76,13 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [themeReady, setThemeReady] = useState(false);
+  const [authIdentity, setAuthIdentity] = useState<AuthIdentity | null>(null);
   const [unreadCount, setUnreadCount] = useState(defaultUnreadIds.length);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const currentRoute = allRoutes.find((r) => r.href === pathname)?.title ?? "Dashboard";
   const searchResults = useMemo(() => searchClientMaster(searchQuery), [searchQuery]);
+  useEffect(() => { const timer = window.setTimeout(() => setAuthIdentity(readAuthIdentity()), 0); return () => window.clearTimeout(timer); }, []);
 
   useEffect(() => {
     const syncUnreadCount = () => setUnreadCount(notifications.filter((item) => !readIdsFromStorage().includes(item.id)).length);
@@ -144,8 +148,8 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
           </div>
           {!collapsed && (
             <div className="text-center">
-              <div className="text-[15px] font-semibold tracking-tight">John Doe</div>
-              <div className="text-[13px] text-sidebar-foreground/50">john.doe@example.com</div>
+              <div className="text-[15px] font-semibold tracking-tight">{authIdentity?.username ?? "john.doe"}</div>
+              <div className="text-[13px] text-sidebar-foreground/50">{authIdentity?.email ?? authIdentity?.mobile ?? "john.doe@example.com"}</div>
             </div>
           )}
         </SidebarHeader>
