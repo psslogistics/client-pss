@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowUpRight,
   ArrowDownRight,
@@ -91,6 +92,7 @@ function getUniformTickIndices(totalPoints: number, targetCount: number): number
 }
 
 export default function Dashboard() {
+  const router = useRouter();
   const [volumeTimeframe, setVolumeTimeframe] = useState<"7D" | "14D" | "30D">("30D");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [alerts, setAlerts] = useState<DashboardAlert[]>(ACTION_ALERTS);
@@ -338,6 +340,18 @@ export default function Dashboard() {
           <button className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3 shadow-sm">
             <Download className="mr-1.5 h-4 w-4" />
             Export
+          </button>
+          <button 
+            onClick={()=>{router.push("/dashboard/shipmentBooking");}}
+            className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3 shadow-sm">
+            <Package className="mr-1.5 h-4 w-4" />
+            Booking
+          </button>
+          <button 
+            onClick={()=>{router.push("/dashboard/pickupRequests");}}
+            className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3 shadow-sm">
+            <Truck className="mr-1.5 h-4 w-4" />
+            Pickup
           </button>
         </div>
       </div>

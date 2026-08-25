@@ -32,9 +32,16 @@ const walletBilling: NavItem[] = [
 ];
 
 const operations: NavItem[] = [
+  { title: "All Shipments", icon: "shipments", href: "/dashboard/allShipments" },
   { title: "Warehouses", icon: "warehouse", href: "/dashboard/warehouseManagement" },
   { title: "NDR", icon: "ndr", href: "/dashboard/ndrManagement" },
   { title: "Exceptions", icon: "exceptions", href: "/dashboard/exceptionsManagement" },
+];
+
+const informationCenter: NavItem[] = [
+  { title: "Pincode Serviceability", icon: "tracking", href: "/dashboard/pincodeServiceability" },
+  { title: "Rate Check", icon: "billing", href: "/dashboard/rateCheck" },
+  { title: "Rate Card Check", icon: "reports", href: "/dashboard/rateCard" },
 ];
 
 const report: NavItem[] = [
@@ -45,7 +52,7 @@ const support: NavItem[] = [
   { title: "Support", icon: "support", href: "/dashboard/supportTicketCreation" },
 ];
 
-const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...shipments, ...operations, ...walletBilling, ...report, ...support,
+const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...shipments, ...operations, ...informationCenter, ...walletBilling, ...report, ...support,
   { title: "Profile", href: "/dashboard/profileAccountManagement" },
   { title: "Settings", href: "/dashboard/userSettings" },
   { title: "Notifications", href: "/dashboard/notificationsAlerts" },
@@ -187,6 +194,16 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <NavItems items={operations} pathname={pathname} />
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          {/* Information Center */}
+          <SidebarGroup>
+            <SidebarGroupLabel className="px-3 text-xs font-medium uppercase tracking-widest text-sidebar-foreground/40">
+              Information Center
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <NavItems items={informationCenter} pathname={pathname} />
             </SidebarGroupContent>
           </SidebarGroup>
 
