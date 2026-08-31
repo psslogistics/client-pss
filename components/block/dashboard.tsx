@@ -353,6 +353,13 @@ export default function Dashboard() {
             <Truck className="mr-1.5 h-4 w-4" />
             Pickup
           </button>
+          
+          <button 
+            onClick={()=>{router.push("/dashboard/walletManagement");}}
+            className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3 shadow-sm">
+            {/* <Truck className="mr-1.5 h-4 w-4" /> */}
+            Wallet
+          </button>
         </div>
       </div>
 

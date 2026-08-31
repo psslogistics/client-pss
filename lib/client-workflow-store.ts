@@ -4,7 +4,7 @@ import type { ExceptionCase, NdrCase, SavedAddressRecord } from "@/lib/client-op
 export const WORKFLOW_EVENT = "pss-client-workflow-updated";
 const keys = { shipments: "pss_workflow_shipments", pickups: "pss_workflow_pickups", wallet: "pss_workflow_wallet_transactions", tickets: "pss_workflow_tickets", notifications: "pss_workflow_notifications", ndr: "pss_workflow_ndr", exceptions: "pss_workflow_exceptions" } as const;
 
-export type WorkflowShipment = BillingRecord & { pssTracking: string; courierTracking: string; mode: string; service: string; originCountry: string; destinationCountry: string; pieces: number; weight: string; eta: string; expected: string; value: string; updated: string; pickupDate: string; deliveredDate: string; shipmentStatus: string };
+export type WorkflowShipment = BillingRecord & { pssTracking: string; courierTracking: string; mode: string; service: string; originCountry: string; destinationCountry: string; pieces: number; weight: string; eta: string; expected: string; value: string; updated: string; pickupDate: string; deliveredDate: string; shipmentStatus: string; podUrl?: string };
 export type WorkflowPickup = { id: string; reference: string; client: string; customer: string; status: string; date: string; window: string; location: string; country: string; driver: string; pieces: number; weight: string; contact: string; address: string; notes: string; createdFrom: "Shipment booking" | "Standalone request" };
 type WorkflowPickupInput = Omit<WorkflowPickup, "client"> & { client?: string };
 export type WorkflowTicket = { id: string; shipment?: string; subject: string; details: string; priority: "Top" | "High" | "Normal"; status: "Open" | "Resolved"; source: string; date: string };

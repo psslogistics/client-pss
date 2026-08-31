@@ -15,7 +15,7 @@ import { PssIcon } from "@/components/ui/icon";
 import type { IconName } from "@/lib/iconography";
 import { defaultUnreadIds, notifications, NOTIFICATIONS_EVENT, readIdsFromStorage } from "@/components/block/notifications-data";
 import { searchClientMaster } from "@/lib/master-search";
-import { readAuthIdentity, type AuthIdentity } from "@/lib/auth-identity";
+import { createClient } from "@/lib/supabase/client";
 
 type NavItem = { title: string; icon: IconName; href: string };
 
@@ -83,13 +83,12 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [themeReady, setThemeReady] = useState(false);
-  const [authIdentity, setAuthIdentity] = useState<AuthIdentity | null>(null);
+  const supabase = createClient();
   const [unreadCount, setUnreadCount] = useState(defaultUnreadIds.length);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const currentRoute = allRoutes.find((r) => r.href === pathname)?.title ?? "Dashboard";
   const searchResults = useMemo(() => searchClientMaster(searchQuery), [searchQuery]);
-  useEffect(() => { const timer = window.setTimeout(() => setAuthIdentity(readAuthIdentity()), 0); return () => window.clearTimeout(timer); }, []);
 
   useEffect(() => {
     const syncUnreadCount = () => setUnreadCount(notifications.filter((item) => !readIdsFromStorage().includes(item.id)).length);
@@ -133,6 +132,17 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { if (searchOpen) setTimeout(() => searchRef.current?.focus(), 50); }, [searchOpen]);
 
+  useEffect(() => {
+    const applyFieldMetadata = () => document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select").forEach((field, index) => {
+      if (!field.id) field.id = `client-field-${index + 1}`;
+      if (!field.getAttribute("name")) field.setAttribute("name", field.id);
+    });
+    applyFieldMetadata();
+    const observer = new MutationObserver(applyFieldMetadata);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <>
       <Sidebar collapsible="icon" variant="sidebar" className="border-r border-sidebar-border/70 dark:border-r-2 dark:border-sidebar-border dark:shadow-[1px_0_0_0_var(--sidebar-border)]">
@@ -155,8 +165,8 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
           </div>
           {!collapsed && (
             <div className="text-center">
-              <div className="text-[15px] font-semibold tracking-tight">{authIdentity?.username ?? "john.doe"}</div>
-              <div className="text-[13px] text-sidebar-foreground/50">{authIdentity?.email ?? authIdentity?.mobile ?? "john.doe@example.com"}</div>
+              <div className="text-[15px] font-semibold tracking-tight">Authenticated client</div>
+              <div className="text-[13px] text-sidebar-foreground/50">Secure Supabase session</div>
             </div>
           )}
         </SidebarHeader>
@@ -246,16 +256,17 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             </div>
             {!collapsed && <span className="text-[15px] font-semibold tracking-tight">PSS Logistics</span>}
           </div>
+          <button type="button" onClick={async () => { await supabase.auth.signOut({ scope: "global" }); window.location.assign("/sign-in"); }} className={`mt-2 rounded-lg px-2 py-2 text-left text-xs font-semibold text-destructive hover:bg-destructive/10 ${collapsed ? "text-center" : ""}`}>{collapsed ? "↪" : "Sign out"}</button>
         </SidebarFooter>
       </Sidebar>
 
       <SidebarInset>
-        <div className="flex items-center gap-3 border-b px-4 h-14">
+        <div className="flex min-w-0 items-center gap-3 border-b px-4 h-14">
           <div className="flex items-center gap-2 shrink-0">
             <SidebarTrigger />
             <span className="text-sm font-semibold">{currentRoute}</span>
           </div>
-          <button onClick={() => setSearchOpen(true)} className="flex-1 flex items-center gap-2 h-8 px-3 rounded-lg border border-border/60 bg-muted/40 text-muted-foreground text-sm cursor-pointer hover:bg-muted/60 transition-colors">
+          <button onClick={() => setSearchOpen(true)} className="min-w-0 flex-1 flex items-center gap-2 h-8 px-3 rounded-lg border border-border/60 bg-muted/40 text-muted-foreground text-sm cursor-pointer hover:bg-muted/60 transition-colors">
             <Search className="size-4 shrink-0 opacity-50" />
             <span className="flex-1 text-left truncate">Search shipments, references...</span>
             <kbd className="hidden sm:inline-flex h-5 items-center justify-center gap-2 px-1.5 text-[10px] font-medium text-muted-foreground leading-none"><span className="text-[10px]">⌘</span><span>K</span></kbd>
@@ -268,7 +279,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             {!themeReady ? <span className="size-4" aria-hidden="true" /> : theme === "dark" ? <Sun className="size-4 animate-in zoom-in-75 duration-300" /> : <Moon className="size-4 animate-in zoom-in-75 duration-300" />}
           </button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="min-w-0 p-4">{children}</div>
 
         {/* Search Overlay */}
       {searchOpen && (
