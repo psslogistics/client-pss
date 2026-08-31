@@ -1,0 +1,5 @@
+import Link from "next/link";
+
+export default function AccessPendingPage() {
+  return <main className="grid min-h-dvh place-items-center bg-[#f5f8fc] p-6 text-[#172033]"><section className="w-full max-w-lg rounded-3xl border border-[#dbe5f2] bg-white p-8 text-center shadow-[0_24px_80px_rgba(23,32,51,0.12)] sm:p-12"><div className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#eaf2ff] text-[#2563eb]"><span className="text-2xl">!</span></div><p className="mt-6 text-[11px] font-bold uppercase tracking-[0.2em] text-[#2563eb]">Client workspace</p><h1 className="mt-3 text-3xl font-semibold tracking-[-0.045em]">Assignment pending</h1><p className="mt-4 text-sm leading-6 text-[#738198]">Your account is active, but a PSS Logistics administrator has not assigned it to a client workspace yet.</p><Link href="/sign-in" className="mt-8 inline-flex h-11 items-center justify-center rounded-xl bg-[#2563eb] px-5 text-sm font-semibold text-white shadow-lg shadow-[#2563eb]/20 hover:bg-[#1d4ed8]">Return to sign in</Link></section></main>;
+}
