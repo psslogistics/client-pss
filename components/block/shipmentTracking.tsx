@@ -8,8 +8,6 @@ import {
   RefreshCw, Search, Truck, X, AlertTriangle, Copy, Printer, LifeBuoy,
 } from "lucide-react";
 import Dropdown from "@/components/ui/dropdown";
-import companyData from "@/data/company-demo/company-data.json";
-import { readWorkflowShipments, WORKFLOW_EVENT, type WorkflowShipment } from "@/lib/client-workflow-store";
 
 type Status = "Booked" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type Event = { title: string; description: string; location: string; date: string; time: string; status: Status };
@@ -33,7 +31,7 @@ const statusStyles: Record<Status, string> = {
 };
 const initialFilters: Filters = { status: "", courier: "", mode: "", origin: "", destination: "", delayed: false, exceptions: false };
 
-const makeCompanyEvents = (record: (typeof companyData.deliveries)[number]): Event[] => {
+/* const makeCompanyEvents = (record: (typeof companyData.deliveries)[number]): Event[] => {
   const status = record.status as Status;
   const events: Event[] = [];
   if (record.booked !== "Not provided") events.push({ title: "Shipment booked", description: "Booking record received from the company delivery file", location: record.origin, date: record.booked, time: "Not provided", status: "Booked" });
@@ -49,8 +47,8 @@ const makeCompanyActions = (record: (typeof companyData.deliveries)[number]): Ac
 const shipments: Shipment[] = companyData.deliveries.map((record) => {
   const status = record.status as Status;
   return { id: record.id, orderReference: record.orderId || record.id, client: record.client, clientCode: record.clientCode, consignee: record.consignee || "Not provided", courierTracking: record.courierTracking, pssTracking: record.id, courier: record.courier, mode: record.mode, service: record.service, origin: record.origin, originCountry: "India", destination: record.destination, destinationCountry: "India", status, progress: statusProgress[status], pieces: record.pieces, weight: record.weight, eta: record.eta, booked: record.booked, expected: record.expected, payment: record.payment, value: record.value, invoiceNumber: record.invoiceNumber || "Not provided", pod: "POD unavailable", podUrl: undefined, updated: record.updated, delay: record.delay, events: makeCompanyEvents(record), actions: makeCompanyActions(record) };
-});
-const workflowToShipment = (record: WorkflowShipment): Shipment => ({ id: record.id, orderReference: record.id, client: record.client, clientCode: "CLIENT-DEMO", consignee: record.consignee || "Not provided", courierTracking: record.courierTracking, pssTracking: record.pssTracking, courier: record.courier, mode: record.mode, service: record.service, origin: record.origin, originCountry: record.originCountry, destination: record.destination, destinationCountry: record.destinationCountry, status: record.status as Status, progress: statusProgress[record.status as Status] || 10, pieces: record.pieces, weight: record.weight, eta: record.eta, booked: record.bookingDate, expected: record.expected, payment: record.payment, value: record.value, invoiceNumber: "Not provided", pod: record.pod || "POD unavailable", podUrl: record.podUrl, updated: record.updated, events: [{ title: "Shipment booked", description: "Booking created in the client workspace", location: record.origin, date: record.bookingDate, time: "Not provided", status: "Booked" }], actions: [{ title: "Client booking confirmed", description: "Shipment was created from the client booking flow", actor: "Client user", source: "user", date: record.bookingDate, time: "Not provided", severity: "success" }] });
+}); */
+const shipments: Shipment[] = [];
 
 const normalize = (value: string) => value.trim().toLowerCase();
 const matchesShipment = (shipment: Shipment, query: string) => !query || [shipment.pssTracking, shipment.courierTracking, shipment.client, shipment.clientCode, shipment.id, shipment.origin, shipment.destination, shipment.courier].some((value) => normalize(value).includes(normalize(query)));
@@ -86,18 +84,17 @@ const Badge = ({ status }: { status: Status }) => <span className={cn("inline-fl
 const iconForStatus = (status: Status) => status === "Exception" ? AlertTriangle : status === "Delivered" ? CheckCircle2 : status === "Booked" ? Clipboard : Truck;
 
 export default function ShipmentTracking() {
-  const [query, setQuery] = useState(""); const [selectedId, setSelectedId] = useState(shipments[0].id); const [filters, setFilters] = useState<Filters>(initialFilters);
-  const [workflowShipments, setWorkflowShipments] = useState<Shipment[]>([]);
+  const [query, setQuery] = useState(""); const [selectedId, setSelectedId] = useState(""); const [filters, setFilters] = useState<Filters>(initialFilters);
   const [filterOpen, setFilterOpen] = useState(false); const [exportOpen, setExportOpen] = useState(false); const [mobileDetail, setMobileDetail] = useState(false); const [notice, setNotice] = useState(""); const [refreshing, setRefreshing] = useState(false); const [copied, setCopied] = useState(""); const [sortNewest, setSortNewest] = useState(true); const [sortActionsNewest, setSortActionsNewest] = useState(true);
-  const allShipments = useMemo(() => [...workflowShipments, ...shipments], [workflowShipments]);
-  useEffect(() => { const sync = () => setWorkflowShipments(readWorkflowShipments().map(workflowToShipment)); sync(); window.addEventListener(WORKFLOW_EVENT, sync); return () => window.removeEventListener(WORKFLOW_EVENT, sync); }, []);
+  const allShipments = useMemo(() => shipments, []);
   useEffect(() => { const timer = window.setTimeout(() => { const id = new URLSearchParams(window.location.search).get("id"); if (id) { const found = allShipments.find((s) => [s.id, s.pssTracking, s.courierTracking].includes(id)); if (found) { setSelectedId(found.id); setMobileDetail(true); } else setNotice(`No shipment matched reference ${id}.`); } }, 0); return () => window.clearTimeout(timer); }, [allShipments]);
   const filtered = useMemo(() => allShipments.filter((s) => matchesShipment(s, query) && (!filters.status || s.status === filters.status) && (!filters.courier || s.courier === filters.courier) && (!filters.mode || s.mode === filters.mode) && (!filters.origin || s.origin === filters.origin) && (!filters.destination || s.destination === filters.destination) && (!filters.delayed || s.status === "Delayed") && (!filters.exceptions || s.status === "Exception")), [allShipments, query, filters]);
   const selected = allShipments.find((s) => s.id === selectedId) || filtered[0] || allShipments[0];
-  const activeFilterCount = Object.values(filters).filter(Boolean).length; const eventList = sortNewest ? [...selected.events].reverse() : selected.events; const actionList = sortActionsNewest ? [...selected.actions].reverse() : selected.actions;
+  const activeFilterCount = Object.values(filters).filter(Boolean).length; const eventList = selected ? (sortNewest ? [...selected.events].reverse() : selected.events) : []; const actionList = selected ? (sortActionsNewest ? [...selected.actions].reverse() : selected.actions) : [];
+  if (!allShipments.length) return <div className="flex min-h-80 w-full flex-col items-center justify-center rounded-xl border border-border bg-card p-8 text-center"><Package className="size-6 text-muted-foreground/50" /><h1 className="mt-3 text-base font-semibold">No shipments yet</h1><p className="mt-1 max-w-sm text-xs text-muted-foreground">Shipment tracking will appear here once production shipment data is connected to your client workspace.</p></div>;
   const selectShipment = (id: string) => { setSelectedId(id); setMobileDetail(true); setNotice(""); };
   const copy = async (value: string, label: string) => { try { await navigator.clipboard.writeText(value); } catch { /* clipboard may be unavailable in demo */ } setCopied(label); setTimeout(() => setCopied(""), 1600); };
-  const refresh = () => { setRefreshing(true); setNotice("Tracking data refreshed from the demo feed."); setTimeout(() => setRefreshing(false), 700); };
+  const refresh = () => { setRefreshing(true); setNotice("Tracking data refreshed."); setTimeout(() => setRefreshing(false), 700); };
   const exportExcel = (list: Shipment[] = filtered) => { if (!list.length) return; const bytes = buildWorkbook(list, filters, query); const slug = filters.status ? filters.status.replaceAll(" ", "-") : "filtered"; downloadBinary(`PSS-Tracking-${slug}-${new Date().toISOString().slice(0, 10)}.xlsx`, bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); setExportOpen(false); setNotice(`Excel export ready with ${list.length} shipment${list.length === 1 ? "" : "s"}.`); };
   const resetFilters = () => setFilters(initialFilters);
   const input = "h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";

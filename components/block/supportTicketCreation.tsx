@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Clock3, FileText, LifeBuoy, Mail, MessageSquare, Search, Send, ShieldCheck, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { addWorkflowTicket, readWorkflowTickets, WORKFLOW_EVENT } from "@/lib/client-workflow-store";
 
 type Tab = "tickets" | "new" | "contact";
 type TicketStatus = "Open" | "Pending" | "Resolved" | "Closed";
@@ -21,7 +20,7 @@ type Ticket = {
   updated: string;
 };
 
-const tickets: Ticket[] = [
+/* const tickets: Ticket[] = [
   { id: "TKT20260008", status: "Resolved", priority: "Urgent", subject: "Tracking discrepancy", messages: 6, updated: "about 6 hours ago", category: "Pickup", requester: "Omar Hassan" },
   { id: "TKT20260010", status: "Pending", priority: "Low", subject: "Tracking discrepancy", messages: 6, updated: "about 7 hours ago", category: "Tracking" },
   { id: "TKT20260004", status: "Pending", priority: "Urgent", subject: "Rate quote request", messages: 8, updated: "about 16 hours ago", category: "Pickup", requester: "Elena Petrov" },
@@ -32,7 +31,8 @@ const tickets: Ticket[] = [
   { id: "TKT20260007", status: "Open", priority: "Urgent", subject: "Documentation error", messages: 7, updated: "1 day ago", category: "Tracking", requester: "Sarah Johnson" },
   { id: "TKT20260006", status: "Resolved", priority: "High", subject: "Account access issue", messages: 5, updated: "1 day ago", category: "Billing", requester: "Priya Sharma" },
   { id: "TKT20260009", status: "Pending", priority: "Urgent", subject: "Documentation error", messages: 6, updated: "1 day ago", category: "Billing" },
-];
+]; */
+const tickets: Ticket[] = [];
 
 const statusStyles: Record<TicketStatus, string> = {
   Open: "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300",
@@ -47,10 +47,11 @@ const priorityStyles: Record<TicketPriority, string> = {
   Urgent: "text-destructive",
 };
 
-const initialChatMessages: ChatMessage[] = [
+/* const initialChatMessages: ChatMessage[] = [
   { id: 1, sender: "user", text: "Could you please help us review the latest update on this request? The shipment details may need another verification.", time: "about 6 hours ago" },
   { id: 2, sender: "support", text: "Thanks for reaching out. Our operations team is checking this with the relevant courier and will update the ticket with the next action.", time: "Support team · 1 hour ago" },
-];
+]; */
+const initialChatMessages: ChatMessage[] = [];
 
 function StatusBadge({ status }: { status: TicketStatus }) {
   return <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold", statusStyles[status])}>{status}</span>;
@@ -59,7 +60,7 @@ function StatusBadge({ status }: { status: TicketStatus }) {
 export default function SupportTicketCreation() {
   const [tab, setTab] = useState<Tab>("tickets");
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState(tickets[0].id);
+  const [selectedId, setSelectedId] = useState("");
   const [notice, setNotice] = useState("");
   const [category, setCategory] = useState("Tracking");
   const [priority, setPriority] = useState<TicketPriority>("High");
@@ -68,10 +69,8 @@ export default function SupportTicketCreation() {
   const [chatDraft, setChatDraft] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [menuOpen, setMenuOpen] = useState<"category" | "priority" | null>(null);
-  const [workflowTickets, setWorkflowTickets] = useState<Ticket[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { const sync = () => setWorkflowTickets(readWorkflowTickets().map((ticket) => ({ id: ticket.id, subject: ticket.subject, status: ticket.status === "Resolved" ? "Resolved" : "Open", priority: ticket.priority === "Top" ? "Urgent" : ticket.priority === "Normal" ? "Low" : "High", category: ticket.source, messages: 1, updated: "Just now" }))); sync(); window.addEventListener(WORKFLOW_EVENT, sync); return () => window.removeEventListener(WORKFLOW_EVENT, sync); }, []);
 
   useEffect(() => {
     const close = (event: PointerEvent) => {
@@ -88,13 +87,13 @@ export default function SupportTicketCreation() {
   }, [notice]);
 
   const filteredTickets = useMemo(() => {
-    const allTickets = [...workflowTickets, ...tickets];
+    const allTickets = tickets;
     const normalized = query.trim().toLowerCase();
     if (!normalized) return allTickets;
     return allTickets.filter((ticket) => [ticket.id, ticket.subject, ticket.category, ticket.requester].filter(Boolean).some((value) => value!.toLowerCase().includes(normalized)));
-  }, [query, workflowTickets]);
+  }, [query]);
 
-  const selectedTicket = [...workflowTickets, ...tickets].find((ticket) => ticket.id === selectedId) || tickets[0];
+  const selectedTicket = tickets.find((ticket) => ticket.id === selectedId) as Ticket;
   const sendChatMessage = () => {
     const text = chatDraft.trim();
     if (!text) return;
@@ -108,14 +107,13 @@ export default function SupportTicketCreation() {
       return;
     }
     const id = `TKT-${Date.now()}`;
-    addWorkflowTicket({ id, subject, details: description, priority: priority === "Urgent" ? "Top" : priority === "Low" ? "Normal" : "High", status: "Open", source: category, date: new Date().toISOString().slice(0, 10) });
-    setSelectedId(id);
-    setNotice("Ticket created successfully. Our support team will respond shortly.");
+    setNotice("Support ticket creation will be available when the production support service is connected.");
     setSubject("");
     setDescription("");
     setTab("tickets");
   };
 
+  if (tab === "tickets" && !selectedTicket) return <div className="grid min-h-[360px] place-items-center rounded-xl border border-dashed border-border bg-card p-8 text-center"><div><LifeBuoy className="mx-auto h-8 w-8 text-primary" /><h1 className="mt-3 text-base font-semibold">No support tickets yet</h1><p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">Your support history will appear here once the production support service is connected.</p><button type="button" onClick={() => setTab("new")} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><Send className="h-3.5 w-3.5" />Create a request</button></div></div>;
   return <div className="flex h-[calc(100vh-5.5rem)] max-h-[calc(100vh-5.5rem)] w-full flex-col overflow-hidden">
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xs">
       <div className="flex flex-col gap-3 border-b border-border/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">

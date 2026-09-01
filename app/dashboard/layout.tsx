@@ -12,6 +12,7 @@ import {
   ChevronRight, User, Settings, Bell, Search, Moon, Sun,
 } from "lucide-react";
 import { PssIcon } from "@/components/ui/icon";
+import { BrandLogo } from "@/components/ui/brand-logo";
 import type { IconName } from "@/lib/iconography";
 import { defaultUnreadIds, notifications, NOTIFICATIONS_EVENT, readIdsFromStorage } from "@/components/block/notifications-data";
 import { searchClientMaster } from "@/lib/master-search";
@@ -83,7 +84,8 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [themeReady, setThemeReady] = useState(false);
-  const supabase = createClient();
+  const [profile, setProfile] = useState<{ display_name: string | null; email: string | null; company_name?: string | null }>({ display_name: null, email: null });
+  const supabase = useMemo(() => createClient(), []);
   const [unreadCount, setUnreadCount] = useState(defaultUnreadIds.length);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -133,6 +135,17 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (searchOpen) setTimeout(() => searchRef.current?.focus(), 50); }, [searchOpen]);
 
   useEffect(() => {
+    let active = true;
+    void (async () => {
+      const { data: userResult } = await supabase.auth.getUser();
+      if (!userResult.user || !active) return;
+      const { data } = await supabase.from("profiles").select("display_name,email,company_name").eq("id", userResult.user.id).maybeSingle();
+      if (active) setProfile({ display_name: data?.display_name ?? userResult.user.user_metadata?.full_name ?? null, email: data?.email ?? userResult.user.email ?? null, company_name: data?.company_name ?? null });
+    })();
+    return () => { active = false; };
+  }, [supabase]);
+
+  useEffect(() => {
     const applyFieldMetadata = () => document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select").forEach((field, index) => {
       if (!field.id) field.id = `client-field-${index + 1}`;
       if (!field.getAttribute("name")) field.setAttribute("name", field.id);
@@ -160,13 +173,16 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
                 <Link href="/dashboard/userSettings" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent rounded-md mx-1 transition-colors">
                   <Settings className="size-4 opacity-60" />Settings
                 </Link>
+                <button type="button" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut({ scope: "global" }); window.location.assign("/sign-in"); }} className="flex w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10 mx-1">
+                  <span aria-hidden="true">↪</span>Sign out
+                </button>
               </div>
             )}
           </div>
           {!collapsed && (
             <div className="text-center">
-              <div className="text-[15px] font-semibold tracking-tight">Authenticated client</div>
-              <div className="text-[13px] text-sidebar-foreground/50">Secure Supabase session</div>
+              <div className="max-w-[180px] truncate text-[15px] font-semibold tracking-tight">{profile.display_name || "Client account"}</div>
+              <div className="max-w-[180px] truncate text-[13px] text-sidebar-foreground/50">{profile.email || "Secure Supabase session"}</div>
             </div>
           )}
         </SidebarHeader>
@@ -251,12 +267,8 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
         {/* Footer Brand */}
         <SidebarFooter className="border-t border-sidebar-border/40 py-3">
           <div className={`flex items-center gap-2 ${collapsed ? "justify-center" : "px-1"}`}>
-            <div className="size-8 rounded-md bg-sidebar-primary text-sidebar-primary-foreground grid place-items-center text-sm font-bold shrink-0">
-              P
-            </div>
-            {!collapsed && <span className="text-[15px] font-semibold tracking-tight">PSS Logistics</span>}
+            <BrandLogo compact={collapsed} className={collapsed ? "w-8" : "w-[132px]"} />
           </div>
-          <button type="button" onClick={async () => { await supabase.auth.signOut({ scope: "global" }); window.location.assign("/sign-in"); }} className={`mt-2 rounded-lg px-2 py-2 text-left text-xs font-semibold text-destructive hover:bg-destructive/10 ${collapsed ? "text-center" : ""}`}>{collapsed ? "↪" : "Sign out"}</button>
         </SidebarFooter>
       </Sidebar>
 

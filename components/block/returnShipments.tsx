@@ -74,7 +74,7 @@ const toneStyles: Record<Tone, string> = {
 };
 const createEvent = (title: string, description: string, location: string, date: string, time: string, tone: Tone): TimelineEvent => ({ title, description, location, date, time, tone });
 
-const initialRtos: Rto[] = [
+/* const initialRtos: Rto[] = [
   {
     id: "RTO-2026-0041", shipment: "PSS20260041", customer: "Northstar Retail Pvt Ltd", reason: "Customer unavailable",
     status: "Documents pending", courier: "Delhivery", tracking: "DLV-88310421", origin: "Bengaluru", destination: "Pune",
@@ -124,7 +124,8 @@ const initialRtos: Rto[] = [
     documents: { ...emptyDocuments(), mode: "dc", dcValue: "62500", ewayRequired: true },
     events: [createEvent("Shipment marked for RTO", "Delivery window expired without customer confirmation", "Lucknow", "2026-08-06", "08:30 AM", "warning"), createEvent("Documents requested", "Delivery Challan and E-Way Bill are pending", "PSS Operations", "2026-08-06", "08:31 AM", "primary")], notes: [],
   },
-];
+]; */
+const initialRtos: Rto[] = [];
 
 const normalize = (value: string) => value.trim().toLowerCase();
 const matches = (rto: Rto, query: string) => !query || [rto.id, rto.shipment, rto.customer, rto.reason, rto.status, rto.courier, rto.tracking].some((value) => normalize(value).includes(normalize(query)));
@@ -146,7 +147,7 @@ function TimelineItem({ event, last }: { event: TimelineEvent; last: boolean }) 
 export default function ReturnShipments() {
   const [rtos, setRtos] = useState(initialRtos);
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState(initialRtos[0].id);
+  const [selectedId, setSelectedId] = useState("");
   const [filters, setFilters] = useState({ status: "" as RtoStatus | "", reason: "", pending: false, ageing: false });
   const [filterOpen, setFilterOpen] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -179,6 +180,7 @@ export default function ReturnShipments() {
   const createRto = (draft: { shipment: string; customer: string; reason: string; origin: string; destination: string; value: string; documents: DocumentPack }) => { const sequence = 45 + rtos.length; const id = `RTO-2026-${String(sequence).padStart(4, "0")}`; const next: Rto = { id, shipment: draft.shipment, customer: draft.customer, reason: draft.reason, status: documentReady(draft.documents) ? "Ready for return" : "Documents pending", courier: "Assigned automatically", tracking: "Generated after document validation", origin: draft.origin, destination: draft.destination, ageing: "Just marked", ageingDays: 0, pieces: 1, weight: "Pending manifest", value: draft.value || "—", lastUpdated: "Just now", receiver: "Pending", condition: "Awaiting return", nextAction: documentReady(draft.documents) ? "Documents complete · return movement is automatic" : "Complete the required return documents", documents: draft.documents, events: [createEvent("Shipment marked for RTO", "Return-to-origin movement initiated", draft.destination, new Date().toISOString().slice(0, 10), "Just now", "warning"), ...(documentReady(draft.documents) ? [createEvent("Documents verified", "Return documents validated successfully", "PSS Operations", new Date().toISOString().slice(0, 10), "Just now", "success") as TimelineEvent] : [createEvent("Documents requested", "Updated Invoice or Delivery Challan is required", "PSS Operations", new Date().toISOString().slice(0, 10), "Just now", "primary") as TimelineEvent])], notes: [] }; setRtos((current) => [next, ...current]); setSelectedId(id); setCreatingRto(false); setMobileDetail(true); setNotice(`${id} created. ${documentReady(draft.documents) ? "Return movement is automatic." : "Documents are still required."}`); };
   const exportCsv = () => { const rows = filtered.map((rto) => [rto.id, rto.shipment, rto.customer, rto.reason, rto.status, documentReady(rto.documents) ? "Ready" : "Pending", rto.documents.mode === "invoice" ? rto.documents.invoiceName : rto.documents.dcNumber, rto.documents.ewayRequired ? rto.documents.ewayNumber : "Not required", rto.ageing].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")); downloadFile(`PSS-RTO-${new Date().toISOString().slice(0, 10)}.csv`, ["RTO,Shipment,Customer,Reason,Status,Documents,Invoice or DC,E-Way Bill,Ageing", ...rows].join("\n"), "text/csv;charset=utf-8"); setNotice(`CSV export ready with ${filtered.length} RTOs.`); };
 
+  if (!rtos.length) return <div className="grid min-h-[360px] place-items-center rounded-xl border border-dashed border-border bg-card p-8 text-center"><div><Truck className="mx-auto h-8 w-8 text-primary" /><h1 className="mt-3 text-base font-semibold">No return shipments yet</h1><p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">Return-to-origin records will appear here when the production shipment service is connected.</p></div></div>;
   return <div className="w-full space-y-3">
     <div className="relative flex flex-wrap items-center gap-2">
       <Metric label="Needs action" value={String(counts.action)} tone="primary" active={activeKpi === "action"} onClick={() => applyKpi("action", { pending: true })} />

@@ -2,9 +2,7 @@
 
 import Link from "next/link";
 import { ArrowRight, PackageSearch, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import companyData from "@/data/company-demo/company-data.json";
-import { readWorkflowShipments, WORKFLOW_EVENT, type WorkflowShipment } from "@/lib/client-workflow-store";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
 type ShipmentStatus = "All" | "Active" | "Booked" | "Picked Up" | "In Transit" | "Out for Delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
@@ -13,9 +11,6 @@ type ShipmentRow = { id: string; pssTracking: string; courierTracking: string; c
 const statuses: ShipmentStatus[] = ["All", "Active", "Booked", "Picked Up", "In Transit", "Out for Delivery", "Delivered", "Delayed", "Exception", "Returned", "Cancelled"];
 const activeStatuses = new Set(["Booked", "Picked Up", "In Transit", "Out for Delivery", "Delayed", "Exception"]);
 const displayStatus = (status: string): ShipmentRow["status"] => status === "Picked up" ? "Picked Up" : status as ShipmentRow["status"];
-const workflowRow = (item: WorkflowShipment): ShipmentRow => ({ id: item.id, pssTracking: item.pssTracking, courierTracking: item.courierTracking, client: item.client, origin: item.origin, destination: item.destination, courier: item.courier, status: displayStatus(item.status || item.shipmentStatus), pieces: item.pieces, weight: item.weight, eta: item.eta, booked: item.bookingDate });
-
-const seededRows: ShipmentRow[] = companyData.deliveries.map((item) => ({ id: item.id, pssTracking: item.id, courierTracking: item.courierTracking, client: item.client, origin: item.origin, destination: item.destination, courier: item.courier, status: displayStatus(item.status), pieces: item.pieces, weight: item.weight, eta: item.eta, booked: item.booked }));
 const searchable = (row: ShipmentRow) => [row.pssTracking, row.courierTracking, row.client, row.origin, row.destination, row.courier].join(" ").toLowerCase();
 
 const statusStyles: Record<ShipmentRow["status"], string> = {
@@ -25,9 +20,7 @@ const statusStyles: Record<ShipmentRow["status"], string> = {
 export default function AllShipments() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<ShipmentStatus>("All");
-  const [workflowRows, setWorkflowRows] = useState<ShipmentRow[]>([]);
-  useEffect(() => { const sync = () => setWorkflowRows(readWorkflowShipments().map(workflowRow)); sync(); window.addEventListener(WORKFLOW_EVENT, sync); return () => window.removeEventListener(WORKFLOW_EVENT, sync); }, []);
-  const rows = useMemo(() => [...workflowRows, ...seededRows], [workflowRows]);
+  const rows: ShipmentRow[] = [];
   const counts = useMemo(() => statuses.reduce<Record<ShipmentStatus, number>>((result, item) => { result[item] = item === "All" ? rows.length : item === "Active" ? rows.filter((row) => activeStatuses.has(row.status)).length : rows.filter((row) => row.status === item).length; return result; }, {} as Record<ShipmentStatus, number>), [rows]);
   const filtered = useMemo(() => rows.filter((row) => (!query.trim() || searchable(row).includes(query.trim().toLowerCase())) && (status === "All" || status === "Active" ? status === "All" || activeStatuses.has(row.status) : row.status === status)), [query, rows, status]);
 

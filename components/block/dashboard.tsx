@@ -6,104 +6,47 @@ import { useRouter } from "next/navigation";
 import {
   ArrowUpRight,
   ArrowDownRight,
-  Calendar as CalendarIcon,
   RefreshCw,
-  Download,
+  FileText,
   TriangleAlert,
   Clock,
   ArrowRight,
   Bell,
   Truck,
   MapPin,
-  ChevronLeft,
-  ChevronRight,
   Package,
   RotateCcw,
   Settings,
   SlidersHorizontal,
   X,
   Check,
-  Layers,
   PieChart,
   BarChart3,
+  WalletCards,
+  Receipt,
 } from "lucide-react";
 import {
   ALL_KPI_METRICS,
   DEFAULT_SELECTED_KPI_IDS,
-  ALL_VOLUME_METRICS,
-  DEFAULT_SELECTED_VOLUME_KEYS,
-  TRANSPORT_MODES,
   ACTION_ALERTS,
   RECENT_ACTIVITIES,
-  VOLUME_DATA,
   DashboardAlert,
   KpiMetric,
-  VolumeMetricDef,
 } from "./dashboard-data";
 import { COMPANY_DELAYED_SHIPMENTS, COMPANY_SHIPMENT_SUMMARY, COMPANY_TODAY_PICKUPS } from "@/lib/company-dashboard-data";
-
-// Monotone cubic Bézier curve calculation for silky-smooth Recharts-grade charts
-function getSmoothSplinePath(points: { x: number; y: number }[]): { areaPath: string; linePath: string } {
-  if (points.length === 0) return { areaPath: "", linePath: "" };
-  if (points.length === 1) {
-    return {
-      areaPath: `M ${points[0].x},240 L ${points[0].x},${points[0].y} Z`,
-      linePath: `M ${points[0].x},${points[0].y}`,
-    };
-  }
-
-  let linePath = `M ${points[0].x.toFixed(2)},${points[0].y.toFixed(2)}`;
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[Math.max(i - 1, 0)];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[Math.min(i + 2, points.length - 1)];
-
-    const cp1x = p1.x + (p2.x - p0.x) / 6;
-    const cp1y = p1.y + (p2.y - p0.y) / 6;
-
-    const cp2x = p2.x - (p3.x - p1.x) / 6;
-    const cp2y = p2.y - (p3.y - p1.y) / 6;
-
-    linePath += ` C ${cp1x.toFixed(2)},${cp1y.toFixed(2)} ${cp2x.toFixed(2)},${cp2y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
-  }
-
-  const lastPoint = points[points.length - 1];
-  const firstPoint = points[0];
-  const areaPath = `${linePath} L ${lastPoint.x.toFixed(2)},240 L ${firstPoint.x.toFixed(2)},240 Z`;
-
-  return { areaPath, linePath };
-}
-
-// Mathematical uniform tick index sampling helper (prevents end-point crowding)
-function getUniformTickIndices(totalPoints: number, targetCount: number): number[] {
-  if (totalPoints <= targetCount) {
-    return Array.from({ length: totalPoints }, (_, i) => i);
-  }
-  const indices: number[] = [];
-  for (let k = 0; k < targetCount; k++) {
-    const idx = Math.round((k * (totalPoints - 1)) / (targetCount - 1));
-    if (!indices.includes(idx)) {
-      indices.push(idx);
-    }
-  }
-  return indices;
-}
+import { readClientDashboardCounts, readClientFinancialSnapshot, readClientTransportModes } from "@/lib/client-dashboard-data";
+import { formatINR } from "@/lib/client-finance-data";
+import ClientReportPreview from "./client-report-preview";
 
 export default function Dashboard() {
   const router = useRouter();
-  const [volumeTimeframe, setVolumeTimeframe] = useState<"7D" | "14D" | "30D">("30D");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [alerts, setAlerts] = useState<DashboardAlert[]>(ACTION_ALERTS);
-  const [selectedMonth, setSelectedMonth] = useState("August 2026");
-  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  const [isReportOpen, setIsReportOpen] = useState(false);
 
   // Column 3 Segmented View Toggle ("summary" | "modes")
   const [column3View, setColumn3View] = useState<"summary" | "modes">("summary");
-
-  // Interactive Schedule Calendar State
-  const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(4);
 
   // Keep the first render identical on the server and client.
   const [selectedKpiIds, setSelectedKpiIds] = useState<string[]>(DEFAULT_SELECTED_KPI_IDS);
@@ -111,20 +54,15 @@ export default function Dashboard() {
   const [tempSelectedIds, setTempSelectedIds] = useState<string[]>(DEFAULT_SELECTED_KPI_IDS);
 
   // Load browser-only preferences after hydration.
-  const [selectedVolumeKeys, setSelectedVolumeKeys] = useState<string[]>(DEFAULT_SELECTED_VOLUME_KEYS);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
         const kpis = JSON.parse(localStorage.getItem("pss_selected_kpis") || "null");
         if (Array.isArray(kpis) && kpis.length > 0 && kpis.length <= 5) setSelectedKpiIds(kpis);
-        const volumes = JSON.parse(localStorage.getItem("pss_selected_volume_keys") || "null");
-        if (Array.isArray(volumes) && volumes.length > 0 && volumes.length <= 3) setSelectedVolumeKeys(volumes);
       } catch { /* Ignore invalid saved preferences. */ }
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
-  const [isVolumeMetricsOpen, setIsVolumeMetricsOpen] = useState(false);
-
   // Pulsing Alerts Modal State
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
 
@@ -134,7 +72,7 @@ export default function Dashboard() {
       if (e.key === "Escape") {
         setIsAlertsModalOpen(false);
         setIsCustomizeOpen(false);
-        setIsVolumeMetricsOpen(false);
+        setIsReportOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -172,23 +110,6 @@ export default function Dashboard() {
     setTempSelectedIds(DEFAULT_SELECTED_KPI_IDS);
   };
 
-  const handleToggleVolumeKey = (key: string) => {
-    let nextKeys: string[];
-    if (selectedVolumeKeys.includes(key)) {
-      if (selectedVolumeKeys.length === 1) return; // Keep at least 1
-      nextKeys = selectedVolumeKeys.filter((k) => k !== key);
-    } else {
-      if (selectedVolumeKeys.length >= 3) return; // Limit to max 3
-      nextKeys = [...selectedVolumeKeys, key];
-    }
-    setSelectedVolumeKeys(nextKeys);
-    try {
-      localStorage.setItem("pss_selected_volume_keys", JSON.stringify(nextKeys));
-    } catch {
-      // Ignore
-    }
-  };
-
   const handleRefresh = () => {
     setIsRefreshing(true);
     setTimeout(() => setIsRefreshing(false), 800);
@@ -208,12 +129,6 @@ export default function Dashboard() {
     .filter((m): m is KpiMetric => m !== undefined)
     .slice(0, 5);
 
-  // Active Volume Metric Objects (limit to max 3)
-  const activeVolumeMetrics = selectedVolumeKeys
-    .map((key) => ALL_VOLUME_METRICS.find((m) => m.key === key))
-    .filter((m): m is VolumeMetricDef => m !== undefined)
-    .slice(0, 3);
-
 
   const renderActivityIcon = (iconName: string) => {
     switch (iconName) {
@@ -232,68 +147,14 @@ export default function Dashboard() {
     }
   };
 
-  const currentVolumeSeries = VOLUME_DATA[volumeTimeframe];
-
-  // Dynamically calculate max value across all selected active metrics
-  const maxVolume = Math.max(
-    ...currentVolumeSeries.map((d) =>
-      Math.max(...activeVolumeMetrics.map((m) => (d[m.key] as number) || 0))
-    ),
-    100
-  );
-
-  // Compute smooth points for each active metric
-  const activeMetricsPoints = activeVolumeMetrics.map((m) => ({
-    metric: m,
-    points: currentVolumeSeries.map((d, i) => ({
-      x: (i / (currentVolumeSeries.length - 1)) * 600,
-      y: 240 - (((d[m.key] as number) || 0) / maxVolume) * 200,
-      val: (d[m.key] as number) || 0,
-    })),
-  }));
-
-  // Generate smooth curves for each active metric
-  const activeMetricsCurves = activeMetricsPoints.map((item) => ({
-    metric: item.metric,
-    points: item.points,
-    curves: getSmoothSplinePath(item.points),
-  }));
-
-  // Smart uniform tick sampling for X-axis date labels (1-day step for 7D, 2-day step for 14D, 5-day step for 30D)
-  const sampledIndices = getUniformTickIndices(
-    currentVolumeSeries.length,
-    volumeTimeframe === "7D" ? 7 : volumeTimeframe === "14D" ? 8 : 7
-  );
-
-  // Delay Severity Days mapping for Delayed Shipments
-  const delayDaysMap: Record<string, string> = {
-    "SHP-00031": "+4d Late",
-    "SHP-00041": "+2d Late",
-    "SHP-00018": "+5d Late",
-    "SHP-00021": "+3d Late",
-    "SHP-00009": "+1d Late",
-  };
-
-  // Mock Calendar Events for Dynamic Drawer
-  const calendarDayEvents: Record<number, { title: string; type: string; badge: string; color: string }[]> = {
-    1: [{ title: "Customs Audit — Cargo PSS20260012", type: "Exception", badge: "High", color: "text-amber-500 bg-amber-500/10" }],
-    4: [
-      { title: "Today's Pickups Execution (11 PKUs)", type: "Pickup", badge: "Live", color: "text-primary bg-primary/10" },
-      { title: "Rotterdam Express Arrival", type: "Delivery", badge: "On-Time", color: "text-emerald-500 bg-emerald-500/10" },
-    ],
-    8: [{ title: "Bulk Container Departure — MSC", type: "Dispatch", badge: "Ocean", color: "text-sky-500 bg-sky-500/10" }],
-    9: [
-      { title: "Customs Hold Review — 3 Cargoes", type: "Hold", badge: "Urgent", color: "text-destructive bg-destructive/10" },
-      { title: "Air Freight Delivery — Frankfurt", type: "Delivery", badge: "Scheduled", color: "text-emerald-500 bg-emerald-500/10" },
-    ],
-    11: [{ title: "Monthly Carrier Performance Audit", type: "Audit", badge: "Internal", color: "text-muted-foreground bg-muted" }],
-    12: [{ title: "Overdue Invoice Settlement", type: "Finance", badge: "Billing", color: "text-amber-500 bg-amber-500/10" }],
-    13: [{ title: "Rotterdam Hub Capacity Expansion", type: "Facility", badge: "Planned", color: "text-sky-500 bg-sky-500/10" }],
-  };
-  const totalShipments = COMPANY_SHIPMENT_SUMMARY.reduce((total, item) => total + item.count, 0);
-  const activeShipments = COMPANY_SHIPMENT_SUMMARY.filter((item) => ["Booked", "Picked Up", "In Transit", "Out for Delivery"].includes(item.status)).reduce((total, item) => total + item.count, 0);
+  const dashboardCounts = readClientDashboardCounts();
+  const totalShipments = dashboardCounts.totalShipments || COMPANY_SHIPMENT_SUMMARY.reduce((total, item) => total + item.count, 0);
+  const activeShipments = dashboardCounts.activeShipments || COMPANY_SHIPMENT_SUMMARY.filter((item) => ["Booked", "Picked Up", "In Transit", "Out for Delivery"].includes(item.status)).reduce((total, item) => total + item.count, 0);
   const delayedShipments = COMPANY_DELAYED_SHIPMENTS.length;
-  const exceptionShipments: number = 0;
+  const exceptionShipments = dashboardCounts.exceptionShipments;
+  const shipmentStatusData = COMPANY_SHIPMENT_SUMMARY;
+  const transportModes = readClientTransportModes();
+  const financialSnapshot = readClientFinancialSnapshot();
 
   return (
     <div className="w-full space-y-4">
@@ -326,10 +187,6 @@ export default function Dashboard() {
             Customize KPIs
           </button>
 
-          <button className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3">
-            <CalendarIcon className="mr-1.5 h-4 w-4 text-muted-foreground" />
-            Jul 1 – Jul 26, 2026
-          </button>
           <button
             onClick={handleRefresh}
             className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3"
@@ -337,9 +194,9 @@ export default function Dashboard() {
             <RefreshCw className={`mr-1.5 h-4 w-4 text-muted-foreground ${isRefreshing ? "animate-spin" : ""}`} />
             Refresh
           </button>
-          <button className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3 shadow-sm">
-            <Download className="mr-1.5 h-4 w-4" />
-            Export
+           <button onClick={() => setIsReportOpen(true)} className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3 shadow-sm">
+             <FileText className="mr-1.5 h-4 w-4" />
+             Prepare Report
           </button>
           <button 
             onClick={()=>{router.push("/dashboard/shipmentBooking");}}
@@ -412,252 +269,47 @@ export default function Dashboard() {
 
       {/* SPACIOUS & ELEGANT 4-PART HORIZONTAL ROW */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4 items-stretch">
-        {/* Shipment Volume Chart (2 Parts / 50% Width) */}
+          {/* Shipment Status Chart (2 Parts / 50% Width) */}
         <div className="lg:col-span-2 rounded-xl border border-border bg-card text-card-foreground shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
             <div className="space-y-0.5">
               <h3 className="text-sm font-semibold tracking-tight text-foreground">
-                Shipment Volume
+                Shipment Status
               </h3>
               <p className="text-xs text-muted-foreground">
-                Bookings and operational metrics over time
+                Your current shipment distribution
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              {/* SELECT MULTI-SERIES METRICS BUTTON */}
-              <div className="relative">
-                <button
-                  onClick={() => setIsVolumeMetricsOpen(!isVolumeMetricsOpen)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent transition-colors cursor-pointer"
-                >
-                  <Layers className="h-3.5 w-3.5 text-primary" />
-                  Metrics ({selectedVolumeKeys.length}/3)
-                </button>
-
-                {/* POPPER SELECTOR FOR 3 VOLUME METRICS */}
-                {isVolumeMetricsOpen && (
-                  <div className="absolute right-0 top-full mt-2 z-40 w-56 rounded-xl border border-border bg-popover p-3 shadow-xl space-y-2 text-popover-foreground animate-in fade-in zoom-in-95 duration-150">
-                    <div className="flex items-center justify-between border-b border-border pb-1.5">
-                      <span className="text-xs font-bold text-foreground">Select Any 3 Metrics</span>
-                      <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                        {selectedVolumeKeys.length}/3
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {ALL_VOLUME_METRICS.map((vm) => {
-                        const isSelected = selectedVolumeKeys.includes(vm.key);
-                        const isDisabled = !isSelected && selectedVolumeKeys.length >= 3;
-
-                        return (
-                          <div
-                            key={vm.key}
-                            onClick={() => !isDisabled && handleToggleVolumeKey(vm.key)}
-                            className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-all cursor-pointer select-none ${
-                              isSelected
-                                ? "bg-accent text-foreground font-semibold"
-                                : isDisabled
-                                ? "opacity-40 cursor-not-allowed"
-                                : "hover:bg-accent/50 text-muted-foreground"
-                            }`}
-                          >
-                            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: vm.color }} />
-                            <span className="flex-1">{vm.label}</span>
-                            {isSelected && <Check className="h-3.5 w-3.5 text-primary" />}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* TIMEFRAME SELECTOR */}
-              <div className="inline-flex items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground h-8">
-                {(["7D", "14D", "30D"] as const).map((tf) => (
-                  <button
-                    key={tf}
-                    onClick={() => {
-                      setVolumeTimeframe(tf);
-                      setHoveredPointIndex(null);
-                    }}
-                    className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition-all ${
-                      volumeTimeframe === tf
-                        ? "bg-background text-foreground shadow-sm"
-                        : "hover:text-foreground"
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
-          <div className="p-5 flex-1 flex flex-col justify-between">
-            <div className="h-72 w-full relative">
-              {/* SVG Area & Smooth Monotone Cubic Line Chart */}
-              <svg className="w-full h-full overflow-visible" viewBox="0 0 600 240" preserveAspectRatio="none">
-                <defs>
-                  {ALL_VOLUME_METRICS.map((m) => (
-                    <linearGradient key={m.gradientId} id={m.gradientId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={m.color} stopOpacity="0.25" />
-                      <stop offset="100%" stopColor={m.color} stopOpacity="0" />
-                    </linearGradient>
-                  ))}
-                </defs>
-
-                {/* Horizontal Grid lines */}
-                {[0, 60, 120, 180, 240].map((y, i) => (
-                  <line
-                    key={i}
-                    x1="0"
-                    y1={y}
-                    x2="600"
-                    y2={y}
-                    stroke="var(--border)"
-                    strokeOpacity="0.5"
-                    strokeDasharray="4 4"
-                  />
-                ))}
-
-                {/* Vertical Hover Tracking Guideline */}
-                {hoveredPointIndex !== null && activeMetricsPoints[0] && activeMetricsPoints[0].points[hoveredPointIndex] && (
-                  <line
-                    x1={activeMetricsPoints[0].points[hoveredPointIndex].x}
-                    y1="0"
-                    x2={activeMetricsPoints[0].points[hoveredPointIndex].x}
-                    y2="240"
-                    stroke="var(--primary)"
-                    strokeOpacity="0.5"
-                    strokeWidth="1.5"
-                    strokeDasharray="3 3"
-                    className="transition-all duration-150"
-                  />
-                )}
-
-                {/* Render Curves for all 3 Selected Metrics */}
-                {activeMetricsCurves.map((item) => (
-                  <g key={item.metric.key}>
-                    <path
-                      d={item.curves.areaPath}
-                      fill={`url(#${item.metric.gradientId})`}
-                      className="transition-[d,fill] duration-500 ease-in-out"
-                    />
-                    <path
-                      d={item.curves.linePath}
-                      fill="none"
-                      stroke={item.metric.color}
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="transition-[d,stroke] duration-500 ease-in-out"
-                    />
-                  </g>
-                ))}
-
-                {/* Interactive Hover Hit Areas & Highlight Dots for Selected Metrics */}
-                {currentVolumeSeries.map((d, i) => {
-                  const isHovered = hoveredPointIndex === i;
-                  const stepWidth = 600 / (currentVolumeSeries.length - 1);
-                  const firstPt = activeMetricsPoints[0]?.points[i];
-
-                  return (
-                    <g key={i} onMouseEnter={() => setHoveredPointIndex(i)} onMouseLeave={() => setHoveredPointIndex(null)}>
-                      {/* Invisible hover capture target */}
-                      {firstPt && (
-                        <rect
-                          x={Math.max(firstPt.x - stepWidth / 2, 0)}
-                          y={0}
-                          width={stepWidth}
-                          height={240}
-                          fill="transparent"
-                          className="cursor-pointer"
-                        />
-                      )}
-                      {/* Active hover-only dots for each selected metric */}
-                      {isHovered &&
-                        activeMetricsPoints.map((item) => {
-                          const pt = item.points[i];
-                          if (!pt) return null;
-                          return (
-                            <circle
-                              key={item.metric.key}
-                              cx={pt.x}
-                              cy={pt.y}
-                              r={5}
-                              fill={item.metric.color}
-                              stroke="var(--background)"
-                              strokeWidth="2"
-                              className="transition-all duration-150 ease-in-out cursor-pointer"
-                            />
-                          );
-                        })}
-                    </g>
-                  );
-                })}
-              </svg>
-
-              {/* Dynamic Enhanced Hover Card Overlay for 3 Selected Metrics */}
-              {hoveredPointIndex !== null && currentVolumeSeries[hoveredPointIndex] && (
-                <div
-                  className="absolute z-20 pointer-events-none bg-popover text-popover-foreground border border-border rounded-xl shadow-xl p-3 text-xs space-y-1.5 animate-in fade-in zoom-in-95 duration-150"
-                  style={{
-                    left: `${Math.min(Math.max((hoveredPointIndex / (currentVolumeSeries.length - 1)) * 82, 5), 72)}%`,
-                    top: "15px",
-                  }}
-                >
-                  <p className="font-bold text-foreground border-b border-border/50 pb-1">
-                    {currentVolumeSeries[hoveredPointIndex].label}
-                  </p>
-                  {activeVolumeMetrics.map((m) => (
-                    <div key={m.key} className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full" style={{ background: m.color }} />
-                        <span className="font-medium text-foreground">{m.label}</span>
-                      </div>
-                      <span className="font-bold tabular-nums text-foreground">
-                        {currentVolumeSeries[hoveredPointIndex][m.key]}
-                      </span>
-                    </div>
-                  ))}
+          <div className="flex flex-1 flex-col items-center justify-center gap-6 p-5 sm:flex-row">
+            {shipmentStatusData.length > 0 ? (() => {
+              const total = shipmentStatusData.reduce((sum, item) => sum + item.count, 0);
+              let offset = 0;
+              return <>
+                <div className="relative grid size-52 shrink-0 place-items-center">
+                  <svg className="size-full -rotate-90" viewBox="0 0 100 100" role="img" aria-label="Shipment status distribution">
+                    <circle cx="50" cy="50" r="38" fill="none" stroke="var(--muted)" strokeWidth="14" />
+                    {shipmentStatusData.map((item, index) => {
+                      const circumference = 2 * Math.PI * 38;
+                      const length = (item.count / total) * circumference;
+                      const dashOffset = -offset;
+                      offset += length;
+                      const isActive = selectedStatus === null || selectedStatus === item.status;
+                      const colors = ["var(--primary)", "#06b6d4", "#10b981", "#8b5cf6", "#f59e0b", "#f43f5e"];
+                      return <circle key={item.status} cx="50" cy="50" r="38" fill="none" stroke={colors[index % colors.length]} strokeWidth={selectedStatus === item.status ? 17 : 14} strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={dashOffset} className={`cursor-pointer transition-all duration-300 ${isActive ? "opacity-100" : "opacity-25"}`} tabIndex={0} role="button" aria-label={`${item.status}: ${item.count} shipments`} onMouseEnter={() => setSelectedStatus(item.status)} onMouseLeave={() => setSelectedStatus(null)} onFocus={() => setSelectedStatus(item.status)} onBlur={() => setSelectedStatus(null)} onClick={() => setSelectedStatus(selectedStatus === item.status ? null : item.status)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedStatus(selectedStatus === item.status ? null : item.status); } }} />;
+                    })}
+                  </svg>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <PieChart className="mb-1 size-5 text-primary" />
+                    <span className="text-2xl font-bold tabular-nums text-foreground">{selectedStatus ? shipmentStatusData.find((item) => item.status === selectedStatus)?.count : total}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{selectedStatus || "Total shipments"}</span>
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* Smart Sampled X-Axis Date Labels Spanned Across Graph Width */}
-            <div className="relative w-full h-6 mt-2 border-t border-border/40 pt-1.5">
-              {sampledIndices.map((i) => {
-                const d = currentVolumeSeries[i];
-                const pct = (i / (currentVolumeSeries.length - 1)) * 100;
-                const isFirst = i === 0;
-                const isLast = i === currentVolumeSeries.length - 1;
-
-                return (
-                  <span
-                    key={i}
-                    className={`absolute text-[11px] font-semibold text-muted-foreground font-mono whitespace-nowrap select-none ${
-                      isFirst
-                        ? "left-0 translate-x-0"
-                        : isLast
-                        ? "right-0 translate-x-0 text-right"
-                        : "-translate-x-1/2"
-                    }`}
-                    style={!isLast ? { left: `${pct}%` } : { right: "0px" }}
-                  >
-                    {d.label}
-                  </span>
-                );
-              })}
-            </div>
-
-            {/* Dynamic Chart Legend for 3 Selected Metrics */}
-            <div className="mt-4 flex items-center justify-start gap-6 border-t border-border/30 pt-3 text-xs">
-              {activeVolumeMetrics.map((m) => (
-                <div key={m.key} className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: m.color }} />
-                  <span className="text-foreground font-semibold">{m.label}</span>
+                <div className="w-full max-w-xs space-y-2">
+                  {shipmentStatusData.map((item) => <button type="button" key={item.status} onClick={() => setSelectedStatus(selectedStatus === item.status ? null : item.status)} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors ${selectedStatus === item.status ? "bg-primary/10" : "hover:bg-muted/60"}`}><span className="flex items-center gap-2 font-semibold text-foreground"><span className="size-2.5 rounded-full bg-primary" />{item.status}</span><span className="tabular-nums text-muted-foreground">{item.count} <span className="ml-1 text-[10px]">({item.percentage}%)</span></span></button>)}
                 </div>
-              ))}
-            </div>
+              </>;
+            })() : <div className="py-16 text-center"><PieChart className="mx-auto size-9 text-muted-foreground/40" /><p className="mt-3 text-sm font-semibold text-foreground">No shipment data available</p><p className="mt-1 text-xs text-muted-foreground">Your shipment status distribution will appear here.</p></div>}
           </div>
         </div>
 
@@ -700,7 +352,7 @@ export default function Dashboard() {
             <div className="p-4 flex-1 flex flex-col justify-between py-2 animate-in fade-in duration-200">
               <div className="text-[11px] text-muted-foreground font-medium pb-1 border-b border-border/30 mb-1 flex items-center justify-between">
                 <span>Status Breakdown</span>
-                <span className="font-semibold text-foreground">48 Shipments</span>
+                <span className="font-semibold text-foreground">{totalShipments} Shipments</span>
               </div>
               {COMPANY_SHIPMENT_SUMMARY.map((item) => (
                 <div key={item.status} className="flex items-center gap-2 py-1">
@@ -722,50 +374,13 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+          ) : transportModes.length > 0 ? (
+            <TransportModesView modes={transportModes} />
           ) : (
-            /* VIEW B: Spacious Transport Modes Donut & Grid Legend */
-            <div className="p-5 flex-1 flex flex-col justify-between items-center gap-5 animate-in fade-in duration-200">
-              <div className="text-center space-y-0.5 pt-1">
-                <p className="text-xs text-muted-foreground font-medium">Mode Distribution</p>
-                <p className="text-2xl font-bold tracking-tight text-foreground tabular-nums">4,790</p>
-              </div>
-
-              {/* Large Centered Donut SVG */}
-              <div className="relative h-44 w-44 shrink-0 grid place-items-center">
-                <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
-                  {/* Ocean 38.5% */}
-                  <circle cx="50" cy="50" r="38" fill="none" stroke="var(--primary)" strokeWidth="14" strokeDasharray="91.8 146.9" strokeDashoffset="0" />
-                  {/* Air 20.2% */}
-                  <circle cx="50" cy="50" r="38" fill="none" stroke="#06b6d4" strokeWidth="14" strokeDasharray="48.2 190.5" strokeDashoffset="-91.8" />
-                  {/* Road 30.4% */}
-                  <circle cx="50" cy="50" r="38" fill="none" stroke="#10b981" strokeWidth="14" strokeDasharray="72.5 166.2" strokeDashoffset="-140.0" />
-                  {/* Rail 10.9% */}
-                  <circle cx="50" cy="50" r="38" fill="none" stroke="#f59e0b" strokeWidth="14" strokeDasharray="26.0 212.7" strokeDashoffset="-212.5" />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <PieChart className="h-5 w-5 text-primary mb-0.5" />
-                  <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Modes</span>
-                </div>
-              </div>
-
-              {/* 2-Column Spacious Grid Legend */}
-              <div className="w-full grid grid-cols-2 gap-2 pt-3 border-t border-border/40 mt-auto">
-                {TRANSPORT_MODES.map((mode, i) => {
-                  const modeColors = ["bg-primary", "bg-sky-500", "bg-emerald-500", "bg-amber-500"];
-                  return (
-                    <div key={mode.name} className="flex flex-col rounded-lg bg-muted/40 p-2 border border-border/30">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`h-2 w-2 rounded-sm ${modeColors[i]}`} />
-                        <span className="text-xs font-semibold text-foreground">{mode.name}</span>
-                      </div>
-                      <div className="mt-1 flex items-baseline justify-between">
-                        <span className="text-xs font-bold text-foreground tabular-nums">{mode.count}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">{mode.percentage}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="flex flex-1 flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
+              <PieChart className="size-9 text-muted-foreground/40" />
+              <p className="mt-3 text-sm font-semibold text-foreground">No transport data available</p>
+              <p className="mt-1 text-xs text-muted-foreground">Transport mode distribution will appear when shipment records are available.</p>
             </div>
           )}
         </div>
@@ -853,7 +468,7 @@ export default function Dashboard() {
                     </span>
                     <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 ring-1 ring-amber-500/20">
                       <Clock className="h-2.5 w-2.5" />
-                      {delayDaysMap[shp.id] || "+2d Late"}
+                      Delayed
                     </span>
                   </div>
                   <p className="mt-1 truncate text-xs text-muted-foreground font-medium">
@@ -878,7 +493,7 @@ export default function Dashboard() {
               <Clock className="h-4 w-4 text-primary" />
               <h3 className="text-sm font-semibold text-foreground">Today&apos;s Pickups</h3>
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary border border-primary/20">
-                11 Active
+                {COMPANY_TODAY_PICKUPS.length} Active
               </span>
             </div>
             <Link
@@ -927,119 +542,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 3. Schedule (Interactive Operations Heatmap & Event Calendar) */}
-        <div className="flex h-full min-h-0 flex-col rounded-xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
-            <div className="flex items-center gap-2">
-              <CalendarIcon className="h-4 w-4 text-primary" />
-              <h3 className="text-sm font-semibold text-foreground">Operational Schedule</h3>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setSelectedMonth("July 2026")}
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground h-7 w-7 cursor-pointer"
-              >
-                <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-              </button>
-              <span className="text-xs font-bold text-foreground min-w-[85px] text-center">
-                {selectedMonth}
-              </span>
-              <button
-                onClick={() => setSelectedMonth("September 2026")}
-                className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground h-7 w-7 cursor-pointer"
-              >
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </button>
-            </div>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4 custom-scrollbar">
-            <div>
-              <div className="mb-2 grid grid-cols-7 gap-1">
-                {["M", "T", "W", "T", "F", "S", "S"].map((day, i) => (
-                  <div
-                    key={i}
-                    className="text-center text-[10px] font-bold uppercase text-muted-foreground/70"
-                  >
-                    {day}
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-1">
-                {/* Previous month padding days */}
-                {[27, 28, 29, 30, 31].map((d) => (
-                  <button
-                    key={`prev-${d}`}
-                    className="relative flex h-8 items-center justify-center rounded-md text-xs text-muted-foreground/30 cursor-default"
-                  >
-                    {d}
-                  </button>
-                ))}
-                {/* Days of August */}
-                {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
-                  const isToday = day === 4;
-                  const isSelected = selectedCalendarDay === day;
-                  const hasAmberDots = [1, 6, 8, 12].includes(day);
-                  const hasInfoDots = [9, 10, 13].includes(day);
-                  const hasSuccessDots = [4, 9, 11].includes(day);
+        <FinancialSnapshotCard snapshot={financialSnapshot} />
 
-                  return (
-                    <button
-                      key={`aug-${day}`}
-                      onClick={() => setSelectedCalendarDay(day)}
-                      className={`relative flex h-8 items-center justify-center rounded-lg text-xs transition-all cursor-pointer font-medium ${
-                        isToday
-                          ? "bg-primary text-primary-foreground font-bold shadow-md shadow-primary/30 ring-2 ring-primary/40"
-                          : isSelected
-                          ? "bg-accent text-accent-foreground font-bold border border-primary/50"
-                          : "text-foreground hover:bg-muted"
-                      }`}
-                    >
-                      {day}
-                      {!isToday && (hasAmberDots || hasInfoDots || hasSuccessDots) && (
-                        <span className="absolute bottom-1 flex gap-0.5">
-                          {hasAmberDots && <span className="h-1 w-1 rounded-full bg-amber-500" />}
-                          {hasInfoDots && <span className="h-1 w-1 rounded-full bg-sky-500" />}
-                          {hasSuccessDots && <span className="h-1 w-1 rounded-full bg-emerald-500" />}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Dynamic Interactive Calendar Event Drawer */}
-            <div className="mt-3 border-t border-border/40 pt-3">
-              <div className="flex items-center justify-between text-[11px] mb-1.5">
-                <span className="text-muted-foreground font-medium">
-                  Events for Aug {selectedCalendarDay}, 2026:
-                </span>
-                <span className="font-bold text-foreground">
-                  {calendarDayEvents[selectedCalendarDay]?.length || 0} Scheduled
-                </span>
-              </div>
-              {calendarDayEvents[selectedCalendarDay] ? (
-                <div className="space-y-1 max-h-20 overflow-y-auto custom-scrollbar pr-1">
-                  {calendarDayEvents[selectedCalendarDay].map((ev, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-2.5 py-1 text-xs border border-border/30"
-                    >
-                      <span className="truncate text-foreground font-medium">{ev.title}</span>
-                      <span className={`shrink-0 rounded px-1.5 py-0.5 font-semibold text-[10px] ${ev.color}`}>
-                        {ev.badge}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[11px] text-muted-foreground italic py-1 text-center">
-                  No critical dispatches scheduled for Aug {selectedCalendarDay}.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* PERSISTENT ALERTS OVERLAY MODAL */}
@@ -1252,6 +756,31 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+      {isReportOpen && <ClientReportPreview onClose={() => setIsReportOpen(false)} />}
     </div>
   );
+}
+
+function TransportModesView({ modes }: { modes: { name: string; shipments: number; percentage: number; color: string }[] }) {
+  const colors = ["var(--primary)", "#06b6d4", "#10b981", "#f59e0b", "#8b5cf6", "#f43f5e"];
+  const total = modes.reduce((sum, mode) => sum + mode.shipments, 0);
+  const circumference = 2 * Math.PI * 38;
+  let offset = 0;
+  return <div className="flex flex-1 flex-col items-center justify-between gap-5 p-5 animate-in fade-in duration-200">
+    <div className="text-center space-y-0.5 pt-1"><p className="text-xs text-muted-foreground font-medium">Mode Distribution</p><p className="text-2xl font-bold tracking-tight text-foreground tabular-nums">{total}</p></div>
+    <div className="relative size-44 shrink-0 grid place-items-center"><svg className="size-full -rotate-90" viewBox="0 0 100 100" role="img" aria-label="Transport mode distribution"><circle cx="50" cy="50" r="38" fill="none" stroke="var(--muted)" strokeWidth="14" />{modes.map((mode, index) => { const length = (mode.shipments / total) * circumference; const dashOffset = -offset; offset += length; return <circle key={mode.name} cx="50" cy="50" r="38" fill="none" stroke={colors[index % colors.length]} strokeWidth="14" strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={dashOffset} />; })}</svg><div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"><PieChart className="mb-0.5 size-5 text-primary" /><span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Modes</span></div></div>
+    <div className="w-full grid grid-cols-2 gap-2 border-t border-border/40 pt-3">{modes.map((mode, index) => <div key={mode.name} className="flex flex-col rounded-lg border border-border/30 bg-muted/40 p-2"><div className="flex items-center gap-1.5"><span className="size-2 rounded-sm" style={{ background: colors[index % colors.length] }} /><span className="text-xs font-semibold text-foreground">{mode.name}</span></div><div className="mt-1 flex items-baseline justify-between"><span className="text-xs font-bold tabular-nums text-foreground">{mode.shipments}</span><span className="font-mono text-[10px] text-muted-foreground">{mode.percentage}%</span></div></div>)}</div>
+  </div>;
+}
+
+function FinancialSnapshotCard({ snapshot }: { snapshot: ReturnType<typeof readClientFinancialSnapshot> }) {
+  const hasData = snapshot.balance !== null || snapshot.pendingCharges !== null || snapshot.codExposure !== null || snapshot.recentTransactions.length > 0;
+  return <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm">
+    <div className="flex items-center justify-between border-b border-border px-5 py-4"><div className="flex items-center gap-2"><WalletCards className="size-4 text-primary" /><h3 className="text-sm font-semibold text-foreground">Financial Snapshot</h3></div><Link href="/dashboard/walletManagement" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">Wallet <ArrowRight className="size-3" /></Link></div>
+    {hasData ? <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"><div className="rounded-xl border border-primary/20 bg-primary/5 p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Available balance</p><p className="mt-2 text-2xl font-semibold tracking-tight text-primary">{snapshot.balance === null ? "Not available" : formatINR(snapshot.balance)}</p></div><div className="grid grid-cols-2 gap-2"><FinanceMetric label="Pending charges" value={snapshot.pendingCharges === null ? "Not available" : formatINR(snapshot.pendingCharges)} /><FinanceMetric label="COD exposure" value={snapshot.codExposure === null ? "Not available" : formatINR(snapshot.codExposure)} /></div><div><div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold text-foreground">Recent activity</p><Link href="/dashboard/billingInvoiceManagement" className="text-[11px] font-medium text-primary hover:underline">Billing</Link></div>{snapshot.recentTransactions.length ? <div className="space-y-1.5">{snapshot.recentTransactions.map((transaction) => <div key={transaction.id} className="flex items-center justify-between rounded-lg bg-muted/40 px-2.5 py-2 text-[11px]"><span className="min-w-0 truncate font-medium text-foreground">{transaction.reference}</span><span className={transaction.direction === "credit" ? "font-semibold text-emerald-600 dark:text-emerald-400" : "font-semibold text-foreground"}>{transaction.direction === "credit" ? "+" : "-"}{formatINR(transaction.amount)}</span></div>)}</div> : <p className="text-xs text-muted-foreground">No recent wallet transactions.</p>}</div></div> : <div className="flex flex-1 flex-col items-center justify-center p-6 text-center"><Receipt className="size-9 text-muted-foreground/40" /><p className="mt-3 text-sm font-semibold text-foreground">No financial data available</p><p className="mt-1 text-xs text-muted-foreground">Balance, charges, and COD exposure will appear when client finance records are available.</p><Link href="/dashboard/walletManagement" className="mt-4 text-xs font-medium text-primary hover:underline">Open Wallet</Link></div>}
+  </div>;
+}
+
+function FinanceMetric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg border border-border/70 bg-background p-3"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p><p className="mt-2 truncate text-sm font-semibold tabular-nums text-foreground">{value}</p></div>;
 }

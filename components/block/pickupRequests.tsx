@@ -20,8 +20,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Dropdown from "@/components/ui/dropdown";
-import companyData from "@/data/company-demo/company-data.json";
-import { addWorkflowPickup, readWorkflowPickups } from "@/lib/client-workflow-store";
 
 type PickupStatus = "Scheduled" | "Driver Assigned" | "En Route" | "Completed" | "Failed" | "Cancelled";
 type SortKey = "reference" | "customer" | "status" | "date" | "location" | "driver" | "pieces" | "weight";
@@ -57,23 +55,7 @@ type NewPickup = {
   notes: string;
 };
 
-const initialPickups: Pickup[] = companyData.pickups.map((pickup) => ({
-  id: pickup.id,
-  reference: pickup.reference,
-  customer: pickup.customer,
-  status: pickup.status as PickupStatus,
-  date: pickup.date,
-  window: pickup.window,
-  location: pickup.location,
-  country: pickup.country,
-  driver: pickup.driver,
-  pieces: pickup.pieces,
-  weight: pickup.weight,
-  contact: pickup.contact,
-  address: pickup.address,
-  notes: pickup.notes,
-  createdFrom: pickup.createdFrom as Pickup["createdFrom"],
-}));
+const initialPickups: Pickup[] = [];
 
 const emptyForm: NewPickup = { customer: "", contact: "", address: "", city: "", country: "", date: "2026-08-08", window: "9:00 AM – 11:00 AM", pieces: "1", weight: "", notes: "" };
 
@@ -107,14 +89,6 @@ export default function PickupRequests() {
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState<NewPickup>(emptyForm);
   const statusMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const stored = readWorkflowPickups() as Pickup[];
-      if (stored.length) setPickups((current) => [...stored, ...current.filter((item) => !stored.some((saved) => saved.id === item.id))]);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     if (!statusOpen) return;
@@ -173,30 +147,7 @@ export default function PickupRequests() {
 
   const schedulePickup = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const id = String(pickups.length + 1);
-    const pickup: Pickup = {
-      id,
-      reference: `PKU2026${String(pickups.length + 17).padStart(4, "0")}`,
-      customer: form.customer.trim(),
-      status: "Scheduled",
-      date: new Date(`${form.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      window: form.window,
-      location: form.city.trim(),
-      country: form.country.trim(),
-      driver: "Not assigned",
-      pieces: Number(form.pieces),
-      weight: `${form.weight.trim()} kg`,
-      contact: form.contact.trim(),
-      address: form.address.trim(),
-      notes: form.notes.trim() || "Standalone pickup request created without an existing shipment.",
-      createdFrom: "Standalone request",
-    };
-    setPickups((current) => [pickup, ...current]);
-    addWorkflowPickup(pickup);
-    setForm(emptyForm);
-    setScheduleOpen(false);
-    setSelectedPickup(pickup);
-    setNotice(`${pickup.reference} scheduled successfully.`);
+    setNotice("Pickup requests are unavailable until the production operations service is connected.");
   };
 
   return (
@@ -208,7 +159,7 @@ export default function PickupRequests() {
         <MetricCard label="Failed (7d)" value={metrics.failed} change="1.8%" icon={<FileText className="h-4 w-4" />} />
         <div className="flex w-full shrink-0 gap-2 sm:w-auto">
           <button type="button" onClick={() => setCalendarOpen((current) => !current)} className={cn(buttonSecondary, "flex-1 sm:flex-none")}><CalendarDays className="h-4 w-4" /> Calendar View</button>
-          <button type="button" onClick={() => setScheduleOpen(true)} className={cn(buttonPrimary, "flex-1 sm:flex-none")}><Plus className="h-4 w-4" /> Schedule Pickup</button>
+          <button type="button" disabled onClick={() => setScheduleOpen(true)} className={cn(buttonPrimary, "flex-1 sm:flex-none cursor-not-allowed opacity-50")}><Plus className="h-4 w-4" /> Schedule Pickup</button>
         </div>
       </div>
 

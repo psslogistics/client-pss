@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Bell, Check, ChevronRight, CreditCard, KeyRound, LockKeyhole, PlugZap, SlidersHorizontal, WalletCards, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Section = "preferences" | "notifications" | "security" | "billing" | "integrations";
 type SettingsState = { warehouse: string; courier: string; reportRange: string; notifications: Record<string, boolean>; lowBalance: string; billingEmail: string };
-const STORAGE_KEY = "pss-client-settings";
-const initialSettings: SettingsState = { warehouse: "Noida Main Warehouse", courier: "Delhivery", reportRange: "Current month", notifications: { shipment: true, operations: true, finance: true, support: true }, lowBalance: "5000", billingEmail: "accounts@psslogistics.in" };
+const initialSettings: SettingsState = { warehouse: "", courier: "", reportRange: "Current month", notifications: { shipment: false, operations: false, finance: false, support: false }, lowBalance: "", billingEmail: "" };
 const sections: { id: Section; label: string; description: string; icon: typeof SlidersHorizontal }[] = [
   { id: "preferences", label: "Workspace preferences", description: "Defaults used while operating shipments", icon: SlidersHorizontal },
   { id: "notifications", label: "Notifications", description: "Choose the events that need your attention", icon: Bell },
@@ -22,8 +21,7 @@ export default function Settings() {
   const [active, setActive] = useState<Section>("preferences");
   const [settings, setSettings] = useState(initialSettings);
   const [notice, setNotice] = useState("");
-  useEffect(() => { const timer = window.setTimeout(() => { try { const stored = window.localStorage.getItem(STORAGE_KEY); if (stored) setSettings({ ...initialSettings, ...JSON.parse(stored) }); } catch { /* Keep deterministic demo defaults. */ } }, 0); return () => window.clearTimeout(timer); }, []);
-  const save = (next: SettingsState = settings) => { setSettings(next); window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); setNotice("Settings saved for this demo account."); };
+  const save = (next: SettingsState = settings) => { setSettings(next); setNotice("Settings will be available when production preferences are connected."); };
   const update = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => setSettings((current) => ({ ...current, [key]: value }));
   const toggleNotification = (key: string) => update("notifications", { ...settings.notifications, [key]: !settings.notifications[key] });
   return <div className="w-full">
