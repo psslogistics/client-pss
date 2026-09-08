@@ -20,40 +20,23 @@ import { createClient } from "@/lib/supabase/client";
 
 type NavItem = { title: string; icon: IconName; href: string };
 
-const shipments: NavItem[] = [
-  { title: "Booking", icon: "bookings", href: "/dashboard/shipmentBooking" },
-  { title: "Tracking", icon: "tracking", href: "/dashboard/shipmentTracking" },
+const navigation: NavItem[] = [
+  { title: "All Shipments", icon: "shipments", href: "/dashboard/allShipments" },
   { title: "Pickup", icon: "pickups", href: "/dashboard/pickupRequests" },
-  { title: "RTO", icon: "returns", href: "/dashboard/returnShipments" },
-];
-
-const walletBilling: NavItem[] = [
+  { title: "Warehouses", icon: "warehouse", href: "/dashboard/warehouseManagement" },
+  { title: "Tracking", icon: "tracking", href: "/dashboard/shipmentTracking" },
+  { title: "Weight Reconciliation", icon: "reports", href: "/dashboard/weightReconciliation" },
+  { title: "Rate Calculator", icon: "billing", href: "/dashboard/rateCheck" },
+  { title: "NDR/Exceptions", icon: "exceptions", href: "/dashboard/ndrExceptions" },
+  { title: "Pincode Serviceability", icon: "tracking", href: "/dashboard/pincodeServiceability" },
+  { title: "Rate Card", icon: "reports", href: "/dashboard/rateCard" },
   { title: "Wallet", icon: "wallets", href: "/dashboard/walletManagement" },
   { title: "Billing", icon: "billing", href: "/dashboard/billingInvoiceManagement" },
-];
-
-const operations: NavItem[] = [
-  { title: "All Shipments", icon: "shipments", href: "/dashboard/allShipments" },
-  { title: "Warehouses", icon: "warehouse", href: "/dashboard/warehouseManagement" },
-  { title: "NDR", icon: "ndr", href: "/dashboard/ndrManagement" },
-  { title: "Exceptions", icon: "exceptions", href: "/dashboard/exceptionsManagement" },
-];
-
-const informationCenter: NavItem[] = [
-  { title: "Pincode Serviceability", icon: "tracking", href: "/dashboard/pincodeServiceability" },
-  { title: "Rate Check", icon: "billing", href: "/dashboard/rateCheck" },
-  { title: "Rate Card Check", icon: "reports", href: "/dashboard/rateCard" },
-];
-
-const report: NavItem[] = [
-  { title: "Reports", icon: "reports", href: "/dashboard/reportsAnalytics" },
-];
-
-const support: NavItem[] = [
+  { title: "COD Remittance", icon: "billing", href: "/dashboard/codRemittance" },
   { title: "Support", icon: "support", href: "/dashboard/supportTicketCreation" },
 ];
 
-const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...shipments, ...operations, ...informationCenter, ...walletBilling, ...report, ...support,
+const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...navigation,
   { title: "Profile", href: "/dashboard/profileAccountManagement" },
   { title: "Settings", href: "/dashboard/userSettings" },
   { title: "Notifications", href: "/dashboard/notificationsAlerts" },
@@ -145,17 +128,6 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
     return () => { active = false; };
   }, [supabase]);
 
-  useEffect(() => {
-    const applyFieldMetadata = () => document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select").forEach((field, index) => {
-      if (!field.id) field.id = `client-field-${index + 1}`;
-      if (!field.getAttribute("name")) field.setAttribute("name", field.id);
-    });
-    applyFieldMetadata();
-    const observer = new MutationObserver(applyFieldMetadata);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
   return (
     <>
       <Sidebar collapsible="icon" variant="sidebar" className="border-r border-sidebar-border/70 dark:border-r-2 dark:border-sidebar-border dark:shadow-[1px_0_0_0_var(--sidebar-border)]">
@@ -203,63 +175,10 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             </SidebarGroupContent>
           </SidebarGroup>
 
-          {/* Shipments */}
           <SidebarGroup>
-            <SidebarGroupLabel className="text-xs uppercase tracking-widest font-medium text-sidebar-foreground/40 px-3">
-              Shipments
-            </SidebarGroupLabel>
+            <SidebarGroupLabel className="px-3 text-xs font-medium uppercase tracking-widest text-sidebar-foreground/40">Operations</SidebarGroupLabel>
             <SidebarGroupContent>
-              <NavItems items={shipments} pathname={pathname} />
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          {/* Operations */}
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-3 text-xs font-medium uppercase tracking-widest text-sidebar-foreground/40">
-              Operations
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <NavItems items={operations} pathname={pathname} />
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          {/* Information Center */}
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-3 text-xs font-medium uppercase tracking-widest text-sidebar-foreground/40">
-              Information Center
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <NavItems items={informationCenter} pathname={pathname} />
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          {/* Wallet and Billing */}
-          <SidebarGroup>
-            <SidebarGroupLabel className="text-xs uppercase tracking-widest font-medium text-sidebar-foreground/40 px-3">
-              Wallet and Billing
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <NavItems items={walletBilling} pathname={pathname} />
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          {/* Report */}
-          <SidebarGroup>
-            <SidebarGroupLabel className="text-xs uppercase tracking-widest font-medium text-sidebar-foreground/40 px-3">
-              Report
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <NavItems items={report} pathname={pathname} />
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          {/* Support */}
-          <SidebarGroup>
-            <SidebarGroupLabel className="text-xs uppercase tracking-widest font-medium text-sidebar-foreground/40 px-3">
-              Support
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <NavItems items={support} pathname={pathname} />
+              <NavItems items={navigation} pathname={pathname} />
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
