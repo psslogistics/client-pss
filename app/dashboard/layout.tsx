@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu,
@@ -14,9 +14,9 @@ import {
 import { PssIcon } from "@/components/ui/icon";
 import { BrandLogo } from "@/components/ui/brand-logo";
 import type { IconName } from "@/lib/iconography";
-import { defaultUnreadIds, notifications, NOTIFICATIONS_EVENT, readIdsFromStorage } from "@/components/block/notifications-data";
 import { searchClientMaster } from "@/lib/master-search";
 import { createClient } from "@/lib/supabase/client";
+import { pssApi } from "@/lib/pss-api";
 
 type NavItem = { title: string; icon: IconName; href: string };
 
@@ -60,6 +60,7 @@ function NavItems({ items, pathname }: { items: NavItem[]; pathname: string }) {
 
 function SidebarInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const [menuOpen, setMenuOpen] = useState(false);
@@ -69,17 +70,19 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   const [themeReady, setThemeReady] = useState(false);
   const [profile, setProfile] = useState<{ display_name: string | null; email: string | null; company_name?: string | null }>({ display_name: null, email: null });
   const supabase = useMemo(() => createClient(), []);
-  const [unreadCount, setUnreadCount] = useState(defaultUnreadIds.length);
+  const [unreadCount, setUnreadCount] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const currentRoute = allRoutes.find((r) => r.href === pathname)?.title ?? "Dashboard";
   const searchResults = useMemo(() => searchClientMaster(searchQuery), [searchQuery]);
 
   useEffect(() => {
-    const syncUnreadCount = () => setUnreadCount(notifications.filter((item) => !readIdsFromStorage().includes(item.id)).length);
-    const timer = window.setTimeout(syncUnreadCount, 0);
-    window.addEventListener(NOTIFICATIONS_EVENT, syncUnreadCount);
-    return () => { window.clearTimeout(timer); window.removeEventListener(NOTIFICATIONS_EVENT, syncUnreadCount); };
+    let cancelled = false;
+    const syncUnreadCount = () => void pssApi<{ data: Array<Record<string, unknown>> }>("/v1/notifications").then((result) => { if (!cancelled) setUnreadCount(result.data.filter((item) => !Boolean(item.is_read)).length); }).catch(() => undefined);
+    syncUnreadCount();
+    const timer = window.setInterval(syncUnreadCount, 60000);
+    window.addEventListener("pss-notifications-updated", syncUnreadCount);
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener("pss-notifications-updated", syncUnreadCount); };
   }, []);
 
   useEffect(() => {
@@ -145,7 +148,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
                 <Link href="/dashboard/userSettings" onClick={() => setMenuOpen(false)} className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent rounded-md mx-1 transition-colors">
                   <Settings className="size-4 opacity-60" />Settings
                 </Link>
-                <button type="button" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut({ scope: "global" }); window.location.assign("/sign-in"); }} className="flex w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10 mx-1">
+                <button type="button" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut({ scope: "global" }); router.push("/sign-in"); }} className="flex w-[calc(100%-0.5rem)] items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10 mx-1">
                   <span aria-hidden="true">↪</span>Sign out
                 </button>
               </div>

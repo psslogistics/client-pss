@@ -24,6 +24,8 @@ export function volumetricWeight(boxes: BoxLine[]) { return boxes.reduce((total,
 export function chargeableWeight(input: Pick<RateInput, "boxes" | "deadWeight">) { return Math.max(input.deadWeight, volumetricWeight(input.boxes)); }
 export function resolveZone(pickup: string, delivery: string) { if (pickup.slice(0, 3) === delivery.slice(0, 3)) return "A"; if (pickup.slice(0, 2) === delivery.slice(0, 2)) return "B"; if (["11", "40", "56", "70", "50"].includes(pickup.slice(0, 2)) && ["11", "40", "56", "70", "50"].includes(delivery.slice(0, 2))) return "C"; return delivery.startsWith("18") || delivery.startsWith("19") ? "E" : "D"; }
 export function checkServiceability(pickup: string, delivery: string): ServiceabilityResult {
+  void pickup;
+  void delivery;
   return { pickup: false, delivery: false, modes: [], eta: "Not available", prepaid: false, cod: false, reverse: false, temporary: false, message: "Live serviceability data is not available for this account." };
 }
 function slabFor(weight: number) { return rateCardRows.find((row) => row.mode === "Surface" && row.shipmentType === "Forward" && row.maxWeight >= weight)?.slab || "10+ kg"; }

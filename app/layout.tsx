@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = {
   title: "PSS Logistics",
   description: "Direct To Every Direction",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

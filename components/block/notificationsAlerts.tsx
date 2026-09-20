@@ -4,17 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCheck, CheckCircle2, CircleAlert, Info, Search, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  defaultUnreadIds,
-  markAllNotificationsRead,
-  markNotificationRead,
-  notifications,
-  NOTIFICATIONS_EVENT,
-  readIdsFromStorage,
-  type NotificationCategory,
-  type NotificationItem,
-  type NotificationTone,
-} from "@/components/block/notifications-data";
+import { pssApi } from "@/lib/pss-api";
+import type { NotificationCategory, NotificationItem, NotificationTone } from "@/components/block/notifications-data";
 
 type Filter = "All" | "Unread" | NotificationCategory;
 
@@ -44,21 +35,26 @@ const filters: Filter[] = ["All", "Unread", "Shipments", "Operations", "Billing"
 export default function NotificationsAlerts() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("All");
-  const [readIds, setReadIds] = useState<string[]>([]);
+  const [allNotifications, setAllNotifications] = useState<NotificationItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setReadIds(readIdsFromStorage());
+    let cancelled = false;
+    void pssApi<{ data: Array<Record<string, unknown>> }>("/v1/notifications").then((result) => {
+      if (cancelled) return;
+      setAllNotifications(result.data.map((row) => ({
+        id: String(row.id), category: (String(row.category ?? "System").replace(/^\w/, (value) => value.toUpperCase()) as NotificationCategory),
+        tone: (row.type === "warning" ? "warning" : row.type === "critical" ? "critical" : row.type === "success" ? "success" : "info") as NotificationTone,
+        title: String(row.title ?? "Notification"), message: String(row.message ?? ""), time: row.created_at ? new Date(String(row.created_at)).toLocaleString() : "", unread: !Boolean(row.is_read),
+        actionLabel: "Open", actionHref: String(row.action_href ?? "/dashboard")
+      })));
       setHydrated(true);
-    }, 0);
-    const sync = () => setReadIds(readIdsFromStorage());
-    window.addEventListener(NOTIFICATIONS_EVENT, sync);
-    return () => { window.clearTimeout(timer); window.removeEventListener(NOTIFICATIONS_EVENT, sync); };
+    }).catch((reason) => { if (!cancelled) { setError(reason instanceof Error ? reason.message : "Unable to load notifications."); setHydrated(true); } });
+    return () => { cancelled = true; };
   }, []);
-  const allNotifications = useMemo(() => notifications, []);
-  const unreadIds = hydrated ? allNotifications.filter((item) => !readIds.includes(item.id)).map((item) => item.id) : defaultUnreadIds;
-  const isRead = (id: string) => hydrated ? readIds.includes(id) : !defaultUnreadIds.includes(id);
+  const unreadIds = useMemo(() => hydrated ? allNotifications.filter((item) => item.unread).map((item) => item.id) : [], [allNotifications, hydrated]);
+  const isRead = (id: string) => !allNotifications.find((item) => item.id === id)?.unread;
   const visibleNotifications = useMemo(() => allNotifications.filter((item) => {
     const matchesFilter = filter === "All" || (filter === "Unread" ? unreadIds.includes(item.id) : item.category === filter);
     const haystack = `${item.title} ${item.message} ${item.category}`.toLowerCase();
@@ -67,18 +63,17 @@ export default function NotificationsAlerts() {
   const urgentNotifications = visibleNotifications.filter((item) => item.tone === "critical" || item.tone === "warning").slice(0, 3);
 
   const markRead = (item: NotificationItem) => {
-    markNotificationRead(item.id, readIds);
-    setReadIds((current) => current.includes(item.id) ? current : [...current, item.id]);
+    void pssApi(`/v1/notifications/${item.id}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ is_read: true }) }).then(() => { setAllNotifications((current) => current.map((entry) => entry.id === item.id ? { ...entry, unread: false } : entry)); window.dispatchEvent(new Event("pss-notifications-updated")); }).catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to update notification."));
   };
 
   const markAllRead = () => {
-    markAllNotificationsRead();
-    setReadIds(notifications.map((item) => item.id));
+    void Promise.all(unreadIds.map((id) => pssApi(`/v1/notifications/${id}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ is_read: true }) }))).then(() => { setAllNotifications((current) => current.map((item) => ({ ...item, unread: false }))); window.dispatchEvent(new Event("pss-notifications-updated")); }).catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to update notifications."));
   };
 
   return (
     <main className="flex w-full flex-col gap-4">
 
+      {error && <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</p>}
       {urgentNotifications.length > 0 && <section className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 shadow-xs sm:p-5" aria-labelledby="priority-alerts-title"><div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive"><CircleAlert className="h-4 w-4" /></span><div><div className="flex flex-wrap items-center gap-2"><h2 id="priority-alerts-title" className="text-sm font-semibold">Priority operational alerts</h2><span className="rounded-full border border-destructive/20 bg-background/60 px-2 py-0.5 text-[10px] font-semibold text-destructive">Needs attention</span></div><p className="mt-1 text-xs leading-5 text-muted-foreground">Changes that may affect active shipments, pickups, or service availability.</p></div></div><div className="mt-4 grid gap-2 lg:grid-cols-3">{urgentNotifications.map((item) => <NotificationCard key={item.id} item={item} isRead={isRead(item.id)} onRead={markRead} compact />)}</div></section>}
 
       <section className="overflow-hidden rounded-xl border border-border bg-card shadow-xs" aria-labelledby="all-notifications-title">

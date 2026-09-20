@@ -1,6 +1,4 @@
 export type WalletTransaction = { id: string; date: string; reference: string; type: string; description: string; amount: number; direction: "credit" | "debit"; status: "Completed" | "Pending" | "Failed" | "Refunded"; balance: number };
 export type BillingRecord = { id: string; bookingDate: string; pickupDate: string; deliveryDate: string; status: string; client: string; consignor: string; consignee: string; courier: string; origin: string; destination: string; declaredWeight: number; measuredWeight: number; billableWeight: number; baseCharge: number; weightCharge: number; tax: number; total: number; payment: string; cod: number; pod: string };
 
-export const billingRecords: BillingRecord[] = [];
-export const initialWalletTransactions: WalletTransaction[] = [];
 export const formatINR = (value: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2 }).format(value);

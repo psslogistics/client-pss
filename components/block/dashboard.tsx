@@ -26,32 +26,78 @@ import {
   Receipt,
 } from "lucide-react";
 import {
-  ALL_KPI_METRICS,
-  DEFAULT_SELECTED_KPI_IDS,
-  ACTION_ALERTS,
-  RECENT_ACTIVITIES,
   DashboardAlert,
+  ActivityItem,
   KpiMetric,
 } from "./dashboard-data";
-import { COMPANY_DELAYED_SHIPMENTS, COMPANY_SHIPMENT_SUMMARY, COMPANY_TODAY_PICKUPS } from "@/lib/company-dashboard-data";
-import { readClientDashboardCounts, readClientFinancialSnapshot, readClientTransportModes } from "@/lib/client-dashboard-data";
+import type { ClientFinancialSnapshot } from "@/lib/client-dashboard-data";
 import { formatINR } from "@/lib/client-finance-data";
+import { pssApi } from "@/lib/pss-api";
 import ClientReportPreview from "./client-report-preview";
+
+function relativeTime(value: string) {
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return "Recently";
+  const minutes = Math.max(0, Math.floor((Date.now() - time) / 60000));
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function activityIconType(action: string): ActivityItem["iconType"] {
+  const normalized = action.toLowerCase();
+  if (normalized.includes("exception") || normalized.includes("ndr") || normalized.includes("failed")) return "warning";
+  if (normalized.includes("created") || normalized.includes("booked")) return "primary";
+  if (normalized.includes("delivered") || normalized.includes("completed")) return "info";
+  return "muted";
+}
+
+function activityIconName(action: string) {
+  const normalized = action.toLowerCase();
+  if (normalized.includes("exception") || normalized.includes("ndr") || normalized.includes("failed")) return "TriangleAlert";
+  if (normalized.includes("pickup")) return "Truck";
+  if (normalized.includes("setting")) return "Settings";
+  return "Package";
+}
 
 export default function Dashboard() {
   const router = useRouter();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [alerts, setAlerts] = useState<DashboardAlert[]>(ACTION_ALERTS);
+  const [now] = useState(() => Date.now());
+  const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [productionError, setProductionError] = useState("");
+  const [production, setProduction] = useState<{ shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>> }>({ shipments: [], pickups: [], billing: [], wallet: [], exceptions: [], ndr: [] });
+
+  const loadProduction = () => {
+    return pssApi<{ data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>> } }>("/v1/dashboard/summary").then(({ data }) => {
+      setProductionError("");
+      setProduction({ shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, exceptions: data.exceptions, ndr: data.ndr });
+      setActivities(data.activity.slice(0, 12).map((row) => ({ id: String(row.id), title: String(row.action ?? "Activity"), description: `${String(row.entity_type ?? "Record")}${row.entity_id ? ` · ${String(row.entity_id)}` : ""}`, timeAgo: relativeTime(String(row.created_at ?? "")), iconType: activityIconType(String(row.action ?? "")), iconName: activityIconName(String(row.action ?? "")) })));
+      setAlerts([...data.exceptions, ...data.ndr].filter((row) => !["resolved", "closed", "delivered", "cancelled"].includes(String(row.status ?? "").toLowerCase())).slice(0, 8).map((row) => ({ id: String(row.id), title: String(row.title ?? row.reason ?? "Operational exception"), description: String(row.details ?? row.notes ?? "Requires operational review"), timeAgo: relativeTime(String(row.created_at ?? "")), refId: String(row.shipment_id ?? row.id), type: "warning", dotColor: "bg-amber-500" })));
+    }).catch((error) => {
+      setProductionError(error instanceof Error ? error.message : "Unable to load production dashboard data.");
+    });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadProduction().finally(() => { if (cancelled) return; });
+    return () => { cancelled = true; };
+  }, []);
 
   // Column 3 Segmented View Toggle ("summary" | "modes")
   const [column3View, setColumn3View] = useState<"summary" | "modes">("summary");
 
   // Keep the first render identical on the server and client.
-  const [selectedKpiIds, setSelectedKpiIds] = useState<string[]>(DEFAULT_SELECTED_KPI_IDS);
+  const defaultKpiIds = ["shipments", "active", "delayed", "exceptions", "pickups"];
+  const [selectedKpiIds, setSelectedKpiIds] = useState<string[]>(defaultKpiIds);
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
-  const [tempSelectedIds, setTempSelectedIds] = useState<string[]>(DEFAULT_SELECTED_KPI_IDS);
+  const [tempSelectedIds, setTempSelectedIds] = useState<string[]>(defaultKpiIds);
 
   // Load browser-only preferences after hydration.
   useEffect(() => {
@@ -107,12 +153,12 @@ export default function Dashboard() {
   };
 
   const handleResetKpis = () => {
-    setTempSelectedIds(DEFAULT_SELECTED_KPI_IDS);
+    setTempSelectedIds(defaultKpiIds);
   };
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 800);
+    void loadProduction().finally(() => setIsRefreshing(false));
   };
 
   const handleDismissAlerts = () => {
@@ -123,9 +169,18 @@ export default function Dashboard() {
     setAlerts(alerts.filter((a) => a.id !== id));
   };
 
+  const liveKpiMetrics: KpiMetric[] = [
+    { id: "shipments", title: "Total shipments", value: String(production.shipments.length), change: "Live", isPositive: true, sparklinePoints: "0,20 15,18 30,22 45,14 60,16 75,8", category: "Operations", description: "Production shipment records" },
+    { id: "active", title: "Active shipments", value: String(production.shipments.filter((shipment) => !["delivered", "cancelled", "Delivered", "Cancelled"].includes(String(shipment.status ?? ""))).length), change: "Live", isPositive: true, sparklinePoints: "0,22 15,20 30,18 45,20 60,12 75,10", category: "Operations", description: "Shipments not delivered or cancelled" },
+    { id: "delayed", title: "Delayed shipments", value: String(production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; return Number.isFinite(edd) && edd < now && !["delivered", "Delivered"].includes(String(shipment.status ?? "")); }).length), change: "Live", isPositive: false, sparklinePoints: "0,10 15,12 30,9 45,16 60,14 75,20", category: "Exceptions", description: "Based on EDD and delivery status" },
+    { id: "exceptions", title: "Open exceptions", value: String(production.exceptions.length + production.ndr.length), change: "Live", isPositive: false, sparklinePoints: "0,20 15,17 30,18 45,12 60,14 75,10", category: "Exceptions", description: "NDR and exception records" },
+    { id: "pickups", title: "Open pickups", value: String(production.pickups.filter((pickup) => !["completed", "cancelled", "Completed", "Cancelled"].includes(String(pickup.status ?? ""))).length), change: "Live", isPositive: true, sparklinePoints: "0,22 15,18 30,20 45,15 60,13 75,8", category: "Operations", description: "Open production pickup requests" },
+    { id: "billing", title: "Pending billing", value: String(production.billing.filter((item) => String(item.status ?? "").toLowerCase() === "pending").length), change: "Live", isPositive: false, sparklinePoints: "0,18 15,18 30,16 45,13 60,15 75,11", category: "Finance", description: "Pending production billing records" },
+  ];
+
   // Filtered active KPI objects (limit to max 5)
   const activeKpis = selectedKpiIds
-    .map((id) => ALL_KPI_METRICS.find((m) => m.id === id))
+    .map((id) => liveKpiMetrics.find((m) => m.id === id))
     .filter((m): m is KpiMetric => m !== undefined)
     .slice(0, 5);
 
@@ -147,17 +202,21 @@ export default function Dashboard() {
     }
   };
 
-  const dashboardCounts = readClientDashboardCounts();
-  const totalShipments = dashboardCounts.totalShipments || COMPANY_SHIPMENT_SUMMARY.reduce((total, item) => total + item.count, 0);
-  const activeShipments = dashboardCounts.activeShipments || COMPANY_SHIPMENT_SUMMARY.filter((item) => ["Booked", "Picked Up", "In Transit", "Out for Delivery"].includes(item.status)).reduce((total, item) => total + item.count, 0);
-  const delayedShipments = COMPANY_DELAYED_SHIPMENTS.length;
-  const exceptionShipments = dashboardCounts.exceptionShipments;
-  const shipmentStatusData = COMPANY_SHIPMENT_SUMMARY;
-  const transportModes = readClientTransportModes();
-  const financialSnapshot = readClientFinancialSnapshot();
+  const statusCounts = new Map<string, number>(); production.shipments.forEach((shipment) => { const status = String(shipment.status ?? "Booked"); statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1); });
+  const totalShipments = production.shipments.length;
+  const activeShipments = production.shipments.filter((shipment) => ["booked", "picked_up", "in_transit", "out_for_delivery", "Booked", "Picked Up", "In Transit", "Out for Delivery"].includes(String(shipment.status ?? ""))).length;
+  const delayedRows = production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; const delivered = shipment.delivered_at ? Date.parse(String(shipment.delivered_at)) : NaN; return Number.isFinite(edd) && ((Number.isFinite(delivered) && delivered > edd) || (!Number.isFinite(delivered) && edd < now)); }).map((shipment) => ({ id: String(shipment.id), trackingId: String(shipment.tracking_number ?? shipment.id), origin: String(shipment.origin ?? "Origin pending"), destination: String(shipment.destination ?? "Destination pending"), carrier: String(shipment.provider ?? "Courier pending"), mode: String(shipment.provider ?? "—"), date: String(shipment.edd ?? "—") }));
+  const delayedShipments = delayedRows.length;
+  const exceptionShipments = production.exceptions.length + production.ndr.length;
+  const shipmentStatusData = [...statusCounts.entries()].map(([status, count]) => ({ status, count, percentage: totalShipments ? Math.round((count / totalShipments) * 100) : 0, badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary", barClass: "bg-primary" }));
+  const transportCounts = new Map<string, number>(); production.shipments.forEach((shipment) => { const mode = String(shipment.provider ?? "Unassigned"); transportCounts.set(mode, (transportCounts.get(mode) ?? 0) + 1); });
+  const transportModes = [...transportCounts.entries()].map(([name, shipments]) => ({ name, shipments, percentage: totalShipments ? Math.round((shipments / totalShipments) * 100) : 0, color: "var(--primary)" }));
+  const financialSnapshot: ClientFinancialSnapshot = { balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null, pendingCharges: production.billing.filter((item) => String(item.status).toLowerCase() === "pending").reduce((sum, item) => sum + Number(item.amount ?? 0), 0) || null, codExposure: null, recentTransactions: [] };
+  const todayPickupRows = production.pickups.map((pickup) => ({ pickupId: String(pickup.id), timeSlot: String(pickup.requested_time_slot ?? pickup.window ?? "—"), status: String(pickup.status ?? "requested"), company: String(pickup.client_id ?? "Client"), location: String(pickup.pickup_address ?? pickup.location ?? "Location pending"), pcs: "—", kg: "—", badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary" }));
 
   return (
     <div className="w-full space-y-4">
+      {productionError && <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{productionError}</div>}
       {/* Header Section */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span className="font-semibold text-foreground">{totalShipments} shipments</span><span>·</span><span>{activeShipments} active</span><span className="text-amber-600 dark:text-amber-300">· {delayedShipments} delayed</span><span className="text-destructive">· {exceptionShipments} exception{exceptionShipments === 1 ? "" : "s"}</span></div>
@@ -354,7 +413,7 @@ export default function Dashboard() {
                 <span>Status Breakdown</span>
                 <span className="font-semibold text-foreground">{totalShipments} Shipments</span>
               </div>
-              {COMPANY_SHIPMENT_SUMMARY.map((item) => (
+              {shipmentStatusData.map((item) => (
                 <div key={item.status} className="flex items-center gap-2 py-1">
                   <span
                     className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap w-28 justify-start shrink-0 ${item.badgeClass}`}
@@ -393,8 +452,8 @@ export default function Dashboard() {
           </div>
           <div className="px-4 pt-2 pb-4 flex-1 overflow-y-auto custom-scrollbar">
             <ol className="relative space-y-1">
-              {RECENT_ACTIVITIES.map((act, idx) => {
-                const isLast = idx === RECENT_ACTIVITIES.length - 1;
+              {activities.map((act, idx) => {
+                const isLast = idx === activities.length - 1;
                 const iconBgMap = {
                   destructive: "text-destructive bg-destructive/10",
                   primary: "text-primary bg-primary/10",
@@ -429,6 +488,7 @@ export default function Dashboard() {
                   </li>
                 );
               })}
+              {!activities.length && <li className="px-2.5 py-8 text-center text-xs text-muted-foreground">No production activity recorded yet.</li>}
             </ol>
           </div>
         </div>
@@ -455,7 +515,7 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto custom-scrollbar">
-            {COMPANY_DELAYED_SHIPMENTS.map((shp) => (
+            {delayedRows.map((shp) => (
               <Link
                 key={shp.id}
                 href={`/dashboard/shipmentTracking?id=${shp.id}`}
@@ -493,7 +553,7 @@ export default function Dashboard() {
               <Clock className="h-4 w-4 text-primary" />
               <h3 className="text-sm font-semibold text-foreground">Today&apos;s Pickups</h3>
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary border border-primary/20">
-                {COMPANY_TODAY_PICKUPS.length} Active
+                {todayPickupRows.length} Active
               </span>
             </div>
             <Link
@@ -505,9 +565,9 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto custom-scrollbar">
-            {COMPANY_TODAY_PICKUPS.map((pku) => (
+            {todayPickupRows.map((pku) => (
               <Link
-                key={pku.id}
+                key={pku.pickupId}
                 href="/dashboard/pickupRequests"
                 className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/40 group"
               >
@@ -688,7 +748,7 @@ export default function Dashboard() {
 
             {/* Metrics List Grid */}
             <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-              {ALL_KPI_METRICS.map((kpi) => {
+              {liveKpiMetrics.map((kpi) => {
                 const isSelected = tempSelectedIds.includes(kpi.id);
                 const isDisabled = !isSelected && tempSelectedIds.length >= 5;
 
@@ -765,15 +825,14 @@ function TransportModesView({ modes }: { modes: { name: string; shipments: numbe
   const colors = ["var(--primary)", "#06b6d4", "#10b981", "#f59e0b", "#8b5cf6", "#f43f5e"];
   const total = modes.reduce((sum, mode) => sum + mode.shipments, 0);
   const circumference = 2 * Math.PI * 38;
-  let offset = 0;
   return <div className="flex flex-1 flex-col items-center justify-between gap-5 p-5 animate-in fade-in duration-200">
     <div className="text-center space-y-0.5 pt-1"><p className="text-xs text-muted-foreground font-medium">Mode Distribution</p><p className="text-2xl font-bold tracking-tight text-foreground tabular-nums">{total}</p></div>
-    <div className="relative size-44 shrink-0 grid place-items-center"><svg className="size-full -rotate-90" viewBox="0 0 100 100" role="img" aria-label="Transport mode distribution"><circle cx="50" cy="50" r="38" fill="none" stroke="var(--muted)" strokeWidth="14" />{modes.map((mode, index) => { const length = (mode.shipments / total) * circumference; const dashOffset = -offset; offset += length; return <circle key={mode.name} cx="50" cy="50" r="38" fill="none" stroke={colors[index % colors.length]} strokeWidth="14" strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={dashOffset} />; })}</svg><div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"><PieChart className="mb-0.5 size-5 text-primary" /><span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Modes</span></div></div>
+    <div className="relative size-44 shrink-0 grid place-items-center"><svg className="size-full -rotate-90" viewBox="0 0 100 100" role="img" aria-label="Transport mode distribution"><circle cx="50" cy="50" r="38" fill="none" stroke="var(--muted)" strokeWidth="14" />{modes.map((mode, index) => { const length = (mode.shipments / total) * circumference; const dashOffset = -modes.slice(0, index).reduce((sum, item) => sum + (item.shipments / total) * circumference, 0); return <circle key={mode.name} cx="50" cy="50" r="38" fill="none" stroke={colors[index % colors.length]} strokeWidth="14" strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={dashOffset} />; })}</svg><div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"><PieChart className="mb-0.5 size-5 text-primary" /><span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Modes</span></div></div>
     <div className="w-full grid grid-cols-2 gap-2 border-t border-border/40 pt-3">{modes.map((mode, index) => <div key={mode.name} className="flex flex-col rounded-lg border border-border/30 bg-muted/40 p-2"><div className="flex items-center gap-1.5"><span className="size-2 rounded-sm" style={{ background: colors[index % colors.length] }} /><span className="text-xs font-semibold text-foreground">{mode.name}</span></div><div className="mt-1 flex items-baseline justify-between"><span className="text-xs font-bold tabular-nums text-foreground">{mode.shipments}</span><span className="font-mono text-[10px] text-muted-foreground">{mode.percentage}%</span></div></div>)}</div>
   </div>;
 }
 
-function FinancialSnapshotCard({ snapshot }: { snapshot: ReturnType<typeof readClientFinancialSnapshot> }) {
+function FinancialSnapshotCard({ snapshot }: { snapshot: ClientFinancialSnapshot }) {
   const hasData = snapshot.balance !== null || snapshot.pendingCharges !== null || snapshot.codExposure !== null || snapshot.recentTransactions.length > 0;
   return <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm">
     <div className="flex items-center justify-between border-b border-border px-5 py-4"><div className="flex items-center gap-2"><WalletCards className="size-4 text-primary" /><h3 className="text-sm font-semibold text-foreground">Financial Snapshot</h3></div><Link href="/dashboard/walletManagement" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">Wallet <ArrowRight className="size-3" /></Link></div>

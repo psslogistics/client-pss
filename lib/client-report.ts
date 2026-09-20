@@ -1,25 +1,13 @@
-import { billingRecords, formatINR, type BillingRecord } from "@/lib/client-finance-data";
-import { exceptionCases, ndrCases, type ExceptionCase, type NdrCase } from "@/lib/client-operations-data";
-import { readWorkflowPickups, readWorkflowShipments, type WorkflowPickup, type WorkflowShipment } from "@/lib/client-workflow-store";
+import { formatINR, type BillingRecord } from "@/lib/client-finance-data";
+import type { ExceptionCase, NdrCase } from "@/lib/client-operations-data";
+import type { WorkflowPickup } from "@/lib/client-workflow-store";
 
 export type ClientReportData = {
-  shipments: BillingRecord[];
+  shipments: (BillingRecord & { edd?: string; delayDays?: number })[];
   pickups: WorkflowPickup[];
   ndr: NdrCase[];
   exceptions: ExceptionCase[];
 };
 
-export const readClientReportData = (): ClientReportData => {
-  const workflowShipments = readWorkflowShipments();
-  const knownIds = new Set(workflowShipments.map((record) => record.id));
-  return {
-    shipments: [...workflowShipments, ...billingRecords.filter((record) => !knownIds.has(record.id))],
-    pickups: readWorkflowPickups(),
-    ndr: ndrCases,
-    exceptions: exceptionCases,
-  };
-};
-
-export const formatReportDate = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+export const formatReportDate = (value: string) => { const parsed = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`); return Number.isNaN(parsed.getTime()) ? "Not provided" : parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }); };
 export const formatReportCurrency = (value: number) => formatINR(value);
-

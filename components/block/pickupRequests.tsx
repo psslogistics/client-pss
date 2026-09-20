@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Dropdown from "@/components/ui/dropdown";
+import { pssApi } from "@/lib/pss-api";
 
 type PickupStatus = "Scheduled" | "Driver Assigned" | "En Route" | "Completed" | "Failed" | "Cancelled";
 type SortKey = "reference" | "customer" | "status" | "date" | "location" | "driver" | "pieces" | "weight";
@@ -57,7 +58,8 @@ type NewPickup = {
 
 const initialPickups: Pickup[] = [];
 
-const emptyForm: NewPickup = { customer: "", contact: "", address: "", city: "", country: "", date: "2026-08-08", window: "9:00 AM – 11:00 AM", pieces: "1", weight: "", notes: "" };
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const emptyForm: NewPickup = { customer: "", contact: "", address: "", city: "", country: "", date: todayIso(), window: "9:00 AM – 11:00 AM", pieces: "1", weight: "", notes: "" };
 
 const statusStyles: Record<PickupStatus, string> = {
   Scheduled: "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300",
@@ -91,6 +93,15 @@ export default function PickupRequests() {
   const statusMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    void pssApi<{ data?: Array<Record<string, unknown>> }>("/v1/pickups").then((result) => {
+      if (cancelled) return;
+      setPickups((result.data ?? []).map((row) => ({ id: String(row.id), reference: String(row.id), customer: "Assigned client", status: String(row.status || "scheduled").replace(/(^|_)(\w)/g, (_, __, letter: string) => ` ${letter.toUpperCase()}`).trim() as PickupStatus, date: String(row.scheduled_date || "").slice(0, 10), window: String(row.window || "Not provided"), location: String(row.location || "Not provided"), country: "India", driver: "Unassigned", pieces: 1, weight: "Not provided", contact: "Not provided", address: String(row.location || "Not provided"), notes: "", createdFrom: "Standalone request" })));
+    }).catch(() => { if (!cancelled) setNotice("Unable to load production pickup data."); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     if (!statusOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
       if (statusMenuRef.current && !statusMenuRef.current.contains(event.target as Node)) setStatusOpen(false);
@@ -115,7 +126,7 @@ export default function PickupRequests() {
   }, [pickups, query, sort, statusFilter]);
 
   const metrics = useMemo(() => ({
-    today: pickups.filter((pickup) => pickup.date === "Aug 7" && pickup.status !== "Cancelled").length,
+    today: pickups.filter((pickup) => pickup.date === todayIso() && pickup.status !== "Cancelled").length,
     scheduled: pickups.filter((pickup) => pickup.status === "Scheduled" || pickup.status === "Driver Assigned").length,
     completed: pickups.filter((pickup) => pickup.status === "Completed").length,
     failed: pickups.filter((pickup) => pickup.status === "Failed").length,
@@ -145,10 +156,15 @@ export default function PickupRequests() {
     setNotice(`${exportRows.length} pickup${exportRows.length === 1 ? "" : "s"} exported.`);
   };
 
-  const schedulePickup = (event: React.FormEvent<HTMLFormElement>) => {
+  const schedulePickup = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setNotice("Pickup requests are unavailable until the production operations service is connected.");
+    try {
+      const result = await pssApi<{ data: { id: string; status?: string } }>("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ scheduled_date: form.date, window: form.window, location: `${form.address}, ${form.city}, ${form.country}`, contact_name: form.customer, contact_phone: form.contact, pieces: Number(form.pieces) }) });
+      const created: Pickup = { id: result.data.id, reference: result.data.id, customer: form.customer, status: String(result.data.status || "scheduled").replace(/(^|_)(\w)/g, (_, __, letter: string) => ` ${letter.toUpperCase()}`).trim() as PickupStatus, date: form.date, window: form.window, location: `${form.address}, ${form.city}, ${form.country}`, country: form.country, driver: "Unassigned", pieces: Number(form.pieces) || 1, weight: form.weight ? `${form.weight} kg` : "Not provided", contact: form.contact, address: form.address, notes: form.notes, createdFrom: "Standalone request" };
+      setPickups((current) => [created, ...current]); setNotice(`Pickup ${result.data.id} was saved to production.`); setScheduleOpen(false); setForm({ ...emptyForm, date: todayIso() });
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Pickup request failed."); }
   };
+  const cancelPickup = async (pickup: Pickup) => { try { await pssApi(`/v1/pickups/${encodeURIComponent(pickup.id)}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ status: "cancelled" }) }); setPickups((current) => current.map((item) => item.id === pickup.id ? { ...item, status: "Cancelled" } : item)); setSelectedPickup((current) => current?.id === pickup.id ? { ...current, status: "Cancelled" } : current); setNotice(`Pickup ${pickup.reference} was cancelled in production.`); } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to cancel pickup."); } };
 
   return (
     <div className="w-full space-y-4 pb-10">
@@ -159,7 +175,7 @@ export default function PickupRequests() {
         <MetricCard label="Failed (7d)" value={metrics.failed} change="1.8%" icon={<FileText className="h-4 w-4" />} />
         <div className="flex w-full shrink-0 gap-2 sm:w-auto">
           <button type="button" onClick={() => setCalendarOpen((current) => !current)} className={cn(buttonSecondary, "flex-1 sm:flex-none")}><CalendarDays className="h-4 w-4" /> Calendar View</button>
-          <button type="button" disabled onClick={() => setScheduleOpen(true)} className={cn(buttonPrimary, "flex-1 sm:flex-none cursor-not-allowed opacity-50")}><Plus className="h-4 w-4" /> Schedule Pickup</button>
+          <button type="button" onClick={() => setScheduleOpen(true)} className={cn(buttonPrimary, "flex-1 sm:flex-none")}><Plus className="h-4 w-4" /> Schedule Pickup</button>
         </div>
       </div>
 
@@ -185,7 +201,7 @@ export default function PickupRequests() {
       </div>
 
       {notice && <div role="status" className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary"><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X className="h-3.5 w-3.5" /></button></div>}
-      {selectedPickup && <PickupDetail pickup={selectedPickup} close={() => setSelectedPickup(null)} />}
+      {selectedPickup && <PickupDetail pickup={selectedPickup} close={() => setSelectedPickup(null)} cancel={() => void cancelPickup(selectedPickup)} />}
       {scheduleOpen && <ScheduleModal form={form} updateForm={updateForm} submit={schedulePickup} close={() => { setScheduleOpen(false); setForm(emptyForm); }} />}
     </div>
   );
@@ -214,8 +230,8 @@ function CalendarPanel({ pickups, close }: { pickups: Pickup[]; close: () => voi
   return <section className="rounded-xl border border-border bg-card p-4 shadow-xs"><div className="flex items-start justify-between"><div><h2 className="flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" /> Pickup calendar</h2><p className="mt-1 text-xs text-muted-foreground">Upcoming pickup windows grouped by day.</p></div><button type="button" onClick={close} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent" aria-label="Close calendar"><X className="h-4 w-4" /></button></div><div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{Object.entries(grouped).slice(0, 8).map(([date, items]) => <div key={date} className="rounded-lg border border-border bg-background p-3"><p className="text-xs font-semibold">{date}</p><div className="mt-2 space-y-2">{items.slice(0, 3).map((pickup) => <button type="button" key={pickup.id} onClick={close} className="block w-full text-left"><p className="truncate text-[11px] font-medium">{pickup.window}</p><p className="truncate text-[10px] text-muted-foreground">{pickup.location} · {pickup.status}</p></button>)}</div></div>)}</div></section>;
 }
 
-function PickupDetail({ pickup, close }: { pickup: Pickup; close: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={close}><div role="dialog" aria-modal="true" aria-labelledby="pickup-detail-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between border-b border-border/70 pb-4"><div><div className="flex flex-wrap items-center gap-2"><h2 id="pickup-detail-title" className="font-mono text-lg font-bold tracking-tight">{pickup.reference}</h2><StatusBadge status={pickup.status} /></div><p className="mt-1 text-xs text-muted-foreground">{pickup.createdFrom} · pickup request details</p></div><button type="button" onClick={close} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent" aria-label="Close pickup details"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-2 gap-2"><Detail label="Customer" value={pickup.customer} /><Detail label="Contact" value={pickup.contact} /><Detail label="Pickup date" value={`${pickup.date} · ${pickup.window}`} /><Detail label="Driver" value={pickup.driver} /><Detail label="Pieces" value={String(pickup.pieces)} /><Detail label="Weight" value={pickup.weight} /></div><div className="mt-3 rounded-lg border border-border bg-background p-3"><p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> Pickup location</p><p className="mt-1 text-sm font-semibold">{pickup.location}, {pickup.country}</p><p className="mt-0.5 text-xs text-muted-foreground">{pickup.address}</p></div><div className="mt-3 rounded-lg bg-primary/5 p-3 text-xs leading-5 text-muted-foreground"><p className="font-semibold text-foreground">Pickup notes</p><p className="mt-1">{pickup.notes}</p></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={close} className={buttonSecondary}>Close</button><button type="button" onClick={() => { navigator.clipboard?.writeText(pickup.reference); close(); }} className={buttonPrimary}><Check className="h-3.5 w-3.5" /> Copy reference</button></div></div></div>;
+function PickupDetail({ pickup, close, cancel }: { pickup: Pickup; close: () => void; cancel: () => void }) {
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={close}><div role="dialog" aria-modal="true" aria-labelledby="pickup-detail-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between border-b border-border/70 pb-4"><div><div className="flex flex-wrap items-center gap-2"><h2 id="pickup-detail-title" className="font-mono text-lg font-bold tracking-tight">{pickup.reference}</h2><StatusBadge status={pickup.status} /></div><p className="mt-1 text-xs text-muted-foreground">{pickup.createdFrom} · pickup request details</p></div><button type="button" onClick={close} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent" aria-label="Close pickup details"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-2 gap-2"><Detail label="Customer" value={pickup.customer} /><Detail label="Contact" value={pickup.contact} /><Detail label="Pickup date" value={`${pickup.date} · ${pickup.window}`} /><Detail label="Driver" value={pickup.driver} /><Detail label="Pieces" value={String(pickup.pieces)} /><Detail label="Weight" value={pickup.weight} /></div><div className="mt-3 rounded-lg border border-border bg-background p-3"><p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> Pickup location</p><p className="mt-1 text-sm font-semibold">{pickup.location}, {pickup.country}</p><p className="mt-0.5 text-xs text-muted-foreground">{pickup.address}</p></div><div className="mt-3 rounded-lg bg-primary/5 p-3 text-xs leading-5 text-muted-foreground"><p className="font-semibold text-foreground">Pickup notes</p><p className="mt-1">{pickup.notes}</p></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={close} className={buttonSecondary}>Close</button>{!['Cancelled', 'Completed', 'Failed'].includes(pickup.status) && <button type="button" onClick={cancel} className={buttonSecondary}>Cancel pickup</button>}<button type="button" onClick={() => { navigator.clipboard?.writeText(pickup.reference); close(); }} className={buttonPrimary}><Check className="h-3.5 w-3.5" /> Copy reference</button></div></div></div>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-lg border border-border bg-background p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate text-xs font-semibold" title={value}>{value}</p></div>; }
