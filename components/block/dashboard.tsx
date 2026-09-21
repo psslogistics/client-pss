@@ -73,21 +73,23 @@ export default function Dashboard() {
   const [productionError, setProductionError] = useState("");
   const [production, setProduction] = useState<{ shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>> }>({ shipments: [], pickups: [], billing: [], wallet: [], exceptions: [], ndr: [] });
 
-  const loadProduction = () => {
-    return pssApi<{ data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>> } }>("/v1/dashboard/summary").then(({ data }) => {
+  const loadProduction = (signal?: AbortSignal) => {
+    return pssApi<{ data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>> } }>("/v1/dashboard/summary", { signal }).then(({ data }) => {
+      if (signal?.aborted) return;
       setProductionError("");
       setProduction({ shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, exceptions: data.exceptions, ndr: data.ndr });
       setActivities(data.activity.slice(0, 12).map((row) => ({ id: String(row.id), title: String(row.action ?? "Activity"), description: `${String(row.entity_type ?? "Record")}${row.entity_id ? ` · ${String(row.entity_id)}` : ""}`, timeAgo: relativeTime(String(row.created_at ?? "")), iconType: activityIconType(String(row.action ?? "")), iconName: activityIconName(String(row.action ?? "")) })));
       setAlerts([...data.exceptions, ...data.ndr].filter((row) => !["resolved", "closed", "delivered", "cancelled"].includes(String(row.status ?? "").toLowerCase())).slice(0, 8).map((row) => ({ id: String(row.id), title: String(row.title ?? row.reason ?? "Operational exception"), description: String(row.details ?? row.notes ?? "Requires operational review"), timeAgo: relativeTime(String(row.created_at ?? "")), refId: String(row.shipment_id ?? row.id), type: "warning", dotColor: "bg-amber-500" })));
     }).catch((error) => {
+      if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
       setProductionError(error instanceof Error ? error.message : "Unable to load production dashboard data.");
     });
   };
 
   useEffect(() => {
-    let cancelled = false;
-    void loadProduction().finally(() => { if (cancelled) return; });
-    return () => { cancelled = true; };
+    const controller = new AbortController();
+    void loadProduction(controller.signal);
+    return () => controller.abort();
   }, []);
 
   // Column 3 Segmented View Toggle ("summary" | "modes")
