@@ -239,7 +239,13 @@ export default function ShipmentBooking() {
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const bulkFileRef = useRef<HTMLInputElement>(null);
   const pinRequestRef = useRef({ pickup: 0, delivery: 0 });
+  const pinAbortRef = useRef<{ pickup?: AbortController; delivery?: AbortController }>({});
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => () => {
+    pinAbortRef.current.pickup?.abort();
+    pinAbortRef.current.delivery?.abort();
+  }, []);
 
   // Reconcile the dimension editor with the persisted piece count.
   useEffect(() => {
@@ -295,11 +301,14 @@ export default function ShipmentBooking() {
     const setAddress = kind === "pickup" ? setPickup : setDelivery;
     const setStatus = kind === "pickup" ? setPickupPinStatus : setDeliveryPinStatus;
     const requestId = ++pinRequestRef.current[kind];
+    pinAbortRef.current[kind]?.abort();
+    const controller = new AbortController();
+    pinAbortRef.current[kind] = controller;
     setAddress((current) => ({ ...current, pincode: value }));
     if (value.length < 6) { setStatus({ state: "idle", message: "" }); return; }
     setStatus({ state: "loading", message: "" });
     try {
-      const response = await fetch(`https://api.postalpincode.in/pincode/${value}`);
+      const response = await fetch(`https://api.postalpincode.in/pincode/${value}`, { signal: controller.signal });
       const result = await response.json();
       if (requestId !== pinRequestRef.current[kind]) return;
       const office = result?.[0]?.Status === "Success" ? result[0].PostOffice?.[0] : null;
@@ -307,6 +316,7 @@ export default function ShipmentBooking() {
       setAddress((current) => ({ ...current, city: office.District || office.Name || "", state: office.State || "" }));
       setStatus({ state: "success", message: "" });
     } catch {
+      if (controller.signal.aborted || requestId !== pinRequestRef.current[kind]) return;
       setStatus({ state: "error", message: "PIN code could not be verified" });
     }
   };
