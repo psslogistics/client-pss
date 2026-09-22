@@ -169,10 +169,10 @@ export default function PickupRequests() {
   return (
     <div className="w-full space-y-4 pb-10">
       <div className="flex flex-wrap items-stretch gap-2">
-        <MetricCard label="Today's Pickups" value={metrics.today} change="5.2%" positive icon={<Truck className="h-4 w-4" />} />
-        <MetricCard label="Scheduled" value={metrics.scheduled} change="3.1%" positive icon={<Clock3 className="h-4 w-4" />} />
-        <MetricCard label="Completed (7d)" value={metrics.completed} change="12.4%" positive icon={<Check className="h-4 w-4" />} />
-        <MetricCard label="Failed (7d)" value={metrics.failed} change="1.8%" icon={<FileText className="h-4 w-4" />} />
+        <MetricCard label="Today's Pickups" value={metrics.today} icon={<Truck className="h-4 w-4" />} />
+        <MetricCard label="Scheduled" value={metrics.scheduled} icon={<Clock3 className="h-4 w-4" />} />
+        <MetricCard label="Completed (7d)" value={metrics.completed} icon={<Check className="h-4 w-4" />} />
+        <MetricCard label="Failed (7d)" value={metrics.failed} icon={<FileText className="h-4 w-4" />} />
         <div className="flex w-full shrink-0 gap-2 sm:w-auto">
           <button type="button" onClick={() => setCalendarOpen((current) => !current)} className={cn(buttonSecondary, "flex-1 sm:flex-none")}><CalendarDays className="h-4 w-4" /> Calendar View</button>
           <button type="button" onClick={() => setScheduleOpen(true)} className={cn(buttonPrimary, "flex-1 sm:flex-none")}><Plus className="h-4 w-4" /> Schedule Pickup</button>
@@ -211,8 +211,8 @@ const inputClass = "h-9 rounded-lg border border-input bg-background px-3 text-x
 const buttonSecondary = "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-input bg-background px-3 text-xs font-semibold text-foreground transition hover:bg-accent";
 const buttonPrimary = "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90";
 
-function MetricCard({ label, value, change, positive, icon }: { label: string; value: number; change: string; positive?: boolean; icon: React.ReactNode }) {
-  return <div className="flex h-9 min-w-[190px] flex-1 items-center gap-2 rounded-lg border border-border bg-card px-3 shadow-xs"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">{icon}</span><p className="min-w-0 truncate text-[11px] font-semibold text-muted-foreground">{label}</p><p className="text-base font-bold leading-none tracking-tight tabular-nums">{value}</p><p className={cn("ml-auto flex shrink-0 items-center gap-0.5 text-[10px] font-medium", positive ? "text-emerald-600 dark:text-emerald-400" : "text-destructive")}>{positive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}{change}</p></div>;
+function MetricCard({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
+  return <div className="flex h-9 min-w-[190px] flex-1 items-center gap-2 rounded-lg border border-border bg-card px-3 shadow-xs"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">{icon}</span><p className="min-w-0 truncate text-[11px] font-semibold text-muted-foreground">{label}</p><p className="ml-auto text-base font-bold leading-none tracking-tight tabular-nums">{value}</p></div>;
 }
 
 function PickupRow({ pickup, visibleColumns, selected, toggleSelected, open }: { pickup: Pickup; visibleColumns: SortKey[]; selected: boolean; toggleSelected: () => void; open: () => void }) {
