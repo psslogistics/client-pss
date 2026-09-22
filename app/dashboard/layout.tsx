@@ -19,28 +19,39 @@ import { createClient } from "@/lib/supabase/client";
 import { pssApi } from "@/lib/pss-api";
 
 type NavItem = { title: string; icon: IconName; href: string };
+type NavGroup = { title: string; items: NavItem[] };
 
-const navigation: NavItem[] = [
-  { title: "All Shipments", icon: "shipments", href: "/dashboard/allShipments" },
-  { title: "Pickup", icon: "pickups", href: "/dashboard/pickupRequests" },
-  { title: "Warehouses", icon: "warehouse", href: "/dashboard/warehouseManagement" },
-  { title: "Tracking", icon: "tracking", href: "/dashboard/shipmentTracking" },
-  { title: "Weight Reconciliation", icon: "reports", href: "/dashboard/weightReconciliation" },
-  { title: "Rate Calculator", icon: "billing", href: "/dashboard/rateCheck" },
-  { title: "NDR/Exceptions", icon: "exceptions", href: "/dashboard/ndrExceptions" },
-  { title: "Pincode Serviceability", icon: "tracking", href: "/dashboard/pincodeServiceability" },
-  { title: "Rate Card", icon: "reports", href: "/dashboard/rateCard" },
-  { title: "Wallet", icon: "wallets", href: "/dashboard/walletManagement" },
-  { title: "Billing", icon: "billing", href: "/dashboard/billingInvoiceManagement" },
-  { title: "COD Remittance", icon: "billing", href: "/dashboard/codRemittance" },
-  { title: "Support", icon: "support", href: "/dashboard/supportTicketCreation" },
+const navigationGroups: NavGroup[] = [
+  { title: "Shipments", items: [
+    { title: "All Shipments", icon: "shipments", href: "/dashboard/allShipments" },
+    { title: "Tracking", icon: "tracking", href: "/dashboard/shipmentTracking" },
+  ] },
+  { title: "Pickup & Locations", items: [
+    { title: "Pickup", icon: "pickups", href: "/dashboard/pickupRequests" },
+    { title: "Warehouses", icon: "warehouse", href: "/dashboard/warehouseManagement" },
+    { title: "Pincode Serviceability", icon: "tracking", href: "/dashboard/pincodeServiceability" },
+  ] },
+  { title: "Pricing & Finance", items: [
+    { title: "Rate Calculator", icon: "billing", href: "/dashboard/rateCheck" },
+    { title: "Rate Card", icon: "reports", href: "/dashboard/rateCard" },
+    { title: "Weight Reconciliation", icon: "reports", href: "/dashboard/weightReconciliation" },
+    { title: "Wallet", icon: "wallets", href: "/dashboard/walletManagement" },
+    { title: "Billing", icon: "billing", href: "/dashboard/billingInvoiceManagement" },
+    { title: "COD Remittance", icon: "billing", href: "/dashboard/codRemittance" },
+  ] },
+  { title: "Exceptions & Support", items: [
+    { title: "NDR/Exceptions", icon: "exceptions", href: "/dashboard/ndrExceptions" },
+    { title: "Support", icon: "support", href: "/dashboard/supportTicketCreation" },
+  ] },
+  { title: "Account", items: [
+    { title: "Notifications", icon: "notifications", href: "/dashboard/notificationsAlerts" },
+    { title: "Profile", icon: "user", href: "/dashboard/profileAccountManagement" },
+    { title: "Settings", icon: "settings", href: "/dashboard/userSettings" },
+  ] },
 ];
 
-const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...navigation,
-  { title: "Profile", href: "/dashboard/profileAccountManagement" },
-  { title: "Settings", href: "/dashboard/userSettings" },
-  { title: "Notifications", href: "/dashboard/notificationsAlerts" },
-];
+const navigation = navigationGroups.flatMap((group) => group.items);
+const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...navigation];
 
 function NavItems({ items, pathname }: { items: NavItem[]; pathname: string }) {
   return (
@@ -178,12 +189,10 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             </SidebarGroupContent>
           </SidebarGroup>
 
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-3 text-xs font-medium uppercase tracking-widest text-sidebar-foreground/40">Operations</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <NavItems items={navigation} pathname={pathname} />
-            </SidebarGroupContent>
-          </SidebarGroup>
+          {navigationGroups.map((group) => <SidebarGroup key={group.title} className="py-1">
+            <SidebarGroupLabel className="px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-sidebar-foreground/40">{group.title}</SidebarGroupLabel>
+            <SidebarGroupContent><NavItems items={group.items} pathname={pathname} /></SidebarGroupContent>
+          </SidebarGroup>)}
         </SidebarContent>
 
         {/* Footer Brand */}
