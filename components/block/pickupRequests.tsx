@@ -90,6 +90,7 @@ export default function PickupRequests() {
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState<NewPickup>(emptyForm);
+  const [loading, setLoading] = useState(true);
   const statusMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -97,7 +98,7 @@ export default function PickupRequests() {
     void pssApi<{ data?: Array<Record<string, unknown>> }>("/v1/pickups").then((result) => {
       if (cancelled) return;
       setPickups((result.data ?? []).map((row) => ({ id: String(row.id), reference: String(row.id), customer: "Assigned client", status: String(row.status || "scheduled").replace(/(^|_)(\w)/g, (_, __, letter: string) => ` ${letter.toUpperCase()}`).trim() as PickupStatus, date: String(row.scheduled_date || "").slice(0, 10), window: String(row.window || "Not provided"), location: String(row.location || "Not provided"), country: "India", driver: "Unassigned", pieces: 1, weight: "Not provided", contact: "Not provided", address: String(row.location || "Not provided"), notes: "", createdFrom: "Standalone request" })));
-    }).catch(() => { if (!cancelled) setNotice("Unable to load production pickup data."); });
+    }).catch(() => { if (!cancelled) setNotice("Unable to load production pickup data."); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -196,7 +197,7 @@ export default function PickupRequests() {
             <thead className="bg-muted/30 text-[10px] uppercase tracking-wide text-muted-foreground"><tr className="border-y border-border/70"><th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Select all visible pickup requests" checked={allVisibleSelected} onChange={toggleAllVisible} className="accent-primary" /></th>{columns.filter((column) => visibleColumns.includes(column.key)).map((column) => <th key={column.key} className="px-3 py-3 font-semibold"><button type="button" onClick={() => toggleSort(column.key)} className="inline-flex items-center gap-1 hover:text-foreground">{column.label}{sort.key === column.key ? sort.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : <span className="text-muted-foreground/50">↕</span>}</button></th>)}<th className="px-3 py-3 font-semibold">Contact</th></tr></thead>
             <tbody className="divide-y divide-border/70">{filtered.map((pickup) => <PickupRow key={pickup.id} pickup={pickup} visibleColumns={visibleColumns} selected={selectedIds.includes(pickup.id)} toggleSelected={() => toggleSelected(pickup.id)} open={() => setSelectedPickup(pickup)} />)}</tbody>
           </table>
-          {!filtered.length && <div className="px-5 py-14 text-center text-sm text-muted-foreground"><Package className="mx-auto mb-2 h-6 w-6 opacity-50" />No pickup requests match these filters.</div>}
+          {!filtered.length && <div className="px-5 py-14 text-center text-sm text-muted-foreground"><Package className="mx-auto mb-2 h-6 w-6 opacity-50" />{loading ? "Loading production pickup requests…" : notice ? "Production pickup data unavailable." : "No pickup requests match these filters."}</div>}
         </div>
       </div>
 
