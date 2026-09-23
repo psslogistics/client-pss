@@ -19,19 +19,19 @@ import { createClient } from "@/lib/supabase/client";
 import { pssApi } from "@/lib/pss-api";
 
 type NavItem = { title: string; icon: IconName; href: string };
-type NavGroup = { title: string; items: NavItem[] };
+type NavGroup = { title: string; description: string; items: NavItem[] };
 
 const navigationGroups: NavGroup[] = [
-  { title: "Shipments", items: [
+  { title: "Shipment Operations", description: "Book, monitor, and move shipments", items: [
     { title: "All Shipments", icon: "shipments", href: "/dashboard/allShipments" },
     { title: "Tracking", icon: "tracking", href: "/dashboard/shipmentTracking" },
-  ] },
-  { title: "Pickup & Locations", items: [
     { title: "Pickup", icon: "pickups", href: "/dashboard/pickupRequests" },
+  ] },
+  { title: "Network & Serviceability", description: "Manage locations and delivery coverage", items: [
     { title: "Warehouses", icon: "warehouse", href: "/dashboard/warehouseManagement" },
     { title: "Pincode Serviceability", icon: "tracking", href: "/dashboard/pincodeServiceability" },
   ] },
-  { title: "Pricing & Finance", items: [
+  { title: "Pricing & Finance", description: "Rates, reconciliation, and settlement", items: [
     { title: "Rate Calculator", icon: "billing", href: "/dashboard/rateCheck" },
     { title: "Rate Card", icon: "reports", href: "/dashboard/rateCard" },
     { title: "Weight Reconciliation", icon: "reports", href: "/dashboard/weightReconciliation" },
@@ -39,11 +39,11 @@ const navigationGroups: NavGroup[] = [
     { title: "Billing", icon: "billing", href: "/dashboard/billingInvoiceManagement" },
     { title: "COD Remittance", icon: "billing", href: "/dashboard/codRemittance" },
   ] },
-  { title: "Exceptions & Support", items: [
+  { title: "Exceptions & Support", description: "Resolve delivery issues and get help", items: [
     { title: "NDR/Exceptions", icon: "exceptions", href: "/dashboard/ndrExceptions" },
     { title: "Support", icon: "support", href: "/dashboard/supportTicketCreation" },
   ] },
-  { title: "Account", items: [
+  { title: "Account & Preferences", description: "Notifications, profile, and settings", items: [
     { title: "Notifications", icon: "notifications", href: "/dashboard/notificationsAlerts" },
     { title: "Profile", icon: "user", href: "/dashboard/profileAccountManagement" },
     { title: "Settings", icon: "settings", href: "/dashboard/userSettings" },
@@ -190,7 +190,12 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
           </SidebarGroup>
 
           {navigationGroups.map((group) => <SidebarGroup key={group.title} className="py-1">
-            <SidebarGroupLabel className="px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-sidebar-foreground/40">{group.title}</SidebarGroupLabel>
+            <SidebarGroupLabel className="h-auto items-start px-3 py-2 text-sidebar-foreground/45">
+              <span className="min-w-0">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.12em]">{group.title}</span>
+                {!collapsed && <span className="mt-0.5 block truncate text-[10px] font-normal normal-case tracking-normal text-sidebar-foreground/35">{group.description}</span>}
+              </span>
+            </SidebarGroupLabel>
             <SidebarGroupContent><NavItems items={group.items} pathname={pathname} /></SidebarGroupContent>
           </SidebarGroup>)}
         </SidebarContent>
