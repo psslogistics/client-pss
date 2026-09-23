@@ -214,7 +214,19 @@ export default function Dashboard() {
   const transportCounts = new Map<string, number>(); production.shipments.forEach((shipment) => { const mode = String(shipment.provider ?? "Unassigned"); transportCounts.set(mode, (transportCounts.get(mode) ?? 0) + 1); });
   const transportModes = [...transportCounts.entries()].map(([name, shipments]) => ({ name, shipments, percentage: totalShipments ? Math.round((shipments / totalShipments) * 100) : 0, color: "var(--primary)" }));
   const financialSnapshot: ClientFinancialSnapshot = { balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null, pendingCharges: production.billing.filter((item) => String(item.status).toLowerCase() === "pending").reduce((sum, item) => sum + Number(item.amount ?? 0), 0) || null, codExposure: null, recentTransactions: [] };
-  const todayPickupRows = production.pickups.map((pickup) => ({ pickupId: String(pickup.id), timeSlot: String(pickup.requested_time_slot ?? pickup.window ?? "—"), status: String(pickup.status ?? "requested"), company: String(pickup.client_id ?? "Client"), location: String(pickup.pickup_address ?? pickup.location ?? "Location pending"), pcs: "—", kg: "—", badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary" }));
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const closedPickupStatuses = new Set(["completed", "cancelled", "failed"]);
+  const todayPickupRows = production.pickups
+    .filter((pickup) => {
+      const status = String(pickup.status ?? "requested").trim().toLowerCase();
+      const date = String(pickup.requested_date ?? pickup.scheduled_date ?? "").slice(0, 10);
+      return date === todayIso && !closedPickupStatuses.has(status);
+    })
+    .map((pickup) => {
+      const status = String(pickup.status ?? "requested").trim().toLowerCase();
+      const label = status.replace(/(^|_)(\w)/g, (_, __, letter: string) => ` ${letter.toUpperCase()}`).trim();
+      return { pickupId: String(pickup.id), timeSlot: String(pickup.requested_time_slot ?? pickup.window ?? "—"), status: label, company: String(pickup.client_id ?? "Client"), location: String(pickup.pickup_address ?? pickup.location ?? "Location pending"), pcs: "—", kg: "—", badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary" };
+    });
 
   return (
     <div className="w-full space-y-4">
@@ -567,6 +579,7 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto custom-scrollbar">
+            {!todayPickupRows.length && <div className="grid min-h-28 place-items-center px-5 py-8 text-center text-xs text-muted-foreground">No active pickups scheduled for today.</div>}
             {todayPickupRows.map((pku) => (
               <Link
                 key={pku.pickupId}
