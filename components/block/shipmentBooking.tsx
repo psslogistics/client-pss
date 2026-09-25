@@ -410,7 +410,49 @@ export default function ShipmentBooking() {
   };
 
   const confirmSingle = async () => { if (singleSubmitting || !selectedCourier || !selectedSlot) return; setSingleSubmitting(true); const courier = couriers.find((item) => item.id === selectedCourier) || couriers[0]; const idempotencyKey = singleAttemptId || crypto.randomUUID(); setSingleAttemptId(idempotencyKey); const date = new Date().toISOString().slice(0, 10); const declaredWeight = Number(shipmentDetails.weight) || 1; const originAddress = { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }; const destinationAddress = { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }; setBookingNotice("Saving booking securely…"); try { const result = await pssApi<{ data: { id: string; status: string; provider_result?: { status?: string } } }>("/v1/shipments", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ description: shipmentDetails.description, total_weight_kg: declaredWeight, declared_value: Number(shipmentDetails.value) || 0, pieces: Number(shipmentDetails.pieces) || 1, origin: `${pickup.city}, ${pickup.state}`, destination: `${delivery.city}, ${delivery.state}`, origin_address: originAddress, destination_address: destinationAddress, consignee: deliveryPerson.name, provider: courier.provider === "delhivery" || courier.provider === "ekart" || courier.provider === "trackon" || courier.provider === "xpressbees" ? courier.provider : undefined, provider_account_id: courier.accountId || undefined, edd: selectedCourier === "dispatch_pending" ? undefined : courier.eta }) }); const serverId = result.data.id; if (invoices.length) { await Promise.all(invoices.map(async (file) => { const contentType = documentContentType(file); if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`); return pssApi("/v1/documents", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-document-${file.name}` }, body: JSON.stringify({ shipment_id: serverId, name: file.name, content_type: contentType, body_base64: await fileAsBase64(file) }) }); })); } await pssApi("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-pickup` }, body: JSON.stringify({ shipment_id: serverId, scheduled_date: date, window: selectedSlot, location: pickup.line || `${pickup.city}, ${pickup.state}`, notes: "Created from shipment booking" }) }); setSingleCompleted(true); setBookingNotice(result.data.provider_result?.status === "accepted" ? "Booking saved and sent to the courier." : "Booking saved to production. Courier dispatch is pending configuration."); } catch (error) { setBookingNotice(error instanceof Error ? error.message : "Unable to save booking."); } finally { setSingleSubmitting(false); } };
-  const confirmBulkProduction = async () => { const validRows = bulkRows.filter((row) => !row.errors.length); if (bulkSubmitting || !validRows.length || validRows.some((row) => !row.courier || (row.invoiceAvailable && !row.invoice))) return; setBulkSubmitting(true); const batchId = bulkBatchId || crypto.randomUUID(); setBulkBatchId(batchId); setBookingNotice("Saving bulk bookings securely…"); try { const results = await Promise.allSettled(validRows.map(async (row) => { const shipment = await pssApi<{ data: { id: string } }>("/v1/shipments", { method: "POST", headers: { "Idempotency-Key": `${batchId}-${row.id}-shipment` }, body: JSON.stringify({ description: row.description || row.consignor || row.from, origin: row.from, destination: row.to, origin_address: { name: row.consignor || row.from, phone: row.consignorPhone, line: row.from, city: row.originCity, state: row.originState, pincode: row.originPincode, country: "India" }, destination_address: { name: row.consignee || row.to, phone: row.consigneePhone, line: row.to, city: row.destinationCity, state: row.destinationState, pincode: row.destinationPincode, country: "India" }, consignee: row.consignee || row.to, total_weight_kg: Number(row.weight) || 1, pieces: Number(row.pieces) || 1, declared_value: Number(row.shipmentValue) || 0, provider: row.courier === "delhivery" || row.courier === "ekart" ? row.courier : undefined }) }); if (row.invoice) { const contentType = documentContentType(row.invoice); if (!contentType) throw new Error(`Unsupported invoice format: ${row.invoice.name}`); await pssApi("/v1/documents", { method: "POST", headers: { "Idempotency-Key": `${batchId}-${row.id}-invoice` }, body: JSON.stringify({ shipment_id: shipment.data.id, name: row.invoice.name, content_type: contentType, body_base64: await fileAsBase64(row.invoice) }) }); } return shipment; })); const created = results.filter((result) => result.status === "fulfilled").length; const failed = results.length - created; setBulkResult({ created, failed }); setBulkCompleted(true); setBookingNotice(failed ? `${created} production booking${created === 1 ? " was" : "s were"} created; ${failed} row${failed === 1 ? " needs" : "s need"} retrying.` : `${created} production bookings were created with attached invoices uploaded.`); } finally { setBulkSubmitting(false); } };
+  const confirmBulkProduction = async () => {
+    const validRows = bulkRows.filter((row) => !row.errors.length);
+    if (bulkSubmitting || !validRows.length || validRows.some((row) => !row.courier || (row.invoiceAvailable && !row.invoice))) return;
+    setBulkSubmitting(true);
+    const batchId = bulkBatchId || crypto.randomUUID();
+    setBulkBatchId(batchId);
+    setBookingNotice("Saving bulk bookings securely…");
+    try {
+      const results = await Promise.allSettled(validRows.map(async (row) => {
+        const selectedCourier = couriers.find((courier) => courier.id === row.courier);
+        const shipment = await pssApi<{ data: { id: string } }>("/v1/shipments", {
+          method: "POST",
+          headers: { "Idempotency-Key": `${batchId}-${row.id}-shipment` },
+          body: JSON.stringify({
+            description: row.description || row.consignor || row.from,
+            origin: row.from,
+            destination: row.to,
+            origin_address: { name: row.consignor || row.from, phone: row.consignorPhone, line: row.from, city: row.originCity, state: row.originState, pincode: row.originPincode, country: "India" },
+            destination_address: { name: row.consignee || row.to, phone: row.consigneePhone, line: row.to, city: row.destinationCity, state: row.destinationState, pincode: row.destinationPincode, country: "India" },
+            consignee: row.consignee || row.to,
+            total_weight_kg: Number(row.weight) || 1,
+            pieces: Number(row.pieces) || 1,
+            declared_value: Number(row.shipmentValue) || 0,
+            provider: selectedCourier?.provider || undefined,
+            provider_account_id: selectedCourier?.accountId || undefined,
+          }),
+        });
+        if (row.invoice) {
+          const contentType = documentContentType(row.invoice);
+          if (!contentType) throw new Error(`Unsupported invoice format: ${row.invoice.name}`);
+          await pssApi("/v1/documents", { method: "POST", headers: { "Idempotency-Key": `${batchId}-${row.id}-invoice` }, body: JSON.stringify({ shipment_id: shipment.data.id, name: row.invoice.name, content_type: contentType, body_base64: await fileAsBase64(row.invoice) }) });
+        }
+        return shipment;
+      }));
+      const created = results.filter((result) => result.status === "fulfilled").length;
+      const failed = results.length - created;
+      setBulkResult({ created, failed });
+      setBulkCompleted(true);
+      setBookingNotice(failed ? `${created} production booking${created === 1 ? " was" : "s were"} created; ${failed} row${failed === 1 ? " needs" : "s need"} retrying.` : `${created} production bookings were created with attached invoices uploaded.`);
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
   const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoices([]); setBoxDimensions([{ length: "", width: "", height: "", boxCount: "" }]); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setCodAmount(""); setSelectedCourier(null); setSelectedSlot(null); setSingleAttemptId(""); setSingleSubmitting(false); setShowReview(false); setSingleCompleted(false); setBookingNotice(""); setNotice(""); };
   const milestoneStep = showReview ? 4 : selectedCourier && selectedSlot ? 3 : invoices.length || documentMode === "dc" ? 2 : 1;
   const milestones = ["Shipment details", "Documentation", "Courier & slot", "Review"];
