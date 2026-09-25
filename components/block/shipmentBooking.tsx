@@ -268,11 +268,11 @@ export default function ShipmentBooking() {
   useEffect(() => { void pssApi<{ data: Record<string, { enabled?: boolean }> }>("/v1/provider-capabilities").then((result) => setProviderAvailability(Object.fromEntries(Object.entries(result.data).map(([key, value]) => [key, value.enabled === true])))).catch((error) => { setProviderAvailability({}); setNotice(error instanceof Error ? error.message : "Courier capabilities could not be loaded from production."); }); }, []);
 
   useEffect(() => {
-    if (!showReview) return;
+    if (!showReview && !showBulkReview) return;
     void pssApi<{ data: Array<{ id: string; provider: string; account_name: string; enabled?: boolean; confidence_score?: number; priority?: number }> }>("/v1/provider-account-policies")
       .then((result) => setAccountPolicies(result.data ?? []))
       .catch(() => setAccountPolicies([]));
-  }, [showReview]);
+  }, [showReview, showBulkReview]);
 
   useEffect(() => {
     const menu = document.querySelector('[role="listbox"]');
