@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = {
   title: "PSS Logistics",
   description: "Direct To Every Direction",
+  icons: { icon: "/pss-mark.png" },
   robots: { index: false, follow: false },
 };
 
