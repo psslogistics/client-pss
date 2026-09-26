@@ -71,11 +71,11 @@ const emptyContact: Contact = { name: "", phone: "", email: "" };
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
 const fileAsBase64 = async (file: File) => { const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary); };
 const allCouriers = [
-  { id: "delhivery", provider: "delhivery", name: "Delhivery", service: "Provider quote required", eta: "Provider confirmation required", rate: "Live quote unavailable", confidence: 0, accountName: "", accountId: "", accent: "bg-violet-500/10 text-violet-600" },
-  { id: "trackon", provider: "trackon", name: "Trackon", service: "Provider quote required", eta: "Provider confirmation required", rate: "Live quote unavailable", confidence: 0, accountName: "", accountId: "", accent: "bg-sky-500/10 text-sky-600" },
-  { id: "xpressbees", provider: "xpressbees", name: "XpressBees", service: "Provider quote required", eta: "Provider confirmation required", rate: "Live quote unavailable", confidence: 0, accountName: "", accountId: "", accent: "bg-orange-500/10 text-orange-600" },
+  { id: "delhivery", provider: "delhivery", name: "Delhivery", service: "Provider quote required", eta: "Provider confirmation required", rate: "Live quote unavailable", confidence: 0, accountName: "", accountId: "", health: "unknown", lastError: "", accent: "bg-violet-500/10 text-violet-600" },
+  { id: "trackon", provider: "trackon", name: "Trackon", service: "Provider quote required", eta: "Provider confirmation required", rate: "Live quote unavailable", confidence: 0, accountName: "", accountId: "", health: "unknown", lastError: "", accent: "bg-sky-500/10 text-sky-600" },
+  { id: "xpressbees", provider: "xpressbees", name: "XpressBees", service: "Provider quote required", eta: "Provider confirmation required", rate: "Live quote unavailable", confidence: 0, accountName: "", accountId: "", health: "unknown", lastError: "", accent: "bg-orange-500/10 text-orange-600" },
 ];
-const dispatchPendingOption = { id: "dispatch_pending", provider: "", name: "Dispatch pending", service: "Courier assigned after provider activation", eta: "EDD pending", rate: "No quote", confidence: 0, accountName: "", accountId: "", accent: "bg-amber-500/10 text-amber-600" };
+const dispatchPendingOption = { id: "dispatch_pending", provider: "", name: "Dispatch pending", service: "Courier assigned after provider activation", eta: "EDD pending", rate: "No quote", confidence: 0, accountName: "", accountId: "", health: "unknown", lastError: "", accent: "bg-amber-500/10 text-amber-600" };
 const pickupSlots = ["09:00 AM – 11:00 AM", "11:00 AM – 01:00 PM", "02:00 PM – 04:00 PM", "04:00 PM – 06:00 PM"];
 const EWAY_THRESHOLD = 50000;
 const bulkHeaders = ["from", "to", "origin_city", "origin_state", "origin_pincode", "destination_city", "destination_state", "destination_pincode", "consignor", "consignee", "consignor_phone", "consignee_phone", "description", "weight_kg", "pieces", "shipment_value", "invoice_available", "payment_mode", "cod_amount", "eway_bill_available", "dc_number", "dc_date", "dc_seller", "dc_buyer", "dc_value", "dc_reason"];
@@ -216,10 +216,11 @@ export default function ShipmentBooking() {
   const [singleAttemptId, setSingleAttemptId] = useState("");
   const [singleSubmitting, setSingleSubmitting] = useState(false);
   const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({});
+  const [providerHealth, setProviderHealth] = useState<Record<string, { health?: string; last_error_code?: string | null }>>({});
   const [accountPolicies, setAccountPolicies] = useState<Array<{ id: string; provider: string; account_name: string; enabled?: boolean; confidence_score?: number; priority?: number }>>([]);
   const enabledCouriers = accountPolicies.length
-    ? accountPolicies.filter((account) => account.enabled !== false && providerAvailability[account.provider] === true).map((account) => ({ ...allCouriers.find((courier) => courier.provider === account.provider) ?? allCouriers[0], id: account.id, provider: account.provider, accountId: account.id, accountName: account.account_name, confidence: Number(account.confidence_score ?? 0), name: account.account_name || account.provider, service: `${account.provider} account · confidence ${Number(account.confidence_score ?? 0).toFixed(0)}%`, rate: "Rate card / live quote", priority: Number(account.priority ?? 100) }))
-    : allCouriers.filter((courier) => providerAvailability[courier.provider] === true);
+    ? accountPolicies.filter((account) => account.enabled !== false && providerAvailability[account.provider] === true).map((account) => ({ ...allCouriers.find((courier) => courier.provider === account.provider) ?? allCouriers[0], id: account.id, provider: account.provider, accountId: account.id, accountName: account.account_name, confidence: Number(account.confidence_score ?? 0), name: account.account_name || account.provider, service: `${account.provider} account · confidence ${Number(account.confidence_score ?? 0).toFixed(0)}%`, rate: "Rate card / live quote", health: providerHealth[account.provider]?.health ?? "unknown", lastError: providerHealth[account.provider]?.last_error_code ?? "", priority: Number(account.priority ?? 100) }))
+    : allCouriers.filter((courier) => providerAvailability[courier.provider] === true).map((courier) => ({ ...courier, health: providerHealth[courier.provider]?.health ?? "unknown", lastError: providerHealth[courier.provider]?.last_error_code ?? "" }));
   const providerUnavailable = enabledCouriers.length === 0;
   const couriers = providerUnavailable ? [dispatchPendingOption] : enabledCouriers;
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
@@ -264,7 +265,29 @@ export default function ShipmentBooking() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => { void pssApi<{ data: Record<string, { enabled?: boolean }> }>("/v1/provider-capabilities").then((result) => setProviderAvailability(Object.fromEntries(Object.entries(result.data).map(([key, value]) => [key, value.enabled === true])))).catch((error) => { setProviderAvailability({}); setNotice(error instanceof Error ? error.message : "Courier capabilities could not be loaded from production."); }); }, []);
+  useEffect(() => {
+    void pssApi<{ data: Record<string, { enabled?: boolean; health?: string; last_error_code?: string | null }> }>("/v1/provider-capabilities")
+      .then((result) => {
+        setProviderAvailability(
+          Object.fromEntries(
+            Object.entries(result.data).map(([key, value]) => [key, value.enabled === true]),
+          ),
+        );
+        setProviderHealth(
+          Object.fromEntries(
+            Object.entries(result.data).map(([key, value]) => [
+              key,
+              { health: value.health, last_error_code: value.last_error_code },
+            ]),
+          ),
+        );
+      })
+      .catch((error) => {
+        setProviderAvailability({});
+        setProviderHealth({});
+        setNotice(error instanceof Error ? error.message : "Courier capabilities could not be loaded from production.");
+      });
+  }, []);
 
   useEffect(() => {
     if (!showReview && !showBulkReview) return;
@@ -491,7 +514,9 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {couriers.map((courier) => {
             const isSelected = selectedCourier === courier.id;
-            return <button type="button" key={courier.id} onClick={() => { setSelectedCourier(courier.id); setSlotOpen(true); }} className={`group rounded-xl border bg-card p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md ${isSelected ? "border-primary ring-4 ring-primary/10" : "border-border"}`}><div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold ${courier.accent}`}>{courier.name.slice(0, 2).toUpperCase()}</span><span><span className="block text-sm font-semibold text-foreground">{courier.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{courier.service}</span>{courier.accountName && <span className="mt-1 block text-[11px] text-muted-foreground">Account: {courier.accountName}</span>}</span></div><div className="text-right"><span className="block text-lg font-semibold tracking-tight text-foreground">{courier.rate}</span>{courier.accountName && <span className="mt-1 block text-[11px] font-semibold text-emerald-600">Confidence {courier.confidence.toFixed(0)}%</span>}</div></div><div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3 text-xs"><span className="text-muted-foreground">Estimated delivery <span className="font-medium text-foreground">{courier.eta}</span></span><span className="font-semibold text-primary">{isSelected ? "Change slot" : "Select courier"} <ArrowRight className="ml-1 inline h-3.5 w-3.5" /></span></div>{isSelected && selectedSlot && <div className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-medium text-primary">Pickup slot: {selectedSlot}</div>}</button>;
+            const degraded = courier.health === "degraded";
+            const checking = courier.health === "pending";
+            return <button type="button" key={courier.id} onClick={() => { setSelectedCourier(courier.id); setSlotOpen(true); }} className={`group rounded-xl border bg-card p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md ${isSelected ? "border-primary ring-4 ring-primary/10" : "border-border"}`}><div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold ${courier.accent}`}>{courier.name.slice(0, 2).toUpperCase()}</span><span><span className="block text-sm font-semibold text-foreground">{courier.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{courier.service}</span>{courier.accountName && <span className="mt-1 block text-[11px] text-muted-foreground">Account: {courier.accountName}</span>}{degraded && <span className="mt-1 block text-[11px] font-semibold text-amber-700 dark:text-amber-300">Degraded{courier.lastError ? ` · ${courier.lastError}` : ""}</span>}{checking && <span className="mt-1 block text-[11px] font-semibold text-sky-700 dark:text-sky-300">Provider check in progress</span>}</span></div><div className="text-right"><span className="block text-lg font-semibold tracking-tight text-foreground">{courier.rate}</span>{courier.accountName && <span className="mt-1 block text-[11px] font-semibold text-emerald-600">Confidence {courier.confidence.toFixed(0)}%</span>}</div></div><div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3 text-xs"><span className="text-muted-foreground">Estimated delivery <span className="font-medium text-foreground">{courier.eta}</span></span><span className="font-semibold text-primary">{isSelected ? "Change slot" : "Select courier"} <ArrowRight className="ml-1 inline h-3.5 w-3.5" /></span></div>{isSelected && selectedSlot && <div className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-medium text-primary">Pickup slot: {selectedSlot}</div>}</button>;
           })}
         </div>
         {providerUnavailable && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200"><p className="font-semibold">Courier dispatch is pending configuration</p><p className="mt-1 text-xs leading-5">This booking will persist securely without selecting a provider. Courier choices appear only after their Worker capability checks pass.</p></div>}
