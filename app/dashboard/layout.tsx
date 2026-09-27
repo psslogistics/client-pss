@@ -102,6 +102,14 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Start the dashboard's scoped summary from the already-mounted shell. The
+  // dashboard component requests the same key and pssApi deduplicates it, so
+  // this advances the first request without adding a second network call.
+  useEffect(() => {
+    if (pathname !== "/dashboard") return;
+    void pssApi("/v1/dashboard/summary?collections=shipments,pickups,billing,wallet,exceptions,ndr,activity").catch(() => undefined);
+  }, [pathname]);
+
   useEffect(() => {
     const saved = localStorage.getItem("pss-theme");
     const next = saved === "dark" || saved === "light" ? saved : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
