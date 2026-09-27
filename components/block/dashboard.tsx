@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -33,7 +34,10 @@ import {
 import type { ClientFinancialSnapshot } from "@/lib/client-dashboard-data";
 import { formatINR } from "@/lib/client-finance-data";
 import { pssApi } from "@/lib/pss-api";
-import ClientReportPreview from "./client-report-preview";
+const ClientReportPreview = dynamic(() => import("./client-report-preview"), {
+  ssr: false,
+  loading: () => <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="status">Loading report preview…</div>,
+});
 
 function relativeTime(value: string) {
   const time = Date.parse(value);
