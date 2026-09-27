@@ -54,11 +54,12 @@ const navigation = navigationGroups.flatMap((group) => group.items);
 const allRoutes = [{ title: "Dashboard", href: "/dashboard" }, ...navigation];
 
 function NavItems({ items, pathname }: { items: NavItem[]; pathname: string }) {
+  const router = useRouter();
   return (
     <SidebarMenu>
       {items.map((r) => (
         <SidebarMenuItem key={r.title}>
-          <SidebarMenuButton isActive={pathname === r.href} render={<Link href={r.href} prefetch={false} />} tooltip={r.title}>
+          <SidebarMenuButton isActive={pathname === r.href} render={<Link href={r.href} prefetch={false} onMouseEnter={() => router.prefetch(r.href)} />} tooltip={r.title}>
             <PssIcon name={r.icon} size="lg" className="shrink-0 opacity-70" />
             <span>{r.title}</span>
             {pathname === r.href && <ChevronRight className="ml-auto size-3.5 opacity-40" />}
@@ -201,7 +202,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
-                    <SidebarMenuButton isActive={pathname === "/dashboard"} render={<Link href="/dashboard" prefetch={false} />} tooltip="Dashboard">
+                    <SidebarMenuButton isActive={pathname === "/dashboard"} render={<Link href="/dashboard" prefetch={false} onMouseEnter={() => router.prefetch("/dashboard")} />} tooltip="Dashboard">
                     <PssIcon name="dashboard" size="lg" className="shrink-0 opacity-70" />
                     <span>Dashboard</span>
                     {pathname === "/dashboard" && <ChevronRight className="ml-auto size-3.5 opacity-40" />}
