@@ -1,9 +1,9 @@
-import Dashboard from "@/components/block/dashboard";
+import DashboardLoader from "@/components/block/dashboard-loader";
 
 export default function DashboardPage() {
   return (
     <div className="flex">
-      <Dashboard />
+      <DashboardLoader />
     </div>
   );
 }
