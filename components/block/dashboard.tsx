@@ -19,8 +19,6 @@ import {
   RotateCcw,
   Settings,
   SlidersHorizontal,
-  X,
-  Check,
   PieChart,
   BarChart3,
 } from "lucide-react";
@@ -38,6 +36,9 @@ const ClientDashboardOperations = dynamic(() => import("./client-dashboard-opera
 const ClientReportPreview = dynamic(() => import("./client-report-preview"), {
   ssr: false,
   loading: () => <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="status">Loading report preview…</div>,
+});
+const ClientDashboardModals = dynamic(() => import("./client-dashboard-modals"), {
+  ssr: false,
 });
 
 function relativeTime(value: string) {
@@ -515,216 +516,7 @@ export default function Dashboard() {
 
       <ClientDashboardOperations delayedRows={delayedRows} todayPickupRows={todayPickupRows} financialSnapshot={financialSnapshot} />
 
-      {/* PERSISTENT ALERTS OVERLAY MODAL */}
-      {isAlertsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div
-            className="relative w-full max-w-lg rounded-xl border border-destructive/30 bg-popover p-6 shadow-2xl text-popover-foreground space-y-5 animate-in fade-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-border pb-4">
-              <div className="space-y-0.5">
-                <h2 className="text-base font-bold text-destructive flex items-center gap-2">
-                  <TriangleAlert className="h-5 w-5 stroke-[2.5]" />
-                  Action Required Alerts
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  High priority items requiring operational attention. Press <strong>Esc</strong> or click <strong>X</strong> to close.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsAlertsModalOpen(false)}
-                className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                aria-label="Close alerts"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Selection Counter Badge */}
-            <div className="flex items-center justify-between text-xs px-1">
-              <span className="text-muted-foreground">Active Notifications</span>
-              <span className="font-bold px-2.5 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 text-xs">
-                {alerts.length} Pending
-              </span>
-            </div>
-
-            {/* Alerts List Feed */}
-            <div className="max-h-80 overflow-y-auto divide-y divide-border pr-1">
-              {alerts.length === 0 ? (
-                <div className="py-8 text-center text-xs text-muted-foreground space-y-2">
-                  <Check className="h-8 w-8 text-emerald-500 mx-auto" />
-                  <p className="font-semibold text-foreground">All clear!</p>
-                  <p>No pending alerts require action at this time.</p>
-                </div>
-              ) : (
-                alerts.map((alt) => (
-                  <div
-                    key={alt.id}
-                    className="flex items-start gap-3 py-3 transition-colors hover:bg-muted/40 rounded-lg px-2"
-                  >
-                    <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${alt.dotColor}`} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-semibold text-foreground">{alt.title}</p>
-                        <span className="shrink-0 text-[11px] text-muted-foreground font-mono">
-                          {alt.timeAgo}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{alt.description}</p>
-                      {alt.refId && (
-                        <span className="mt-1.5 inline-block font-mono text-[11px] text-muted-foreground font-semibold bg-muted px-2 py-0.5 rounded border border-border/60">
-                          Ref: {alt.refId}
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleDismissSingleAlert(alt.id)}
-                      className="p-1 text-muted-foreground/60 hover:text-foreground hover:bg-accent rounded-md transition-colors cursor-pointer"
-                      title="Dismiss alert"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Modal Actions Footer */}
-            <div className="flex items-center justify-between border-t border-border pt-4">
-              {alerts.length > 0 ? (
-                <button
-                  onClick={handleDismissAlerts}
-                  className="text-xs font-medium text-muted-foreground hover:text-destructive transition-colors cursor-pointer px-2 py-1"
-                >
-                  Dismiss All
-                </button>
-              ) : <div />}
-              <button
-                onClick={() => setIsAlertsModalOpen(false)}
-                className="rounded-md bg-destructive text-destructive-foreground px-4 py-1.5 text-xs font-semibold hover:bg-destructive/90 transition-colors shadow-xs cursor-pointer"
-              >
-                Close (Esc)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* KPI CUSTOMIZATION MODAL OVERLAY */}
-      {isCustomizeOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
-          onClick={() => setIsCustomizeOpen(false)}
-        >
-          <div
-            className="relative w-full max-w-lg rounded-xl border border-border bg-popover p-6 shadow-2xl text-popover-foreground space-y-5 animate-in fade-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-border pb-4">
-              <div className="space-y-0.5">
-                <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-                  <SlidersHorizontal className="h-4 w-4 text-primary" />
-                  Customize Dashboard KPI Cards
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Select up to <strong>5 metrics</strong> to feature on your top metric bar.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsCustomizeOpen(false)}
-                className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Selection Counter Badge */}
-            <div className="flex items-center justify-between text-xs px-1">
-              <span className="text-muted-foreground">Available Metrics Catalog</span>
-              <span
-                className={`font-semibold px-2.5 py-0.5 rounded-full border text-xs ${
-                  tempSelectedIds.length === 5
-                    ? "bg-primary/10 text-primary border-primary/20"
-                    : "bg-muted text-muted-foreground border-border"
-                }`}
-              >
-                Selected: {tempSelectedIds.length} / 5
-              </span>
-            </div>
-
-            {/* Metrics List Grid */}
-            <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-              {liveKpiMetrics.map((kpi) => {
-                const isSelected = tempSelectedIds.includes(kpi.id);
-                const isDisabled = !isSelected && tempSelectedIds.length >= 5;
-
-                return (
-                  <div
-                    key={kpi.id}
-                    onClick={() => !isDisabled && handleToggleKpi(kpi.id)}
-                    className={`flex items-start gap-3 rounded-lg border p-3 transition-all cursor-pointer select-none ${
-                      isSelected
-                        ? "border-primary bg-primary/5 shadow-xs"
-                        : isDisabled
-                        ? "border-border/50 opacity-50 cursor-not-allowed bg-muted/20"
-                        : "border-border bg-background hover:bg-accent/50"
-                    }`}
-                  >
-                    <div
-                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors ${
-                        isSelected
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-input bg-background"
-                      }`}
-                    >
-                      {isSelected && <Check className="h-3 w-3 stroke-3" />}
-                    </div>
-                    <div className="flex-1 min-w-0 leading-tight">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-foreground">{kpi.title}</span>
-                        <span className="text-[10px] font-mono font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                          {kpi.value}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[11px] text-muted-foreground line-clamp-1">
-                        {kpi.description}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Modal Actions Footer */}
-            <div className="flex items-center justify-between border-t border-border pt-4">
-              <button
-                onClick={handleResetKpis}
-                className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2 py-1"
-              >
-                Reset Defaults
-              </button>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsCustomizeOpen(false)}
-                  className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveKpis}
-                  disabled={tempSelectedIds.length === 0}
-                  className="rounded-md bg-primary text-primary-foreground px-4 py-1.5 text-xs font-semibold hover:bg-primary/90 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
-                >
-                  Save Selection
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ClientDashboardModals alerts={alerts} isAlertsModalOpen={isAlertsModalOpen} onCloseAlerts={() => setIsAlertsModalOpen(false)} onDismissAlerts={handleDismissAlerts} onDismissAlert={handleDismissSingleAlert} isCustomizeOpen={isCustomizeOpen} onCloseCustomize={() => setIsCustomizeOpen(false)} liveKpiMetrics={liveKpiMetrics} tempSelectedIds={tempSelectedIds} onToggleKpi={handleToggleKpi} onResetKpis={handleResetKpis} onSaveKpis={handleSaveKpis} />
       {isReportOpen && <ClientReportPreview onClose={() => setIsReportOpen(false)} />}
     </div>
   );
