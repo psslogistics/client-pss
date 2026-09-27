@@ -58,7 +58,7 @@ function NavItems({ items, pathname }: { items: NavItem[]; pathname: string }) {
     <SidebarMenu>
       {items.map((r) => (
         <SidebarMenuItem key={r.title}>
-          <SidebarMenuButton isActive={pathname === r.href} render={<Link href={r.href} />} tooltip={r.title}>
+          <SidebarMenuButton isActive={pathname === r.href} render={<Link href={r.href} prefetch={false} />} tooltip={r.title}>
             <PssIcon name={r.icon} size="lg" className="shrink-0 opacity-70" />
             <span>{r.title}</span>
             {pathname === r.href && <ChevronRight className="ml-auto size-3.5 opacity-40" />}
@@ -179,7 +179,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
-                    <SidebarMenuButton isActive={pathname === "/dashboard"} render={<Link href="/dashboard" />} tooltip="Dashboard">
+                    <SidebarMenuButton isActive={pathname === "/dashboard"} render={<Link href="/dashboard" prefetch={false} />} tooltip="Dashboard">
                     <PssIcon name="dashboard" size="lg" className="shrink-0 opacity-70" />
                     <span>Dashboard</span>
                     {pathname === "/dashboard" && <ChevronRight className="ml-auto size-3.5 opacity-40" />}
