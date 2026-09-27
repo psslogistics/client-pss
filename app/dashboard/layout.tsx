@@ -89,11 +89,17 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    let initialTimer: number | undefined;
     const syncUnreadCount = () => void pssApi<{ data: Array<Record<string, unknown>> }>("/v1/notifications").then((result) => { if (!cancelled) setUnreadCount(result.data.filter((item) => !Boolean(item.is_read)).length); }).catch(() => undefined);
-    syncUnreadCount();
+    initialTimer = window.setTimeout(syncUnreadCount, 700);
     const timer = window.setInterval(syncUnreadCount, 60000);
     window.addEventListener("pss-notifications-updated", syncUnreadCount);
-    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener("pss-notifications-updated", syncUnreadCount); };
+    return () => {
+      cancelled = true;
+      if (initialTimer !== undefined) window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+      window.removeEventListener("pss-notifications-updated", syncUnreadCount);
+    };
   }, []);
 
   useEffect(() => {
@@ -133,13 +139,21 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    void (async () => {
-      const { data: userResult } = await supabase.auth.getUser();
-      if (!userResult.user || !active) return;
-      const { data } = await supabase.from("profiles").select("display_name,email,company_name").eq("id", userResult.user.id).maybeSingle();
-      if (active) setProfile({ display_name: data?.display_name ?? userResult.user.user_metadata?.full_name ?? null, email: data?.email ?? userResult.user.email ?? null, company_name: data?.company_name ?? null });
-    })();
-    return () => { active = false; };
+    let initialTimer: number | undefined;
+    const loadProfile = async () => {
+      // This is presentation-only data. Use the locally available session so the
+      // shell does not add a blocking auth round-trip during the first render.
+      const { data: sessionResult } = await supabase.auth.getSession();
+      const user = sessionResult.session?.user;
+      if (!user || !active) return;
+      const { data } = await supabase.from("profiles").select("display_name,email,company_name").eq("id", user.id).maybeSingle();
+      if (active) setProfile({ display_name: data?.display_name ?? user.user_metadata?.full_name ?? null, email: data?.email ?? user.email ?? null, company_name: data?.company_name ?? null });
+    };
+    initialTimer = window.setTimeout(() => void loadProfile(), 700);
+    return () => {
+      active = false;
+      if (initialTimer !== undefined) window.clearTimeout(initialTimer);
+    };
   }, [supabase]);
 
   return (
