@@ -7,7 +7,9 @@ import { pssApi } from "@/lib/pss-api";
 const dashboardSummaryPath = "/v1/dashboard/summary?collections=shipments,pickups,billing,wallet,exceptions,ndr,activity";
 
 const Dashboard = dynamic(() => import("@/components/block/dashboard"), {
-  ssr: false,
+  // Keep the dashboard split from the route shell, but allow Next to render
+  // the stable first frame on the server. `ssr: false` made the authenticated
+  // dashboard invisible until the full client chunk had loaded and hydrated.
   loading: () => (
     <section className="w-full space-y-4" role="status" aria-live="polite">
       <div className="h-20 animate-pulse rounded-xl border border-border bg-card" />
