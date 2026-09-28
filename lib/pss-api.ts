@@ -10,7 +10,7 @@ const MAX_SESSION_CACHE_BYTES = 1_500_000;
 const getCache = new Map<string, { expiresAt: number; value: unknown }>();
 const getInFlight = new Map<string, Promise<unknown>>();
 let sessionInFlight: ReturnType<ReturnType<typeof createClient>["auth"]["getSession"]> | null = null;
-const isSessionCachedRead = (path: string) => path.startsWith("/v1/dashboard/summary") || path === "/v1/provider-capabilities" || path === "/v1/provider-account-policies";
+const isSessionCachedRead = (path: string) => path.startsWith("/v1/dashboard/summary") || path.startsWith("/v1/reports/client-complete") || path === "/v1/provider-capabilities" || path === "/v1/provider-account-policies";
 const sessionKey = (userId: string, path: string) => `pss-api:${userId}:${path}`;
 
 export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T> {
