@@ -6,7 +6,8 @@ export type PaymentMode = "Prepaid" | "COD";
 export type RateCardRow = { mode: ShipmentMode; shipmentType: ShipmentType; zone: string; slab: string; maxWeight: number; base: number; perKg: number; codFee: number; fuel: number; destination: number; rto: number; reverse: number };
 export type BoxLine = { id: number; quantity: number; length: number; breadth: number; height: number };
 export type RateInput = { pickup: string; delivery: string; boxes: BoxLine[]; deadWeight: number; shipmentValue: number; payment: PaymentMode; codAmount: number; shipmentType: ShipmentType };
-export type ServiceabilityResult = { pickup: boolean; delivery: boolean; modes: ShipmentMode[]; eta: string; prepaid: boolean; cod: boolean; reverse: boolean; temporary: boolean; message: string };
+export type ServiceabilityRow = { pincode: string; provider: string; status: string; oda: boolean | null };
+export type ServiceabilityResult = { pickup: boolean; delivery: boolean; modes: ShipmentMode[]; eta: string; prepaid: boolean; cod: boolean; reverse: boolean; temporary: boolean; message: string; rows: ServiceabilityRow[] };
 
 export const zones = [
   { id: "A", label: "Local", detail: "Within the same city" },
@@ -26,7 +27,7 @@ export function resolveZone(pickup: string, delivery: string) { if (pickup.slice
 export function checkServiceability(pickup: string, delivery: string): ServiceabilityResult {
   void pickup;
   void delivery;
-  return { pickup: false, delivery: false, modes: [], eta: "Not available", prepaid: false, cod: false, reverse: false, temporary: false, message: "Live serviceability data is not available for this account." };
+  return { pickup: false, delivery: false, modes: [], eta: "Not available", prepaid: false, cod: false, reverse: false, temporary: false, message: "Live serviceability data is not available for this account.", rows: [] };
 }
 function slabFor(weight: number) { return rateCardRows.find((row) => row.mode === "Surface" && row.shipmentType === "Forward" && row.maxWeight >= weight)?.slab || "10+ kg"; }
 export function calculateRates(input: RateInput) { if (!rateCardRows.length) return []; const weight = chargeableWeight(input); const zone = resolveZone(input.pickup, input.delivery); return (["Surface", "Express"] as ShipmentMode[]).flatMap((mode) => { const row = rateCardRows.find((item) => item.mode === mode && item.shipmentType === input.shipmentType && item.zone === zone && item.slab === slabFor(weight)) || rateCardRows.find((item) => item.mode === mode && item.shipmentType === input.shipmentType && item.zone === zone); if (!row) return []; const freight = row.base + Math.max(0, weight - row.maxWeight + 0.5) * row.perKg; const cod = input.payment === "COD" && input.shipmentType === "Forward" ? Math.max(row.codFee, input.codAmount * 0.02) : 0; const fuel = (freight + cod) * row.fuel; const subtotal = freight + cod + fuel + row.destination + row.rto + row.reverse; const tax = subtotal * 0.18; return [{ mode, courier: mode === "Surface" ? "Surface service" : "Express service", zone, chargeableWeight: weight, eta: "Not available", freight, cod, fuel, surcharge: row.destination, tax, rto: row.rto, reverse: row.reverse, total: subtotal + tax, formattedTotal: formatINR(subtotal + tax) }]; }); }
