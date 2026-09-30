@@ -6,7 +6,7 @@ import { pssApi } from "@/lib/pss-api";
 
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary";
 type Line = { code: string; label: string; amount: number; marker?: "*" };
-type Account = { id: string; provider: string; account_name: string; enabled?: boolean };
+type Account = { id: string; provider: string; account_name: string; status?: string; enabled?: boolean; explicitly_configured?: boolean };
 type Quote = { provider_account_id?: string | null; provider_account_name?: string | null; account_code?: string; lane: string; chargeableWeightKg: number; total: number; lines: Line[] };
 
 export default function PssRateCheck() {
@@ -20,7 +20,7 @@ export default function PssRateCheck() {
 
   useEffect(() => {
     void pssApi<{ data: Account[] }>("/v1/provider-account-policies")
-      .then((response) => setAccounts((response.data ?? []).filter((account) => account.provider === "delhivery" && account.enabled !== false)))
+      .then((response) => setAccounts((response.data ?? []).filter((account) => account.provider === "delhivery" && /B2BC/i.test(account.account_name) && account.explicitly_configured === true)))
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Assigned Delhivery accounts could not be loaded."));
   }, []);
 
