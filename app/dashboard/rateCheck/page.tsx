@@ -1,5 +1,5 @@
-import { RateCheck } from "@/components/block/pricingTools";
+import PssRateCheck from "@/components/block/pssRateCheck";
 
 export default function RateCheckPage() {
-  return <RateCheck />;
+  return <PssRateCheck />;
 }

@@ -1,6 +1,6 @@
 import { formatINR } from "@/lib/client-finance-data";
 
-export type ShipmentMode = "Surface" | "Express";
+export type ShipmentMode = "Surface" | "Express" | "PSS B2B";
 export type ShipmentType = "Forward" | "RTO" | "Reverse/DTO";
 export type PaymentMode = "Prepaid" | "COD";
 export type RateCardRow = { mode: ShipmentMode; shipmentType: ShipmentType; zone: string; slab: string; maxWeight: number; base: number; perKg: number; codFee: number; fuel: number; destination: number; rto: number; reverse: number };

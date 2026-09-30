@@ -9,6 +9,12 @@ export type InvoicePdfRecord = {
   status: string;
   due_date?: string;
   created_at: string;
+  pricing?: { lane?: string; chargeableWeightKg?: number; lines?: Array<{ code: string; label: string; amount: number; marker?: "*" }> } | null;
+  line_items?: Array<{ code: string; label: string; amount: number; marker?: "*"; display_order?: number }>;
+  adjustments?: Array<{ component_code: string; previous_amount: number; new_amount: number; reason: string; created_at: string }>;
+  amendments?: Array<{ id: string; amendment_type: string; previous_amount: number; new_amount: number; reason: string; weight_received_at?: string | null; ticket_deadline_at?: string | null; created_at: string }>;
+  provider_weight_received_at?: string | null;
+  client_dispute_deadline_at?: string | null;
   service_description?: string;
   hsn_sac?: string;
   quantity?: number;
@@ -93,7 +99,8 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
   const doc = new jsPDF({ unit: "pt", format: [PAGE_W, PAGE_H] });
   const total = Number(record.amount || 0);
   const taxRate = Number(record.tax_rate ?? 0);
-  const tax = Number(record.tax ?? (taxRate ? total * taxRate / (100 + taxRate) : 0));
+  const pricingTax = record.pricing?.lines?.find((line) => line.code === "gst")?.amount ?? 0;
+  const tax = Number(record.tax ?? (pricingTax || (taxRate ? total * taxRate / (100 + taxRate) : 0)));
   const base = Math.max(0, total - tax - Number(record.round_off ?? 0));
   const roundOff = Number(record.round_off ?? (Math.round(total) - total));
   const quantity = Number(record.quantity ?? 1);
@@ -117,7 +124,7 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
 
   const tableTop = top + sellerH + 70; const widths = [34, 224, 62, 54, 58, 108]; const headers = ["Sl\nNo.", "Description of\nServices", "HSN/SAC", "Quantity", "Rate", "Amount"];
   let x = LEFT; headers.forEach((header, index) => { cell(doc, x, tableTop, widths[index], 31, header, { bold: true, align: index === 0 ? "center" : "center", size: 7, fill: true }); x += widths[index]; });
-  x = LEFT; const description = clean(record.service_description, "B2B COURIER SERVICE"); const item = ["1", description, clean(record.hsn_sac, "996812"), String(quantity), money(rate), money(base)]; item.forEach((value, index) => { cell(doc, x, tableTop + 31, widths[index], 176, value, { bold: index === 1, align: index === 0 || index > 1 ? "right" : "left", size: 8 }); x += widths[index]; });
+  x = LEFT; const invoiceLines = (record.line_items?.length ? [...record.line_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)) : record.pricing?.lines ?? []); const pricingDescription = invoiceLines.map((line) => `${line.label}${line.marker ?? ""}: ₹${money(line.amount)}`).join("\n"); const adjustmentDescription = record.adjustments?.map((adjustment) => `Adjustment ${adjustment.component_code}: ₹${money(adjustment.previous_amount)} → ₹${money(adjustment.new_amount)}\nReason: ${adjustment.reason}\nRecorded: ${date(adjustment.created_at)}`).join("\n") ?? ""; const amendmentDescription = record.amendments?.map((amendment) => `Invoice amendment (${amendment.amendment_type}): ₹${money(amendment.previous_amount)} → ₹${money(amendment.new_amount)}\nReason: ${amendment.reason}\nRecorded: ${date(amendment.created_at)}`).join("\n") ?? ""; const weightNote = record.provider_weight_received_at ? `Courier weight received: ${date(record.provider_weight_received_at)}\nWeight ticket deadline: ${record.client_dispute_deadline_at ? date(record.client_dispute_deadline_at) : "Not available"}\nClient had 24 hours to raise a weight query.` : ""; const description = [clean(record.service_description, "B2B COURIER SERVICE"), pricingDescription, adjustmentDescription, amendmentDescription, weightNote].filter(Boolean).join("\n"); const item = ["1", description, clean(record.hsn_sac, "996812"), String(quantity), money(rate), money(base)]; item.forEach((value, index) => { cell(doc, x, tableTop + 31, widths[index], 176, value, { bold: index === 1, align: index === 0 || index > 1 ? "right" : "left", size: 8 }); x += widths[index]; });
   const subtotalY = tableTop + 207; cell(doc, LEFT, subtotalY, 456, 22, "Total", { align: "right", size: 8 }); cell(doc, LEFT + 456, subtotalY, 84, 22, money(total), { bold: true, align: "right", size: 11 });
   if (tax) { cell(doc, LEFT, tableTop + 64, 258, 21, `OUTPUT GST @ ${taxRate || "applicable"}%`, { bold: true, italic: true, align: "right", size: 8, fill: true }); cell(doc, LEFT + 456, tableTop + 64, 84, 21, money(tax), { bold: true, align: "right", size: 9, fill: true }); }
   if (roundOff) { cell(doc, LEFT, tableTop + 85, 258, 21, "ROUND OFF", { bold: true, italic: true, align: "right", size: 8 }); cell(doc, LEFT + 456, tableTop + 85, 84, 21, money(roundOff), { bold: true, align: "right", size: 9 }); }
