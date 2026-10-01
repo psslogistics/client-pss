@@ -72,7 +72,7 @@ const emptyContact: Contact = { name: "", phone: "", email: "" };
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
 const fileAsBase64 = async (file: File) => { const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary); };
 const allCouriers = [
-  { id: "delhivery", provider: "delhivery", name: "Delhivery B2B", service: "PSS rate card applied at booking", eta: "Provider confirmation pending", rate: "PSS pricing", confidence: 0, accountName: "", accountCode: "other", accountId: "", health: "unknown", lastError: "", accent: "bg-violet-500/10 text-violet-600" },
+  { id: "delhivery", provider: "delhivery", name: "DELHIVERY", service: "PSS rate card applied at booking", eta: "Provider confirmation pending", rate: "PSS pricing", confidence: 0, accountName: "", accountCode: "other", accountId: "", health: "unknown", lastError: "", accent: "bg-violet-500/10 text-violet-600" },
 ];
 const pickupSlots = ["09:00 AM – 11:00 AM", "11:00 AM – 01:00 PM", "02:00 PM – 04:00 PM", "04:00 PM – 06:00 PM"];
 const EWAY_THRESHOLD = 50000;
