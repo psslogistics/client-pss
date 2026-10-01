@@ -347,9 +347,9 @@ export default function Dashboard() {
       </div>
 
       {/* SPACIOUS & ELEGANT 4-PART HORIZONTAL ROW */}
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-4">
+      <div className="grid grid-cols-1 items-start gap-6 lg:items-stretch lg:grid-cols-4">
           {/* Shipment Status Chart (2 Parts / 50% Width) */}
-        <div className="h-fit lg:col-span-2 rounded-xl border border-border bg-card text-card-foreground shadow-sm">
+        <div className="lg:h-[34rem] lg:col-span-2 flex flex-col rounded-xl border border-border bg-card text-card-foreground shadow-sm">
           <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
             <div className="space-y-0.5">
               <h3 className="text-sm font-semibold tracking-tight text-foreground">
@@ -360,7 +360,7 @@ export default function Dashboard() {
               </p>
             </div>
           </div>
-          <div className="flex flex-col items-center justify-center gap-6 p-5 sm:flex-row">
+          <div className="flex flex-1 flex-col items-center justify-center gap-6 overflow-auto p-5 sm:flex-row">
             {shipmentStatusData.length > 0 ? (() => {
               const total = shipmentStatusData.reduce((sum, item) => sum + item.count, 0);
               let offset = 0;
@@ -393,7 +393,7 @@ export default function Dashboard() {
         </div>
 
         {/* UNIFIED & SPACIOUS COLUMN 3 (25% Width) WITH SEGMENTED HEADER SWITCHER */}
-        <div className="h-fit lg:col-span-1 rounded-xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
+        <div className="lg:h-[34rem] lg:col-span-1 flex flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm">
           {/* Header with Segmented View Switcher */}
           <div className="flex items-center justify-between border-b border-border px-4 py-3.5 shrink-0">
             <div className="flex items-center gap-1.5">
@@ -428,7 +428,7 @@ export default function Dashboard() {
 
           {/* VIEW A: Full-Height Spacious Shipment Summary */}
           {column3View === "summary" ? (
-            <div className="p-4 flex flex-col py-2 animate-in fade-in duration-200">
+             <div className="min-h-0 flex-1 overflow-y-auto p-4 flex flex-col py-2 animate-in fade-in duration-200">
               <div className="text-[11px] text-muted-foreground font-medium pb-1 border-b border-border/30 mb-1 flex items-center justify-between">
                 <span>Status Breakdown</span>
                 <span className="font-semibold text-foreground">{totalShipments} Shipments</span>
@@ -465,7 +465,7 @@ export default function Dashboard() {
         </div>
 
         {/* SPACIOUS RECENT ACTIVITY CARD (1 Part / 25% Width) */}
-        <div className="flex max-h-[34rem] flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm lg:col-span-1">
+         <div className="h-[34rem] flex flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm lg:col-span-1">
           <div className="flex items-center justify-between border-b border-border px-5 py-4 shrink-0">
             <h3 className="text-sm font-semibold text-foreground">Recent Activity</h3>
             <span className="text-xs text-muted-foreground">Last 72 hours</span>
