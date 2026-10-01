@@ -11,6 +11,40 @@ const inputClass = "h-10 w-full rounded-lg border border-input bg-background px-
 const buttonClass = "inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-medium transition hover:bg-accent disabled:pointer-events-none disabled:opacity-50";
 const primaryClass = "inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50";
 
+type PincodeLocation = { city: string; state: string };
+
+function usePincodeLocation(pincode: string) {
+  const [location, setLocation] = useState<PincodeLocation | null>(null);
+  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not-found">("idle");
+  useEffect(() => {
+    const normalized = pincode.trim();
+    if (!/^\d{6}$/.test(normalized)) { setLocation(null); setLookupState("idle"); return; }
+    let cancelled = false;
+    setLocation(null); setLookupState("loading");
+    void fetch(`https://api.postalpincode.in/pincode/${normalized}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Pincode lookup failed");
+        return response.json() as Promise<Array<{ Status?: string; PostOffice?: Array<{ District?: string; State?: string }> }>>;
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const office = payload[0]?.PostOffice?.[0];
+        const next = office?.District && office.State ? { city: office.District, state: office.State } : null;
+        setLocation(next); setLookupState(next ? "found" : "not-found");
+      })
+      .catch(() => { if (!cancelled) { setLocation(null); setLookupState("not-found"); } });
+    return () => { cancelled = true; };
+  }, [pincode]);
+  return { location, lookupState };
+}
+
+function PincodeLocationHint({ location, lookupState }: { location: PincodeLocation | null; lookupState: "idle" | "loading" | "found" | "not-found" }) {
+  if (lookupState === "loading") return <span className="mt-1 block text-[11px] text-muted-foreground">Finding location…</span>;
+  if (location) return <span className="mt-1 block text-[11px] text-emerald-600">{location.city}, {location.state}</span>;
+  if (lookupState === "not-found") return <span className="mt-1 block text-[11px] text-amber-700 dark:text-amber-300">Location not found</span>;
+  return null;
+}
+
 function useSavedAddresses() {
   const [warehouses, setWarehouses] = useState<SavedAddressRecord[]>([]);
   const [consignees, setConsignees] = useState<SavedAddressRecord[]>([]);
@@ -31,7 +65,8 @@ function AddressSelect({ label, records, value, onChange }: { label: string; rec
 }
 
 function PincodeField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="block space-y-1.5"><span className="text-xs font-medium">{label}</span><input className={inputClass} inputMode="numeric" maxLength={6} placeholder="6-digit pincode" value={value} onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))} /></label>;
+  const { location, lookupState } = usePincodeLocation(value);
+  return <label className="block space-y-1.5"><span className="text-xs font-medium">{label}</span><input className={inputClass} inputMode="numeric" maxLength={6} placeholder="6-digit pincode" value={value} onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))} /><PincodeLocationHint location={location} lookupState={lookupState} /></label>;
 }
 
 function Segment<T extends string>({ values, value, onChange }: { values: T[]; value: T; onChange: (value: T) => void }) {
@@ -74,10 +109,15 @@ export function RateCard() {
 
 export function PssRateCheck() {
   const [form, setForm] = useState({ account_code: "other", origin_pincode: "", destination_pincode: "", origin_city: "", origin_state: "", destination_city: "", destination_state: "", actual_weight_kg: "", volumetric_weight_kg: "", invoice_value: "" });
+  const originLocation = usePincodeLocation(form.origin_pincode);
+  const destinationLocation = usePincodeLocation(form.destination_pincode);
   const [result, setResult] = useState<{ lane: string; chargeableWeightKg: number; total: number; lines: Array<{ code: string; label: string; amount: number; marker?: "*" }> } | null>(null);
   const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
   const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  useEffect(() => { if (originLocation.location) setForm((current) => ({ ...current, origin_city: originLocation.location?.city ?? current.origin_city, origin_state: originLocation.location?.state ?? current.origin_state })); }, [originLocation.location]);
+  useEffect(() => { if (destinationLocation.location) setForm((current) => ({ ...current, destination_city: destinationLocation.location?.city ?? current.destination_city, destination_state: destinationLocation.location?.state ?? current.destination_state })); }, [destinationLocation.location]);
   const calculate = () => { setError(""); setLoading(true); void pssApi<{ data: typeof result }>("/v1/pricing/quotes", { method: "POST", body: JSON.stringify({ ...form, actual_weight_kg: Number(form.actual_weight_kg), volumetric_weight_kg: Number(form.volumetric_weight_kg || 0), invoice_value: Number(form.invoice_value || 0) }) }).then((response) => setResult(response.data)).catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to calculate the PSS rate.")).finally(() => setLoading(false)); };
   const input = (key: keyof typeof form, label: string) => <label className="space-y-1.5"><span className="text-xs font-medium">{label}</span><input className={inputClass} value={form[key]} onChange={(event) => update(key, event.target.value)} /></label>;
-  return <div className="w-full space-y-5"><PageHeader title="Rate Check" description="Calculate your PSS Logistics Delhivery B2B shipping charge." /><div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]"><section className="space-y-4 rounded-xl border border-border bg-card p-4"><div className="flex items-center gap-2"><Calculator className="size-4 text-primary" /><h2 className="text-sm font-semibold">Shipment inputs</h2></div><div className="grid gap-3 sm:grid-cols-2">{input("origin_city", "Pickup city")}{input("origin_state", "Pickup state")}{input("destination_city", "Delivery city")}{input("destination_state", "Delivery state")}{input("actual_weight_kg", "Actual weight (kg)")}{input("volumetric_weight_kg", "Volumetric weight (kg)")}{input("invoice_value", "Invoice value (₹)")}<label className="space-y-1.5"><span className="text-xs font-medium">Delhivery B2B account</span><select className={inputClass} value={form.account_code} onChange={(event) => update("account_code", event.target.value)}><option value="04">04</option><option value="08">08</option><option value="other">Other account</option></select></label></div>{error && <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}<button type="button" className={primaryClass} disabled={loading} onClick={calculate}>{loading ? "Calculating..." : "Calculate PSS rate"}</button></section><section className="rounded-xl border border-border bg-card p-4" aria-live="polite"><h2 className="text-sm font-semibold">PSS B2B quote</h2>{result ? <div className="mt-4 space-y-3"><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Lane · {result.lane} · {result.chargeableWeightKg} kg charged</span><strong>{formatINR(result.total)}</strong></div><div className="space-y-2 border-t border-border pt-3">{result.lines.map((line) => <div key={line.code} className="flex justify-between text-sm"><span>{line.label}{line.marker ?? ""}</span><span>{formatINR(line.amount)}</span></div>)}</div><p className="border-t border-border pt-3 text-[11px] text-muted-foreground">This is the PSS Logistics client charge. Courier/provider rates are not displayed.</p></div> : <div className="grid min-h-[280px] place-items-center text-center text-sm text-muted-foreground">Enter shipment details to calculate your PSS charge.</div>}</section></div></div>;
+  const ratePincodeField = (key: "origin_pincode" | "destination_pincode", label: string, lookup: typeof originLocation) => <label className="space-y-1.5"><span className="text-xs font-medium">{label}</span><input className={inputClass} inputMode="numeric" maxLength={6} placeholder="6-digit pincode" value={form[key]} onChange={(event) => update(key, event.target.value.replace(/\D/g, "").slice(0, 6))} /><PincodeLocationHint location={lookup.location} lookupState={lookup.lookupState} /></label>;
+  return <div className="w-full space-y-5"><PageHeader title="Rate Check" description="Calculate your PSS Logistics Delhivery B2B shipping charge." /><div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]"><section className="space-y-4 rounded-xl border border-border bg-card p-4"><div className="flex items-center gap-2"><Calculator className="size-4 text-primary" /><h2 className="text-sm font-semibold">Shipment inputs</h2></div><div className="grid gap-3 sm:grid-cols-2">{ratePincodeField("origin_pincode", "Pickup pincode", originLocation)}{ratePincodeField("destination_pincode", "Delivery pincode", destinationLocation)}{input("origin_city", "Pickup city")}{input("origin_state", "Pickup state")}{input("destination_city", "Delivery city")}{input("destination_state", "Delivery state")}{input("actual_weight_kg", "Actual weight (kg)")}{input("volumetric_weight_kg", "Volumetric weight (kg)")}{input("invoice_value", "Invoice value (₹)")}<label className="space-y-1.5"><span className="text-xs font-medium">Delhivery B2B account</span><select className={inputClass} value={form.account_code} onChange={(event) => update("account_code", event.target.value)}><option value="04">04</option><option value="08">08</option><option value="other">Other account</option></select></label></div>{error && <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}</section><section className="rounded-xl border border-border bg-card p-4" aria-live="polite"><h2 className="text-sm font-semibold">PSS B2B quote</h2>{result ? <div className="mt-4 space-y-3"><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Lane · {result.lane} · {result.chargeableWeightKg} kg charged</span><strong>{formatINR(result.total)}</strong></div><div className="space-y-2 border-t border-border pt-3">{result.lines.map((line) => <div key={line.code} className="flex justify-between text-sm"><span>{line.label}{line.marker ?? ""}</span><span>{formatINR(line.amount)}</span></div>)}</div><p className="border-t border-border pt-3 text-[11px] text-muted-foreground">This is the PSS Logistics client charge. Courier/provider rates are not displayed.</p></div> : <div className="grid min-h-[280px] place-items-center text-center text-sm text-muted-foreground">Enter shipment details and calculate to see your PSS charge.</div>}<button type="button" className={primaryClass} disabled={loading} onClick={calculate}>{loading ? "Calculating..." : "Calculate PSS rate"}</button></section></div></div>;
 }
