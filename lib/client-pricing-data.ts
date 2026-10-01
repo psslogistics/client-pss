@@ -6,7 +6,7 @@ export type PaymentMode = "Prepaid" | "COD";
 export type RateCardRow = { mode: ShipmentMode; shipmentType: ShipmentType; zone: string; slab: string; maxWeight: number; base: number; perKg: number; codFee: number; fuel: number; destination: number; rto: number; reverse: number };
 export type BoxLine = { id: number; quantity: number; length: number; breadth: number; height: number };
 export type RateInput = { pickup: string; delivery: string; boxes: BoxLine[]; deadWeight: number; shipmentValue: number; payment: PaymentMode; codAmount: number; shipmentType: ShipmentType };
-export type ServiceabilityRow = { pincode: string; provider: string; status: string; oda: boolean | null };
+export type ServiceabilityRow = { pincode: string; provider: string; status: string; oda: boolean | null; account_name?: string; confidence_score?: number; priority?: number };
 export type ServiceabilityResult = { pickup: boolean; delivery: boolean; modes: ShipmentMode[]; eta: string; prepaid: boolean; cod: boolean; reverse: boolean; temporary: boolean; message: string; rows: ServiceabilityRow[] };
 
 export const zones = [
