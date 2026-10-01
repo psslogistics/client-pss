@@ -433,7 +433,7 @@ export default function ShipmentBooking() {
       setStatus({ state: "success", message: `${location.city}, ${location.state}` });
     } catch {
       if (controller.signal.aborted || requestId !== pinRequestRef.current[kind]) return;
-      setStatus({ state: "error", message: "PIN code could not be verified" });
+      setStatus({ state: "error", message: "Location lookup unavailable; verify the city and state" });
     }
   };
 
@@ -455,7 +455,7 @@ export default function ShipmentBooking() {
       setNotice("Enter valid 10-digit mobile numbers for the Consignor and Consignee");
       return;
     }
-    if (pickupPinStatus.state === "error" || deliveryPinStatus.state === "error") {
+    if ((pickupPinStatus.state === "error" && (!pickup.city || !pickup.state)) || (deliveryPinStatus.state === "error" && (!delivery.city || !delivery.state))) {
       setNotice("Check the PIN codes before continuing");
       return;
     }
