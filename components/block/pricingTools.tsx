@@ -91,7 +91,12 @@ export function PincodeServiceability() {
     void pssApi<{ data: { serviceable: boolean; providers: string[]; status: string; serviceability_rows?: Array<{ pincode: string; provider: string; status: string; oda: boolean | null; account_name?: string; confidence_score?: number; priority?: number; source?: string }> } }>("/v1/serviceability", { method: "POST", body: JSON.stringify({ origin_pincode: pickup, destination_pincode: delivery }) }).then((response) => {
       const available = response.data.serviceable;
       const providerError = response.data.status === "provider_error";
-      const rows = (response.data.serviceability_rows ?? []).map((row) => ({ ...row, provider: row.provider.toLowerCase().includes("delhivery") ? "DELHIVERY" : row.provider }));
+      const rows = (response.data.serviceability_rows ?? []).map((row) => {
+        // Provider responses may include a private account label after the public courier name.
+        // Keep that identifier in the API response for routing, but never render it to clients.
+        const publicProvider = row.provider.split(/[·|:]/, 1)[0].trim();
+        return { ...row, provider: publicProvider.toLowerCase() === "delhivery" ? "DELHIVERY" : publicProvider.toUpperCase() };
+      });
       const datasetBacked = rows.some((row) => row.source === "Delhivery pincode dataset");
       setResult({ pickup: available, delivery: available, modes: response.data.providers.map((provider) => provider === "delhivery" ? "Express" : "Surface"), eta: available ? "Provider confirmation required" : "Not available", prepaid: available, cod: available, reverse: available, temporary: providerError && !datasetBacked, message: datasetBacked ? "The route is available in Delhivery's active B2B pincode dataset. Live provider confirmation was unavailable, so no shipment was created." : providerError ? "The courier provider did not return a verified response. Please retry shortly." : available ? "The route is eligible for configured courier providers." : "The route is not serviceable for the enabled courier providers.", rows });
       setStatus("done");
