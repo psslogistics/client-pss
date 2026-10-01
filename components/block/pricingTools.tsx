@@ -49,7 +49,7 @@ export function PincodeServiceability() {
     if (!isValidPincode(pickup) || !isValidPincode(delivery)) return setError("Enter valid six-digit pickup and delivery pincodes.");
     if (pickup === delivery) return setError("Pickup and delivery pincodes must be different.");
     setError(""); setStatus("loading");
-    void pssApi<{ data: { serviceable: boolean; providers: string[]; status: string; serviceability_rows?: Array<{ pincode: string; provider: string; status: string; oda: boolean | null }> } }>("/v1/serviceability", { method: "POST", body: JSON.stringify({ origin_pincode: pickup, destination_pincode: delivery }) }).then((response) => {
+    void pssApi<{ data: { serviceable: boolean; providers: string[]; status: string; serviceability_rows?: Array<{ pincode: string; provider: string; status: string; oda: boolean | null; account_name?: string; confidence_score?: number; priority?: number }> } }>("/v1/serviceability", { method: "POST", body: JSON.stringify({ origin_pincode: pickup, destination_pincode: delivery }) }).then((response) => {
       const available = response.data.serviceable;
       const providerError = response.data.status === "provider_error";
       const rows = response.data.serviceability_rows ?? [];
