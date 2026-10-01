@@ -23,6 +23,7 @@ type NavGroup = { title: string; description: string; items: NavItem[] };
 
 const navigationGroups: NavGroup[] = [
   { title: "Shipment Operations", description: "Book, monitor, and move shipments", items: [
+    { title: "Booking", icon: "bookings", href: "/dashboard/shipmentBooking" },
     { title: "All Shipments", icon: "shipments", href: "/dashboard/allShipments" },
     { title: "Tracking", icon: "tracking", href: "/dashboard/shipmentTracking" },
     { title: "Pickup", icon: "pickups", href: "/dashboard/pickupRequests" },
