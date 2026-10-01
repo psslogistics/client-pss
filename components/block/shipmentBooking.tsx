@@ -423,13 +423,14 @@ export default function ShipmentBooking() {
     if (value.length < 6) { setStatus({ state: "idle", message: "" }); return; }
     setStatus({ state: "loading", message: "" });
     try {
-      const response = await fetch(`https://api.postalpincode.in/pincode/${value}`, { signal: controller.signal });
+      const response = await fetch(`/api/pincode/${value}`, { signal: controller.signal, cache: "no-store" });
+      if (!response.ok) throw new Error("PIN code not found");
       const result = await response.json();
       if (requestId !== pinRequestRef.current[kind]) return;
-      const office = result?.[0]?.Status === "Success" ? result[0].PostOffice?.[0] : null;
-      if (!office) throw new Error("PIN code not found");
-      setAddress((current) => ({ ...current, city: office.District || office.Name || "", state: office.State || "" }));
-      setStatus({ state: "success", message: "" });
+      const location = result?.data;
+      if (!location?.city || !location?.state) throw new Error("PIN code not found");
+      setAddress((current) => ({ ...current, city: location.city, state: location.state }));
+      setStatus({ state: "success", message: `${location.city}, ${location.state}` });
     } catch {
       if (controller.signal.aborted || requestId !== pinRequestRef.current[kind]) return;
       setStatus({ state: "error", message: "PIN code could not be verified" });

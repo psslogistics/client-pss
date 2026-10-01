@@ -3,44 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Calculator, ChevronDown } from "lucide-react";
 import { pssApi } from "@/lib/pss-api";
+import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary";
 type Line = { code: string; label: string; amount: number; marker?: "*" };
 type Account = { id: string; provider: string; account_name: string; status?: string; enabled?: boolean; explicitly_configured?: boolean };
 type Quote = { provider_account_id?: string | null; provider_account_name?: string | null; account_code?: string; lane: string; chargeableWeightKg: number; total: number; lines: Line[] };
-
-function usePincodeLocation(pincode: string) {
-  const [location, setLocation] = useState<{ city: string; state: string } | null>(null);
-  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not-found">("idle");
-
-  useEffect(() => {
-    const normalized = pincode.replace(/\D/g, "").slice(0, 6);
-    if (normalized.length !== 6) { setLocation(null); setLookupState("idle"); return; }
-    let cancelled = false;
-    setLookupState("loading");
-    const timer = window.setTimeout(() => {
-      void fetch(`/api/pincode/${normalized}`, { cache: "no-store" })
-        .then((response) => response.ok ? response.json() : null)
-        .then((payload: { data?: { city?: string; state?: string } } | null) => {
-          if (cancelled) return;
-          const data = payload?.data;
-          if (data?.city && data?.state) { setLocation({ city: data.city, state: data.state }); setLookupState("found"); }
-          else { setLocation(null); setLookupState("not-found"); }
-        })
-        .catch(() => { if (!cancelled) { setLocation(null); setLookupState("not-found"); } });
-    }, 250);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [pincode]);
-
-  return { location, lookupState };
-}
-
-function PincodeLocationHint({ location, lookupState }: { location: { city: string; state: string } | null; lookupState: "idle" | "loading" | "found" | "not-found" }) {
-  if (lookupState === "loading") return <span className="mt-1 block text-[11px] text-muted-foreground">Finding location…</span>;
-  if (location) return <span className="mt-1 block text-[11px] text-emerald-700 dark:text-emerald-300">{location.city}, {location.state}</span>;
-  if (lookupState === "not-found") return <span className="mt-1 block text-[11px] text-amber-700 dark:text-amber-300">Location not found</span>;
-  return null;
-}
 
 export default function PssRateCheck() {
   const [form, setForm] = useState({ origin_pincode: "", destination_pincode: "", weight_kg: "", invoice_value: "" });
