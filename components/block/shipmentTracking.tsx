@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import Dropdown from "@/components/ui/dropdown";
 import { pssApi } from "@/lib/pss-api";
+import { publicCourierName } from "@/lib/client-pricing-data";
 
 type Status = "Booked" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type Event = { title: string; description: string; location: string; date: string; time: string; status: Status };
@@ -65,7 +66,8 @@ function mapApiShipment(row: Record<string, unknown>, trackingEvents: Array<Reco
   const pur = String(row.pickup_reference ?? "").trim();
   const reference = lr || awb || pur || id;
   const referenceLabel = lr ? "LR" : awb ? "AWB" : pur ? "PUR" : "PSS shipment ID";
-  return { id, orderReference: publicId, client: String(row.client_id || "Assigned client"), clientCode: String(row.client_id || ""), consignee: String(row.consignee || "Not provided"), courierTracking: reference, courierReferenceLabel: referenceLabel, pssTracking: publicId, courier: String(row.provider || "Pending assignment"), mode: "Domestic", service: String(row.provider || "Operations"), origin: String(row.origin || "Not provided"), originCountry: "India", destination: String(row.destination || "Not provided"), destinationCountry: "India", status: safeStatus, progress: statusProgress[safeStatus], pieces: Number(row.pieces || 1), weight: `${Number(row.total_weight_kg || 0)} kg`, eta: String(row.edd || "Not provided"), booked: date, expected: String(row.edd || "Not provided"), payment: "Not provided", value: String(row.declared_value || "Not provided"), invoiceNumber: "Not provided", pod: "POD unavailable", updated: String(row.updated_at || row.created_at || date), events, actions: [{ title: "Production shipment record", description: "Loaded from Cloudflare D1", actor: "PSS API", source: "system", date, time: "Not provided", severity: "info" }] };
+  const courier = publicCourierName(row.provider);
+  return { id, orderReference: publicId, client: String(row.client_id || "Assigned client"), clientCode: String(row.client_id || ""), consignee: String(row.consignee || "Not provided"), courierTracking: reference, courierReferenceLabel: referenceLabel, pssTracking: publicId, courier, mode: "Domestic", service: courier, origin: String(row.origin || "Not provided"), originCountry: "India", destination: String(row.destination || "Not provided"), destinationCountry: "India", status: safeStatus, progress: statusProgress[safeStatus], pieces: Number(row.pieces || 1), weight: `${Number(row.total_weight_kg || 0)} kg`, eta: String(row.edd || "Not provided"), booked: date, expected: String(row.edd || "Not provided"), payment: "Not provided", value: String(row.declared_value || "Not provided"), invoiceNumber: "Not provided", pod: "POD unavailable", updated: String(row.updated_at || row.created_at || date), events, actions: [{ title: "Production shipment record", description: "Loaded from Cloudflare D1", actor: "PSS API", source: "system", date, time: "Not provided", severity: "info" }] };
 }
 
 const normalize = (value: string) => value.trim().toLowerCase();

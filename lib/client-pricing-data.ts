@@ -9,6 +9,19 @@ export type RateInput = { pickup: string; delivery: string; boxes: BoxLine[]; de
 export type ServiceabilityRow = { pincode: string; provider: string; status: string; oda: boolean | null; account_name?: string; confidence_score?: number; priority?: number; source?: string };
 export type ServiceabilityResult = { pickup: boolean; delivery: boolean; modes: ShipmentMode[]; eta: string; prepaid: boolean; cod: boolean; reverse: boolean; temporary: boolean; message: string; rows: ServiceabilityRow[] };
 
+/**
+ * Provider/account identifiers are routing data, not customer-facing labels.
+ * Delhivery may arrive as `Delhivery · <account>` or as a private account code;
+ * clients should always see the single public courier name.
+ */
+export function publicCourierName(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "Pending assignment";
+  const base = raw.split(/[·|:]/, 1)[0].trim();
+  if (/delhivery/i.test(base) || /^PSS(?:LOGISTICS|BOOK|CHANDI|\s)/i.test(base)) return "DELHIVERY";
+  return base.toUpperCase();
+}
+
 export const zones = [
   { id: "A", label: "Local", detail: "Within the same city" },
   { id: "B", label: "Regional", detail: "Within approximately 500 km" },

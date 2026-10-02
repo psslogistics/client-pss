@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Calculator, ChevronDown } from "lucide-react";
 import { pssApi } from "@/lib/pss-api";
+import { publicCourierName } from "@/lib/client-pricing-data";
 import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary";
@@ -10,7 +11,7 @@ type Line = { code: string; label: string; amount: number; marker?: "*" };
 type Account = { id: string; provider: string; account_name: string; status?: string; enabled?: boolean; explicitly_configured?: boolean };
 type Quote = { provider_account_id?: string | null; provider_account_name?: string | null; account_code?: string; lane: string; chargeableWeightKg: number; total: number; lines: Line[] };
 
-const accountLabel = (accountName: string) => accountName.trim() || "PSS Delhivery account";
+const accountLabel = (accountName: string) => publicCourierName(accountName);
 
 export default function PssRateCheck() {
   const [form, setForm] = useState({ origin_pincode: "", destination_pincode: "", weight_kg: "", invoice_value: "" });
