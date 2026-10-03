@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
@@ -14,7 +14,7 @@ import {
 import { PssIcon } from "@/components/ui/icon";
 import { BrandLogo } from "@/components/ui/brand-logo";
 import type { IconName } from "@/lib/iconography";
-import { searchClientMaster } from "@/lib/master-search";
+import { searchClientMaster, type ClientSearchResult } from "@/lib/master-search";
 import { createClient } from "@/lib/supabase/client";
 import { pssApi } from "@/lib/pss-api";
 
@@ -84,16 +84,54 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<{ display_name: string | null; email: string | null; company_name?: string | null }>({ display_name: null, email: null });
   const supabase = useMemo(() => createClient(), []);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [shipmentSearchResults, setShipmentSearchResults] = useState<ClientSearchResult[]>([]);
+  const [shipmentSearchLoading, setShipmentSearchLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const shipmentSearchRequest = useRef<Promise<void> | null>(null);
+  const shipmentSearchLoaded = useRef(false);
   const currentRoute = allRoutes.find((r) => r.href === pathname)?.title ?? "Dashboard";
-  const searchResults = useMemo(() => searchClientMaster(searchQuery), [searchQuery]);
+  const searchResults = useMemo(() => searchClientMaster(searchQuery, shipmentSearchResults), [searchQuery, shipmentSearchResults]);
+
+  const loadShipmentSearchResults = useCallback(() => {
+    if (shipmentSearchLoaded.current) return Promise.resolve();
+    if (shipmentSearchRequest.current) return shipmentSearchRequest.current;
+    setShipmentSearchLoading(true);
+    const request = pssApi<{ data: Array<Record<string, unknown>> }>("/v1/shipments?limit=100").then((result) => {
+      setShipmentSearchResults((result.data ?? []).map((row) => {
+        const id = String(row.id ?? "");
+        const pssReference = String(row.pss_reference ?? id).trim();
+        const trackingNumber = String(row.tracking_number ?? "").trim();
+        const providerReference = String(row.provider_reference ?? "").trim();
+        const lrReference = String(row.lr_number ?? row.lr ?? row.lrn ?? "").trim();
+        const awbReference = String(row.awb ?? row.master_awb ?? row.master_awb_number ?? "").trim();
+        const pickupReference = String(row.pickup_reference ?? "").trim();
+        const reference = lrReference || trackingNumber || awbReference || providerReference || pickupReference;
+        const destination = String(row.destination ?? "Not provided").trim();
+        return {
+          id: `shipment-${id}`,
+          type: "Shipment",
+          title: pssReference || "Shipment",
+          detail: `${reference ? `Reference ${reference} · ` : ""}${String(row.origin ?? "Not provided")} → ${destination}`,
+          href: `/dashboard/shipmentTracking?id=${encodeURIComponent(id)}`,
+          keywords: [id, pssReference, trackingNumber, providerReference, lrReference, awbReference, pickupReference, String(row.description ?? ""), String(row.client_id ?? "")].join(" "),
+        };
+      }));
+      shipmentSearchLoaded.current = true;
+    }).catch(() => {
+      shipmentSearchLoaded.current = false;
+    }).finally(() => {
+      shipmentSearchRequest.current = null;
+      setShipmentSearchLoading(false);
+    });
+    shipmentSearchRequest.current = request;
+    return request;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    let initialTimer: number | undefined;
     const syncUnreadCount = () => void pssApi<{ data: Array<Record<string, unknown>> }>("/v1/notifications").then((result) => { if (!cancelled) setUnreadCount(result.data.filter((item) => !Boolean(item.is_read)).length); }).catch(() => undefined);
-    initialTimer = window.setTimeout(syncUnreadCount, 700);
+    const initialTimer = window.setTimeout(syncUnreadCount, 700);
     const timer = window.setInterval(syncUnreadCount, 60000);
     window.addEventListener("pss-notifications-updated", syncUnreadCount);
     return () => {
@@ -103,6 +141,17 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
       window.removeEventListener("pss-notifications-updated", syncUnreadCount);
     };
   }, []);
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => { void loadShipmentSearchResults(); }, 700);
+    return () => window.clearTimeout(initialTimer);
+  }, [loadShipmentSearchResults]);
+
+  useEffect(() => {
+    if (!searchQuery.trim() || shipmentSearchLoaded.current) return;
+    const retryTimer = window.setTimeout(() => { void loadShipmentSearchResults(); }, 0);
+    return () => window.clearTimeout(retryTimer);
+  }, [loadShipmentSearchResults, searchQuery]);
 
   // Start the dashboard's scoped summary from the already-mounted shell. The
   // dashboard component requests the same key and pssApi deduplicates it, so
@@ -149,7 +198,6 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    let initialTimer: number | undefined;
     const loadProfile = async () => {
       // This is presentation-only data. Use the locally available session so the
       // shell does not add a blocking auth round-trip during the first render.
@@ -159,7 +207,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.from("profiles").select("display_name,email,company_name").eq("id", user.id).maybeSingle();
       if (active) setProfile({ display_name: data?.display_name ?? user.user_metadata?.full_name ?? null, email: data?.email ?? user.email ?? null, company_name: data?.company_name ?? null });
     };
-    initialTimer = window.setTimeout(() => void loadProfile(), 700);
+    const initialTimer = window.setTimeout(() => void loadProfile(), 700);
     return () => {
       active = false;
       if (initialTimer !== undefined) window.clearTimeout(initialTimer);
@@ -264,7 +312,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
                 <kbd className="hidden sm:inline-flex h-5 items-center justify-center gap-0.5 px-1.5 text-[10px] font-medium text-muted-foreground leading-none"><span className="text-[10px]">ESC</span></kbd>
               </div>
               <div className="max-h-80 overflow-y-auto p-2">
-                {!searchQuery.trim() ? <p className="p-4 text-center text-xs text-muted-foreground">Search across shipments, invoices, pickups, and pages.</p> : searchResults.length ? searchResults.map((result) => <Link key={result.id} href={result.href} onClick={() => { setSearchOpen(false); setSearchQuery(""); }} className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent"><Search className="mt-0.5 size-4 shrink-0 text-primary" /><span className="min-w-0"><span className="flex items-center gap-2 text-xs font-semibold"><span className="truncate">{result.title}</span><span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">{result.type}</span></span><span className="mt-0.5 block truncate text-[10px] text-muted-foreground">{result.detail}</span></span></Link>) : <p className="p-4 text-center text-xs text-muted-foreground">No matching company records or pages.</p>}
+                {!searchQuery.trim() ? <p className="p-4 text-center text-xs text-muted-foreground">Search across shipments, invoices, pickups, and pages.</p> : shipmentSearchLoading && !searchResults.length ? <p className="p-4 text-center text-xs text-muted-foreground">Searching shipments...</p> : searchResults.length ? searchResults.map((result) => <Link key={result.id} href={result.href} onClick={() => { setSearchOpen(false); setSearchQuery(""); }} className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent"><Search className="mt-0.5 size-4 shrink-0 text-primary" /><span className="min-w-0"><span className="flex items-center gap-2 text-xs font-semibold"><span className="truncate">{result.title}</span><span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">{result.type}</span></span><span className="mt-0.5 block truncate text-[10px] text-muted-foreground">{result.detail}</span></span></Link>) : <p className="p-4 text-center text-xs text-muted-foreground">No matching company records or pages.</p>}
               </div>
             </div>
           </div>
