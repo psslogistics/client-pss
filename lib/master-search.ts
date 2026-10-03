@@ -40,10 +40,10 @@ export function getClientSearchIndex(): ClientSearchResult[] {
   return pages;
 }
 
-export function searchClientMaster(query: string) {
+export function searchClientMaster(query: string, records: ClientSearchResult[] = []) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
-  return getClientSearchIndex()
+  return [...records, ...getClientSearchIndex()]
     .map((result) => ({ result, score: resultScore(result, normalized) }))
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.result.title.localeCompare(b.result.title))
