@@ -9,17 +9,66 @@ export type RateInput = { pickup: string; delivery: string; boxes: BoxLine[]; de
 export type ServiceabilityRow = { pincode: string; provider: string; status: string; oda: boolean | null; account_name?: string; confidence_score?: number; priority?: number; source?: string };
 export type ServiceabilityResult = { pickup: boolean; delivery: boolean; modes: ShipmentMode[]; eta: string; prepaid: boolean; cod: boolean; reverse: boolean; temporary: boolean; message: string; rows: ServiceabilityRow[] };
 
+const normalizeDelhiveryAccountName = (value: unknown) => String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+const ACTIVE_DELHIVERY_B2B_ACCOUNT_LABELS: Record<string, string> = {
+  PSSLOGISTICS10B2BC: "Delhivery Heavy",
+  PSSCHANDIGARHCARGO6B2BC: "Delhivery Light",
+  PSSBOOKCFT10B2BC: "Delhivery Standard",
+};
+
+/**
+ * Returns the approved public label for an active Delhivery B2B account.
+ * The raw account name remains private routing data and must never be sent
+ * back to a client-facing component as a display label.
+ */
+export function delhiveryB2BAccountLabel(value: unknown) {
+  return ACTIVE_DELHIVERY_B2B_ACCOUNT_LABELS[normalizeDelhiveryAccountName(value)] ?? null;
+}
+
+export function isActiveDelhiveryB2BAccount(value: unknown) {
+  return delhiveryB2BAccountLabel(value) !== null;
+}
+
 /**
  * Provider/account identifiers are routing data, not customer-facing labels.
- * Delhivery may arrive as `Delhivery · <account>` or as a private account code;
- * clients should always see the single public courier name.
+ * Approved Delhivery B2B accounts use their PSS public labels; all other
+ * provider-account identifiers remain hidden behind the generic provider name.
  */
-export function publicCourierName(value: unknown) {
+export function publicCourierName(value: unknown, provider?: unknown) {
   const raw = String(value ?? "").trim();
-  if (!raw) return "Pending assignment";
+  const providerName = String(provider ?? "").trim();
+  if (!raw && !providerName) return "Pending assignment";
+  // Callers commonly pass (provider, account), while a few older callers
+  // pass (account, provider). Resolve both forms before applying labels.
+  const normalizeProvider = (candidate: string) => candidate.toLowerCase().replace(/[^a-z]/g, "");
+  const rawProvider = normalizeProvider(raw);
+  const secondProvider = normalizeProvider(providerName);
+  const knownProviders = new Set(["delhivery", "trackon", "xpressbees", "rivigo", "ekart", "bluedart"]);
+  const resolvedProvider = knownProviders.has(rawProvider) ? rawProvider : knownProviders.has(secondProvider) ? secondProvider : "";
+  const accountCandidate = resolvedProvider === rawProvider ? providerName : raw;
+  const directDelhiveryLabel = delhiveryB2BAccountLabel(raw);
+  if (directDelhiveryLabel) return directDelhiveryLabel;
+  // When the API already identifies the provider, never let a private
+  // provider-account label leak through as the displayed courier name.
+  if (resolvedProvider === "delhivery") return delhiveryB2BAccountLabel(accountCandidate) ?? "DELHIVERY";
+  if (resolvedProvider === "trackon") return "TRACKON";
+  if (resolvedProvider === "xpressbees") return "XPRESSBEES";
+  if (resolvedProvider === "rivigo") return "RIVIGO";
+  if (resolvedProvider === "ekart") return "EKART";
+  if (resolvedProvider === "bluedart") return "BLUEDART";
   const base = raw.split(/[·|:]/, 1)[0].trim();
-  if (/delhivery/i.test(base) || /^PSS(?:LOGISTICS|BOOK|CHANDI|\s)/i.test(base)) return "DELHIVERY";
-  return base.toUpperCase();
+  const context = `${providerName} ${raw}`;
+  const explicitProvider = /^(?:delhivery|trackon|xpressbees|rivigo|ekart|bluedart)$/i.test(providerName) ? providerName : "";
+  // Account names/codes are private routing data. Provider responses have
+  // historically used several formats such as PSSLOGISTICS10B2BC, PSS
+  // LOGISTICS15 B2BC, 04, and delhivery:<account>.
+  const looksLikeDelhiveryAccount = /(?:^|[\s_-])PSS(?:[\s_-]|$)/i.test(base)
+    || /(?:B2B|B2BC|B2C|SURFACE|EXPRESS|CFT|CARGO|KG)/i.test(base)
+    || /^(?:04|08|other)$/i.test(base);
+  if (/delhivery/i.test(context) || (!explicitProvider && looksLikeDelhiveryAccount)) return "DELHIVERY";
+  if (explicitProvider) return explicitProvider.toUpperCase();
+  return (base || providerName).toUpperCase();
 }
 
 export const zones = [
