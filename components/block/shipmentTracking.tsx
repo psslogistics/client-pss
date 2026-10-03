@@ -136,7 +136,7 @@ export default function ShipmentTracking() {
       <section className={cn("min-w-0 space-y-4", !mobileDetail && "hidden lg:block", "lg:flex lg:h-full lg:min-h-0 lg:flex-col")}>
         <div className="flex items-center justify-between lg:hidden"><button type="button" onClick={() => setMobileDetail(false)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary"><ArrowLeft className="h-3.5 w-3.5" /> All shipments</button></div>
         <ShipmentInformation shipment={selected} copy={copy} />
-        <div className="grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.6fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:min-h-0 xl:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.6fr)]">
           <ShipmentDetails shipment={selected} />
           <TrackingSummary shipment={selected} latestEvent={latestEvent} refresh={refreshSelectedTracking} refreshing={refreshing} />
         </div>
