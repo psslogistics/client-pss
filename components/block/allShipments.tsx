@@ -21,8 +21,13 @@ const courierReference = (row: Record<string, unknown>) => {
   const trackingNumber = textValue(row.tracking_number);
   const providerReference = textValue(row.provider_reference);
   const pur = textValue(row.pickup_reference);
+  const importedShipment = textValue(row.description).startsWith("Imported shipment");
 
   if (explicitLr) return { value: explicitLr, label: "LR" };
+  // Historical Delhivery imports carry the source file's LRN in both legacy
+  // reference columns. Preserve that source meaning instead of relabelling it
+  // as an AWB merely because the two stored values are identical.
+  if (importedShipment && trackingNumber) return { value: trackingNumber, label: "LR" };
   if (explicitAwb) return { value: explicitAwb, label: "AWB" };
   // Delhivery B2B responses store the LR in tracking_number and the master AWB
   // in provider_reference when both are returned. If both values are the same,
