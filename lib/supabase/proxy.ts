@@ -5,7 +5,11 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, { cookies: { getAll: () => request.cookies.getAll(), setAll: (items) => { items.forEach(({ name, value }) => request.cookies.set(name, value)); response = NextResponse.next({ request }); items.forEach(({ name, value, options }) => response.cookies.set(name, value, options)) } } })
   const claimsResult = await supabase.auth.getClaims()
-  const userId = claimsResult.data?.claims?.sub
+  // Claim verification can briefly fail while a refreshed cookie is being
+  // persisted during a client-side navigation. Fall back to the Auth server
+  // before treating the user as signed out; otherwise a valid client session
+  // is incorrectly redirected to /sign-in when opening a dashboard section.
+  const userId = claimsResult.data?.claims?.sub ?? (await supabase.auth.getUser()).data.user?.id
   if (request.nextUrl.pathname.startsWith('/dashboard')) {
     if (!userId) return NextResponse.redirect(new URL('/sign-in', request.url))
     const [{ data: profile, error: profileError }, { data: userRole, error: roleError }, { data: memberships, error: membershipError }] = await Promise.all([

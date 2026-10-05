@@ -44,11 +44,19 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
-      ...init,
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${session.access_token}`, ...(init.body ? { "content-type": "application/json" } : {}), ...(mutating ? { "Idempotency-Key": crypto.randomUUID() } : {}), ...init.headers },
-    });
+    const endpoint = `${baseUrl.replace(/\/$/, "")}${path}`;
+    const idempotencyKey = mutating ? (new Headers(init.headers).get("Idempotency-Key") ?? crypto.randomUUID()) : undefined;
+    const requestHeaders = (accessToken: string) => ({ Authorization: `Bearer ${accessToken}`, ...(init.body ? { "content-type": "application/json" } : {}), ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}), ...init.headers });
+    let response = await fetch(endpoint, { ...init, signal: controller.signal, headers: requestHeaders(session.access_token) });
+    // A token can expire between getSession() and the route request. Refresh
+    // once and retry the same request before surfacing an auth failure. This
+    // is safe for mutations because the idempotency key is stable for the
+    // retry, and it prevents a normal session refresh from looking like logout.
+    if (response.status === 401) {
+      const refreshed = await createClient().auth.refreshSession();
+      const refreshedToken = refreshed.data.session?.access_token;
+      if (refreshedToken) response = await fetch(endpoint, { ...init, signal: controller.signal, headers: requestHeaders(refreshedToken) });
+    }
     const payload = await response.json().catch(() => ({})) as T & { error?: { message?: string } };
     if (!response.ok) throw new Error(payload.error?.message || "The PSS API request failed.");
     if (!mutating) {

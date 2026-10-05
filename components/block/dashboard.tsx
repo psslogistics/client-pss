@@ -28,6 +28,7 @@ import {
   KpiMetric,
 } from "./dashboard-data";
 import { pssApi } from "@/lib/pss-api";
+import { publicCourierName } from "@/lib/client-pricing-data";
 import type { ClientFinancialSnapshot } from "@/lib/client-dashboard-data";
 const ClientDashboardOperations = dynamic(() => import("./client-dashboard-operations"), {
   ssr: false,
@@ -213,11 +214,11 @@ export default function Dashboard() {
   const statusCounts = new Map<string, number>(); production.shipments.forEach((shipment) => { const status = String(shipment.status ?? "Booked"); statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1); });
   const totalShipments = production.shipments.length;
   const activeShipments = production.shipments.filter((shipment) => ["booked", "picked_up", "in_transit", "out_for_delivery", "Booked", "Picked Up", "In Transit", "Out for Delivery"].includes(String(shipment.status ?? ""))).length;
-  const delayedRows = production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; const delivered = shipment.delivered_at ? Date.parse(String(shipment.delivered_at)) : NaN; return Number.isFinite(edd) && ((Number.isFinite(delivered) && delivered > edd) || (!Number.isFinite(delivered) && edd < now)); }).map((shipment) => ({ id: String(shipment.id), trackingId: String(shipment.tracking_number ?? shipment.id), origin: String(shipment.origin ?? "Origin pending"), destination: String(shipment.destination ?? "Destination pending"), carrier: String(shipment.provider ?? "Courier pending"), mode: String(shipment.provider ?? "—"), date: String(shipment.edd ?? "—") }));
+  const delayedRows = production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; const delivered = shipment.delivered_at ? Date.parse(String(shipment.delivered_at)) : NaN; return Number.isFinite(edd) && ((Number.isFinite(delivered) && delivered > edd) || (!Number.isFinite(delivered) && edd < now)); }).map((shipment) => ({ id: String(shipment.id), trackingId: String(shipment.tracking_number ?? shipment.id), origin: String(shipment.origin ?? "Origin pending"), destination: String(shipment.destination ?? "Destination pending"), carrier: publicCourierName(shipment.provider, shipment.account_name), mode: publicCourierName(shipment.provider, shipment.account_name), date: String(shipment.edd ?? "—") }));
   const delayedShipments = delayedRows.length;
   const exceptionShipments = production.exceptions.length + production.ndr.length;
   const shipmentStatusData = [...statusCounts.entries()].map(([status, count]) => ({ status, count, percentage: totalShipments ? Math.round((count / totalShipments) * 100) : 0, badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary", barClass: "bg-primary" }));
-  const transportCounts = new Map<string, number>(); production.shipments.forEach((shipment) => { const mode = String(shipment.provider ?? "Unassigned"); transportCounts.set(mode, (transportCounts.get(mode) ?? 0) + 1); });
+  const transportCounts = new Map<string, number>(); production.shipments.forEach((shipment) => { const mode = publicCourierName(shipment.provider, shipment.account_name); transportCounts.set(mode, (transportCounts.get(mode) ?? 0) + 1); });
   const transportModes = [...transportCounts.entries()].map(([name, shipments]) => ({ name, shipments, percentage: totalShipments ? Math.round((shipments / totalShipments) * 100) : 0, color: "var(--primary)" }));
   const financialSnapshot: ClientFinancialSnapshot = { balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null, pendingCharges: production.billing.filter((item) => String(item.status).toLowerCase() === "pending").reduce((sum, item) => sum + Number(item.amount ?? 0), 0) || null, codExposure: null, recentTransactions: [] };
   const todayIso = new Date().toISOString().slice(0, 10);
