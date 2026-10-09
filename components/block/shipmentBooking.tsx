@@ -233,6 +233,7 @@ export default function ShipmentBooking() {
   const [reviewQuoteLoading, setReviewQuoteLoading] = useState(false);
   const [reviewQuoteError, setReviewQuoteError] = useState("");
   const [courierQuotes, setCourierQuotes] = useState<Record<string, PssQuote>>({});
+  const [courierQuoteErrors, setCourierQuoteErrors] = useState<Record<string, string>>({});
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("Prepaid");
   const [codAmount, setCodAmount] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -303,6 +304,7 @@ export default function ShipmentBooking() {
         setReviewQuote(null);
         setReviewQuoteError("");
         setCourierQuotes({});
+        setCourierQuoteErrors({});
       }, 0);
       return () => window.clearTimeout(resetTimer);
     }
@@ -373,9 +375,15 @@ export default function ShipmentBooking() {
       return [courier.id, result.data] as const;
     })).then((results) => {
       if (cancelled) return;
-      const next: Record<string, PssQuote> = {};
-      results.forEach((result) => { if (result.status === "fulfilled") next[result.value[0]] = result.value[1]; });
+       const next: Record<string, PssQuote> = {};
+       const errors: Record<string, string> = {};
+       results.forEach((result, index) => {
+         const courier = couriers[index];
+         if (result.status === "fulfilled") next[result.value[0]] = result.value[1];
+         else if (courier) errors[courier.id] = result.reason instanceof Error ? result.reason.message : "PSS rate unavailable";
+       });
       setCourierQuotes(next);
+       setCourierQuoteErrors(errors);
     });
     return () => { cancelled = true; };
   }, [showReview, accountPolicies, providerHealth, couriers, pickup.pincode, delivery.pincode, shipmentDetails.weight, shipmentDetails.value, shipmentDetails.pieces, boxDimensions]);
@@ -655,7 +663,7 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
             const degraded = courier.health === "degraded";
             const checking = courier.health === "pending";
             const courierQuote = courierQuotes[courier.id];
-            return <button type="button" key={courier.id} onClick={() => { setSelectedCourier(courier.id); setSlotOpen(true); }} className={`group rounded-xl border bg-card p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md ${isSelected ? "border-primary ring-4 ring-primary/10" : "border-border"}`}><div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold ${courier.accent}`}>{courier.name.slice(0, 2).toUpperCase()}</span><span><span className="block text-sm font-semibold text-foreground">{courier.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{courier.service}</span>{courier.accountName && <span className="mt-1 block text-[11px] text-muted-foreground">Account: {courier.accountName}</span>}{degraded && <span className="mt-1 block text-[11px] font-semibold text-amber-700 dark:text-amber-300">Degraded{courier.lastError ? ` · ${courier.lastError}` : ""}</span>}{checking && <span className="mt-1 block text-[11px] font-semibold text-sky-700 dark:text-sky-300">Provider check in progress</span>}</span></div><div className="text-right"><span className="block text-lg font-semibold tracking-tight text-foreground">{courierQuote ? `₹${courierQuote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "Calculating…"}</span>{courier.accountName && <span className="mt-1 block text-[11px] font-semibold text-emerald-600">Confidence {courier.confidence.toFixed(0)}%</span>}</div></div><div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3 text-xs"><span className="text-muted-foreground">Estimated delivery <span className="font-medium text-foreground">{courier.eta}</span></span><span className="font-semibold text-primary">{isSelected ? "Change slot" : "Select courier"} <ArrowRight className="ml-1 inline h-3.5 w-3.5" /></span></div>{isSelected && selectedSlot && <div className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-medium text-primary">Pickup slot: {selectedSlot}</div>}</button>;
+            return <button type="button" key={courier.id} onClick={() => { setSelectedCourier(courier.id); setSlotOpen(true); }} className={`group rounded-xl border bg-card p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md ${isSelected ? "border-primary ring-4 ring-primary/10" : "border-border"}`}><div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold ${courier.accent}`}>{courier.name.slice(0, 2).toUpperCase()}</span><span><span className="block text-sm font-semibold text-foreground">{courier.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{courier.service}</span>{courier.accountName && <span className="mt-1 block text-[11px] text-muted-foreground">Account: {courier.accountName}</span>}{degraded && <span className="mt-1 block text-[11px] font-semibold text-amber-700 dark:text-amber-300">Degraded{courier.lastError ? ` · ${courier.lastError}` : ""}</span>}{checking && <span className="mt-1 block text-[11px] font-semibold text-sky-700 dark:text-sky-300">Provider check in progress</span>}{courierQuoteErrors[courier.id] && <span className="mt-1 block text-[11px] font-semibold text-destructive">{courierQuoteErrors[courier.id]}</span>}</span></div><div className="text-right"><span className="block text-lg font-semibold tracking-tight text-foreground">{courierQuote ? `₹${courierQuote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : courierQuoteErrors[courier.id] ? "Rate unavailable" : "Calculating…"}</span>{courier.accountName && <span className="mt-1 block text-[11px] font-semibold text-emerald-600">Confidence {courier.confidence.toFixed(0)}%</span>}</div></div><div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3 text-xs"><span className="text-muted-foreground">Estimated delivery <span className="font-medium text-foreground">{courier.eta}</span></span><span className="font-semibold text-primary">{isSelected ? "Change slot" : "Select courier"} <ArrowRight className="ml-1 inline h-3.5 w-3.5" /></span></div>{isSelected && selectedSlot && <div className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-medium text-primary">Pickup slot: {selectedSlot}</div>}</button>;
           })}
         </div>
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">PSS wallet debit before confirmation</p><p className="mt-1 text-xs text-muted-foreground">This is the client-facing PSS amount. Courier cost is never displayed.</p></div>{reviewQuoteLoading ? <span className="text-xs font-semibold text-muted-foreground">Calculating…</span> : reviewQuote ? <span className="text-xl font-semibold">₹{reviewQuote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span> : <span className="text-xs font-semibold text-destructive">{reviewQuoteError || "Unavailable"}</span>}</div>{reviewQuote && <div className="mt-3 grid gap-2 border-t border-primary/10 pt-3 sm:grid-cols-2"><p className="text-xs text-muted-foreground">Chargeable weight <span className="font-semibold text-foreground">{reviewQuote.chargeableWeightKg} kg</span></p><p className="text-xs text-muted-foreground">Lane <span className="font-semibold text-foreground">{reviewQuote.lane}</span></p>{reviewQuote.lines.map((line) => <p key={line.code} className="text-xs text-muted-foreground">{line.label}{line.marker ?? ""} <span className="font-semibold text-foreground">₹{line.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></p>)}</div>}</div>
