@@ -575,7 +575,116 @@ export default function ShipmentBooking() {
     if (dcs.length) void createChallanPdf(dcs).catch(() => setBulkNotice("Unable to create the bulk Delivery Challan PDF"));
   };
 
-  const confirmSingle = async () => { if (singleSubmitting || !selectedCourier || !selectedSlot) return; const courier = couriers.find((item) => item.id === selectedCourier) || couriers[0]; if (!courier) { setBookingNotice("No active Delhivery B2B account is assigned to this client."); return; } setSingleSubmitting(true); const idempotencyKey = singleAttemptId || crypto.randomUUID(); setSingleAttemptId(idempotencyKey); const date = new Date().toISOString().slice(0, 10); const declaredWeight = Number(shipmentDetails.weight) || 1; const dimensions = boxDimensions.map((item) => ({ length: Number(item.length), width: Number(item.width), height: Number(item.height), quantity: Number(item.boxCount) || 1 })); const volumetricWeight = dimensions.reduce((sum, item) => sum + (item.length * item.width * item.height * item.quantity) / 5000, 0); const originAddress = { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }; const destinationAddress = { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }; setBookingNotice("Calculating the PSS charge and saving booking securely…"); try { const result = await pssApi<{ data: { id: string; status: string; pricing_amount?: number; provider_status?: string } }>("/v1/shipments", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ description: shipmentDetails.description, total_weight_kg: declaredWeight, volumetric_weight_kg: volumetricWeight, dimensions, declared_value: Number(shipmentDetails.value) || 0, pieces: Number(shipmentDetails.pieces) || 1, origin: `${pickup.city}, ${pickup.state}`, destination: `${delivery.city}, ${delivery.state}`, origin_address: originAddress, destination_address: destinationAddress, consignee: deliveryPerson.name, provider: "delhivery", pricing_quote_id: reviewQuote?.quote_id, provider_account_id: courier.accountId || undefined, edd: courier.eta }) }); const serverId = result.data.id; setBookingAmount(Number(result.data.pricing_amount ?? 0)); if (invoices.length) { await Promise.all(invoices.map(async (file) => { const contentType = documentContentType(file); if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`); return pssApi("/v1/documents", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-document-${file.name}` }, body: JSON.stringify({ shipment_id: serverId, name: file.name, content_type: contentType, body_base64: await fileAsBase64(file) }) }); })); } if (ewayBill) { const contentType = documentContentType(ewayBill); if (!contentType) throw new Error(`Unsupported E-Way Bill format: ${ewayBill.name}`); await pssApi("/v1/documents", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-eway-bill-${ewayBill.name}` }, body: JSON.stringify({ shipment_id: serverId, name: `eway-bill-${ewayBill.name}`, content_type: contentType, body_base64: await fileAsBase64(ewayBill) }) }); } await pssApi("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-pickup` }, body: JSON.stringify({ shipment_id: serverId, provider: "delhivery", provider_account_id: courier.accountId || undefined, scheduled_date: date, window: selectedSlot, location: pickup.line || `${pickup.city}, ${pickup.state}`, notes: "Created from Delhivery B2B PSS booking" }) }); setSingleCompleted(true); setBookingNotice(result.data.provider_status === "accepted" ? "Booking saved and submitted for courier processing." : "Booking saved. Courier processing is pending."); } catch (error) { setBookingNotice(error instanceof Error ? error.message : "Unable to save booking."); } finally { setSingleSubmitting(false); } };
+  const confirmSingle = async () => {
+    if (singleSubmitting || !selectedCourier || !selectedSlot) return;
+    const courier = couriers.find((item) => item.id === selectedCourier) || couriers[0];
+    if (!courier) {
+      setBookingNotice("No active Delhivery B2B account is assigned to this client.");
+      return;
+    }
+    setSingleSubmitting(true);
+    const idempotencyKey = singleAttemptId || crypto.randomUUID();
+    setSingleAttemptId(idempotencyKey);
+    const date = new Date().toISOString().slice(0, 10);
+    const declaredWeight = Number(shipmentDetails.weight) || 1;
+    const declaredValue = Number(shipmentDetails.value) || Number(dc.value) || 0;
+    const dimensions = boxDimensions.map((item) => ({
+      length: Number(item.length),
+      width: Number(item.width),
+      height: Number(item.height),
+      quantity: Number(item.boxCount) || 1,
+    }));
+    const firstDimension = dimensions[0];
+    const volumetricWeight = dimensions.reduce((sum, item) => sum + (item.length * item.width * item.height * item.quantity) / 5000, 0);
+    const originAddress = { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone };
+    const destinationAddress = { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone };
+    const registeredClientName = pickupPerson.name.trim() || `PSS Logistics${pickup.state}${pickup.pincode}`.replace(/[^a-zA-Z0-9]/g, "");
+    const consignorLocation = pickup.line.trim() || [pickup.city, pickup.state, pickup.pincode].filter(Boolean).join(", ");
+    const documentReference = documentMode === "dc"
+      ? dc.number.trim()
+      : invoices[0]?.name.trim() || `PSS-${idempotencyKey.slice(0, 12)}`;
+    setBookingNotice("Calculating the PSS charge and saving booking securely…");
+    try {
+      const result = await pssApi<{ data: { id: string; status: string; pricing_amount?: number; provider_status?: string } }>("/v1/shipments", {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({
+          description: shipmentDetails.description,
+          total_weight_kg: declaredWeight,
+          volumetric_weight_kg: volumetricWeight,
+          dimensions,
+          length: firstDimension?.length,
+          width: firstDimension?.width,
+          height: firstDimension?.height,
+          declared_value: declaredValue,
+          invoice_reference: documentReference,
+          invoice_number: documentReference,
+          pieces: Number(shipmentDetails.pieces) || 1,
+          origin: `${pickup.city}, ${pickup.state}`,
+          destination: `${delivery.city}, ${delivery.state}`,
+          origin_address: originAddress,
+          destination_address: destinationAddress,
+          consignee: deliveryPerson.name,
+          provider: "delhivery",
+          delhivery_client_name: registeredClientName,
+          pickup_location: consignorLocation,
+          delhivery_pickup_location: consignorLocation,
+          pricing_quote_id: reviewQuote?.quote_id,
+          provider_account_id: courier.accountId || undefined,
+          payment_mode: paymentMode,
+          cod_amount: paymentMode === "COD" ? Number(codAmount) || 0 : 0,
+          edd: courier.eta,
+        }),
+      });
+      const serverId = result.data.id;
+      setBookingAmount(Number(result.data.pricing_amount ?? 0));
+      if (invoices.length) {
+        await Promise.all(invoices.map(async (file) => {
+          const contentType = documentContentType(file);
+          if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`);
+          return pssApi("/v1/documents", {
+            method: "POST",
+            headers: { "Idempotency-Key": `${idempotencyKey}-document-${file.name}` },
+            body: JSON.stringify({ shipment_id: serverId, name: file.name, content_type: contentType, body_base64: await fileAsBase64(file) }),
+          });
+        }));
+      }
+      if (ewayBill) {
+        const contentType = documentContentType(ewayBill);
+        if (!contentType) throw new Error(`Unsupported E-Way Bill format: ${ewayBill.name}`);
+        await pssApi("/v1/documents", {
+          method: "POST",
+          headers: { "Idempotency-Key": `${idempotencyKey}-eway-bill-${ewayBill.name}` },
+          body: JSON.stringify({ shipment_id: serverId, name: `eway-bill-${ewayBill.name}`, content_type: contentType, body_base64: await fileAsBase64(ewayBill) }),
+        });
+      }
+      await pssApi("/v1/pickups", {
+        method: "POST",
+        headers: { "Idempotency-Key": `${idempotencyKey}-pickup` },
+        body: JSON.stringify({
+          shipment_id: serverId,
+          provider: "delhivery",
+          provider_account_id: courier.accountId || undefined,
+          scheduled_date: date,
+          window: selectedSlot,
+          location: consignorLocation,
+          pickup_location: consignorLocation,
+          delhivery_pickup_location: consignorLocation,
+          delhivery_client_name: registeredClientName,
+          expected_package_count: Number(shipmentDetails.pieces) || 1,
+          contact_name: pickupPerson.name,
+          contact_phone: pickupPerson.phone,
+          notes: "Created from Delhivery B2B PSS booking",
+        }),
+      });
+      setSingleCompleted(true);
+      setBookingNotice(result.data.provider_status === "accepted" ? "Booking saved and submitted for courier processing." : "Booking saved. Courier processing is pending.");
+    } catch (error) {
+      setBookingNotice(error instanceof Error ? error.message : "Unable to save booking.");
+    } finally {
+      setSingleSubmitting(false);
+    }
+  };
   const confirmBulkProduction = async () => {
     const validRows = bulkRows.filter((row) => !row.errors.length);
     if (bulkSubmitting || !validRows.length || validRows.some((row) => row.invoiceAvailable && !row.invoice)) return;
