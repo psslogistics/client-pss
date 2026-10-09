@@ -505,8 +505,8 @@ export default function ShipmentBooking() {
 
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (documentMode === "invoice" && !invoices.length) {
-      setNotice("Upload an invoice or switch to Delivery Challan");
+    if (!invoices.length) {
+      setNotice("Delhivery B2B requires an invoice document. A Delivery Challan can be added as supplementary documentation.");
       return;
     }
     if (paymentMode === "COD" && (!codAmount || Number(codAmount) <= 0)) {
@@ -598,8 +598,6 @@ export default function ShipmentBooking() {
     const volumetricWeight = dimensions.reduce((sum, item) => sum + (item.length * item.width * item.height * item.quantity) / 5000, 0);
     const originAddress = { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone };
     const destinationAddress = { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone };
-    const registeredClientName = pickupPerson.name.trim() || `PSS Logistics${pickup.state}${pickup.pincode}`.replace(/[^a-zA-Z0-9]/g, "");
-    const consignorLocation = pickup.line.trim() || [pickup.city, pickup.state, pickup.pincode].filter(Boolean).join(", ");
     const documentReference = documentMode === "dc"
       ? dc.number.trim()
       : invoices[0]?.name.trim() || `PSS-${idempotencyKey.slice(0, 12)}`;
@@ -626,9 +624,6 @@ export default function ShipmentBooking() {
           destination_address: destinationAddress,
           consignee: deliveryPerson.name,
           provider: "delhivery",
-          delhivery_client_name: registeredClientName,
-          pickup_location: consignorLocation,
-          delhivery_pickup_location: consignorLocation,
           pricing_quote_id: reviewQuote?.quote_id,
           provider_account_id: courier.accountId || undefined,
           payment_mode: paymentMode,
@@ -667,10 +662,7 @@ export default function ShipmentBooking() {
           provider_account_id: courier.accountId || undefined,
           scheduled_date: date,
           window: selectedSlot,
-          location: consignorLocation,
-          pickup_location: consignorLocation,
-          delhivery_pickup_location: consignorLocation,
-          delhivery_client_name: registeredClientName,
+          location: pickup.line || `${pickup.city}, ${pickup.state}`,
           expected_package_count: Number(shipmentDetails.pieces) || 1,
           contact_name: pickupPerson.name,
           contact_phone: pickupPerson.phone,
