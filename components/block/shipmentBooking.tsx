@@ -660,6 +660,7 @@ export default function ShipmentBooking() {
         body: JSON.stringify({
           shipment_id: serverId,
           provider: "delhivery",
+          provider_managed: true,
           provider_account_id: courier.accountId || undefined,
           scheduled_date: date,
           window: selectedSlot,
