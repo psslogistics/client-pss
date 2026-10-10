@@ -674,6 +674,11 @@ export default function ShipmentBooking() {
       setSingleCompleted(true);
       setBookingNotice(result.data.provider_status === "accepted" ? "Booking saved and submitted for courier processing." : "Booking saved. Courier processing is pending.");
     } catch (error) {
+      // A failed attempt must not be reused after the user edits the shipment.
+      // The API intentionally rejects an idempotency key with a different
+      // payload; the next submission gets a fresh key while duplicate clicks
+      // during this attempt remain idempotent.
+      setSingleAttemptId("");
       setBookingNotice(error instanceof Error ? error.message : "Unable to save booking.");
     } finally {
       setSingleSubmitting(false);
