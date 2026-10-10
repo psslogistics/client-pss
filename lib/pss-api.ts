@@ -42,7 +42,7 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
   }
   const request = (async () => {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 12000);
+  const timeout = window.setTimeout(() => controller.abort(), 45000);
   try {
     const endpoint = `${baseUrl.replace(/\/$/, "")}${path}`;
     const idempotencyKey = mutating ? (new Headers(init.headers).get("Idempotency-Key") ?? crypto.randomUUID()) : undefined;
