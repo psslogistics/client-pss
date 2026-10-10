@@ -78,6 +78,11 @@ const allCouriers = [
   { id: "delhivery", provider: "delhivery", name: "DELHIVERY", service: "PSS rate card applied at booking", eta: "Provider confirmation pending", rate: "PSS pricing", confidence: 0, accountName: "", accountCode: "other", accountId: "", health: "unknown", lastError: "", accent: "bg-violet-500/10 text-violet-600" },
 ];
 const pickupSlots = ["09:00 AM – 11:00 AM", "11:00 AM – 01:00 PM", "02:00 PM – 04:00 PM", "04:00 PM – 06:00 PM"];
+const indiaDate = (offsetDays = 0) => {
+  const date = new Date(Date.now() + offsetDays * 86_400_000);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+};
+const nextIndiaDate = () => indiaDate(1);
 const EWAY_THRESHOLD = 50000;
 const bulkHeaders = ["from", "to", "origin_city", "origin_state", "origin_pincode", "destination_city", "destination_state", "destination_pincode", "consignor", "consignee", "consignor_phone", "consignee_phone", "description", "weight_kg", "pieces", "shipment_value", "invoice_available", "payment_mode", "cod_amount", "eway_bill_available", "dc_number", "dc_date", "dc_seller", "dc_buyer", "dc_value", "dc_reason"];
 
@@ -589,7 +594,10 @@ export default function ShipmentBooking() {
     setSingleSubmitting(true);
     const idempotencyKey = singleAttemptId || crypto.randomUUID();
     setSingleAttemptId(idempotencyKey);
-    const date = new Date().toISOString().slice(0, 10);
+    // Use the provider's India business date instead of UTC. Near midnight,
+    // UTC can send yesterday's date to Delhivery and trigger "pickup time
+    // cannot be in past" even though it is still the correct local day.
+    const date = indiaDate();
     const declaredWeight = Number(shipmentDetails.weight) || 1;
     const declaredValue = Number(shipmentDetails.value) || Number(dc.value) || 0;
     const dimensions = boxDimensions.map((item) => ({
@@ -654,10 +662,7 @@ export default function ShipmentBooking() {
           body: JSON.stringify({ shipment_id: serverId, name: `eway-bill-${ewayBill.name}`, content_type: contentType, body_base64: await fileAsBase64(ewayBill) }),
         });
       }
-      await pssApi("/v1/pickups", {
-        method: "POST",
-        headers: { "Idempotency-Key": `${idempotencyKey}-pickup` },
-        body: JSON.stringify({
+      const pickupPayload = {
           shipment_id: serverId,
           provider: "delhivery",
           delhivery_pickup_location: `${pickupPerson.name} ${pickup.pincode}`.replace(/\s+/g, " ").trim().slice(0, 50),
@@ -669,10 +674,22 @@ export default function ShipmentBooking() {
           contact_name: pickupPerson.name,
           contact_phone: pickupPerson.phone,
           notes: "Created from Delhivery B2B PSS booking",
-        }),
-      });
+        };
+      let pickupRescheduled = false;
+      try {
+        await pssApi("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-pickup` }, body: JSON.stringify(pickupPayload) });
+      } catch (pickupError) {
+        const pickupMessage = pickupError instanceof Error ? pickupError.message : "";
+        const isStaleProviderSlot = /pickup.*past|pickup.*time|not accepted|provider.*400/i.test(pickupMessage);
+        if (!isStaleProviderSlot) throw pickupError;
+        const nextDayPayload = { ...pickupPayload, scheduled_date: nextIndiaDate() };
+        await pssApi("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-pickup-next-day` }, body: JSON.stringify(nextDayPayload) });
+        pickupRescheduled = true;
+      }
       setSingleCompleted(true);
-      setBookingNotice(result.data.provider_status === "accepted" ? "Booking saved and submitted for courier processing." : "Booking saved. Courier processing is pending.");
+      setBookingNotice(pickupRescheduled
+        ? "Booking saved. The selected pickup window had passed, so pickup was aligned for the next available day."
+        : result.data.provider_status === "accepted" ? "Booking saved and submitted for courier processing." : "Booking saved. Courier processing is pending.");
     } catch (error) {
       // A failed attempt must not be reused after the user edits the shipment.
       // The API intentionally rejects an idempotency key with a different
