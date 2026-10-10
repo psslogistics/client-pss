@@ -601,6 +601,11 @@ export default function ShipmentBooking() {
     const documentReference = documentMode === "dc"
       ? dc.number.trim()
       : invoices[0]?.name.trim() || `PSS-${idempotencyKey.slice(0, 12)}`;
+    const invoiceDocuments = await Promise.all(invoices.map(async (file) => {
+      const contentType = documentContentType(file);
+      if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`);
+      return { name: file.name, content_type: contentType, body_base64: await fileAsBase64(file), invoice_number: documentReference };
+    }));
     setBookingNotice("Calculating the PSS charge and saving booking securely…");
     try {
       const result = await pssApi<{ data: { id: string; status: string; pricing_amount?: number; provider_status?: string } }>("/v1/shipments", {
@@ -629,21 +634,11 @@ export default function ShipmentBooking() {
           payment_mode: paymentMode,
           cod_amount: paymentMode === "COD" ? Number(codAmount) || 0 : 0,
           edd: courier.eta,
+          invoice_documents: invoiceDocuments,
         }),
       });
       const serverId = result.data.id;
       setBookingAmount(Number(result.data.pricing_amount ?? 0));
-      if (invoices.length) {
-        await Promise.all(invoices.map(async (file) => {
-          const contentType = documentContentType(file);
-          if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`);
-          return pssApi("/v1/documents", {
-            method: "POST",
-            headers: { "Idempotency-Key": `${idempotencyKey}-document-${file.name}` },
-            body: JSON.stringify({ shipment_id: serverId, name: file.name, content_type: contentType, body_base64: await fileAsBase64(file) }),
-          });
-        }));
-      }
       if (ewayBill) {
         const contentType = documentContentType(ewayBill);
         if (!contentType) throw new Error(`Unsupported E-Way Bill format: ${ewayBill.name}`);
@@ -687,6 +682,8 @@ export default function ShipmentBooking() {
     try {
       const results = await Promise.allSettled(validRows.map(async (row) => {
         const selectedCourier = couriers.find((courier) => courier.id === row.courier) || couriers[0];
+        let invoiceDocuments: Array<{ name: string; content_type: string; body_base64: string; invoice_number: string }> = [];
+        if (row.invoice) { const contentType = documentContentType(row.invoice); if (!contentType) throw new Error(`Unsupported invoice format: ${row.invoice.name}`); invoiceDocuments = [{ name: row.invoice.name, content_type: contentType, body_base64: await fileAsBase64(row.invoice), invoice_number: row.invoice.name }]; }
         const shipment = await pssApi<{ data: { id: string } }>("/v1/shipments", {
           method: "POST",
           headers: { "Idempotency-Key": `${batchId}-${row.id}-shipment` },
@@ -703,13 +700,9 @@ export default function ShipmentBooking() {
             provider: "delhivery",
             provider_account_id: selectedCourier?.accountId || undefined,
             pricing_quote_id: bulkQuotes[row.id]?.quote_id,
+            invoice_documents: invoiceDocuments,
           }),
         });
-        if (row.invoice) {
-          const contentType = documentContentType(row.invoice);
-          if (!contentType) throw new Error(`Unsupported invoice format: ${row.invoice.name}`);
-          await pssApi("/v1/documents", { method: "POST", headers: { "Idempotency-Key": `${batchId}-${row.id}-invoice` }, body: JSON.stringify({ shipment_id: shipment.data.id, name: row.invoice.name, content_type: contentType, body_base64: await fileAsBase64(row.invoice) }) });
-        }
         return shipment;
       }));
       const created = results.filter((result) => result.status === "fulfilled").length;
