@@ -675,20 +675,33 @@ export default function ShipmentBooking() {
           contact_phone: pickupPerson.phone,
           notes: "Created from Delhivery B2B PSS booking",
         };
+      let chosenPickupDate = date;
+      let chosenPickupWindow = selectedSlot;
       let pickupRescheduled = false;
-      try {
-        await pssApi("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-pickup` }, body: JSON.stringify(pickupPayload) });
-      } catch (pickupError) {
-        const pickupMessage = pickupError instanceof Error ? pickupError.message : "";
-        const isStaleProviderSlot = /pickup.*past|pickup.*time|not accepted|provider.*400/i.test(pickupMessage);
-        if (!isStaleProviderSlot) throw pickupError;
-        const nextDayPayload = { ...pickupPayload, scheduled_date: nextIndiaDate() };
-        await pssApi("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-pickup-next-day` }, body: JSON.stringify(nextDayPayload) });
-        pickupRescheduled = true;
+      const selectedSlotIndex = Math.max(0, pickupSlots.indexOf(selectedSlot));
+      const pickupCandidates = pickupSlots.slice(selectedSlotIndex).map((window) => ({ scheduled_date: date, window }));
+      pickupCandidates.push({ scheduled_date: nextIndiaDate(), window: pickupSlots[0] });
+      let lastPickupError: unknown = null;
+      for (let index = 0; index < pickupCandidates.length; index += 1) {
+        const candidate = pickupCandidates[index];
+        try {
+          await pssApi("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-pickup-${index}` }, body: JSON.stringify({ ...pickupPayload, ...candidate }) });
+          chosenPickupDate = candidate.scheduled_date;
+          chosenPickupWindow = candidate.window;
+          pickupRescheduled = index > 0;
+          lastPickupError = null;
+          break;
+        } catch (pickupError) {
+          const pickupMessage = pickupError instanceof Error ? pickupError.message : "";
+          const isStaleProviderSlot = /pickup.*past|pickup.*time.*past|provider_http_400.*pickup/i.test(pickupMessage);
+          if (!isStaleProviderSlot) throw pickupError;
+          lastPickupError = pickupError;
+        }
       }
+      if (lastPickupError) throw lastPickupError;
       setSingleCompleted(true);
       setBookingNotice(pickupRescheduled
-        ? "Booking saved. The selected pickup window had passed, so pickup was aligned for the next available day."
+        ? `Booking saved. Pickup was aligned for ${chosenPickupDate === date ? "the next available slot today" : "the first slot tomorrow"} (${chosenPickupWindow}).`
         : result.data.provider_status === "accepted" ? "Booking saved and submitted for courier processing." : "Booking saved. Courier processing is pending.");
     } catch (error) {
       // A failed attempt must not be reused after the user edits the shipment.
