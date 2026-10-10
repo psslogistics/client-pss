@@ -660,7 +660,7 @@ export default function ShipmentBooking() {
         body: JSON.stringify({
           shipment_id: serverId,
           provider: "delhivery",
-          provider_managed: true,
+          delhivery_pickup_location: `${pickupPerson.name} ${pickup.pincode}`.replace(/\s+/g, " ").trim().slice(0, 50),
           provider_account_id: courier.accountId || undefined,
           scheduled_date: date,
           window: selectedSlot,
