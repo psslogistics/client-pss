@@ -82,3 +82,23 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
   }
   return request;
 }
+
+export async function pssApiFile(path: string): Promise<{ blob: Blob; contentType: string }> {
+  if (!sessionInFlight) sessionInFlight = createClient().auth.getSession().finally(() => { sessionInFlight = null; });
+  const { data: { session } } = await sessionInFlight;
+  if (!session?.access_token) throw new Error("Your session has expired. Please sign in again.");
+  const baseUrl = process.env.NEXT_PUBLIC_PSS_API_URL;
+  if (!baseUrl) throw new Error("PSS API is not configured.");
+  const endpoint = `${baseUrl.replace(/\/$/, "")}${path}`;
+  let response = await fetch(endpoint, { headers: { Authorization: `Bearer ${session.access_token}` } });
+  if (response.status === 401) {
+    const refreshed = await createClient().auth.refreshSession();
+    const refreshedToken = refreshed.data.session?.access_token;
+    if (refreshedToken) response = await fetch(endpoint, { headers: { Authorization: `Bearer ${refreshedToken}` } });
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(payload.error?.message || "The document download failed.");
+  }
+  return { blob: await response.blob(), contentType: response.headers.get("content-type") || "application/octet-stream" };
+}
