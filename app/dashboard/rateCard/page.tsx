@@ -1,5 +1,5 @@
-import { RateCard } from "@/components/block/pricingTools";
+import { AssignedRateCard } from "@/components/block/assignedRateCard";
 
 export default function RateCardPage() {
-  return <RateCard />;
+  return <AssignedRateCard />;
 }
