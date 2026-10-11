@@ -88,7 +88,23 @@ const artifactExtension = (kind: string, contentType: string) => { const type = 
 const artifactBase64s = (value: unknown): string[] => { if (!value) return []; if (Array.isArray(value)) return value.flatMap((item) => artifactBase64s(item)); if (typeof value !== "object") return []; const record = value as Record<string, unknown>; const direct = ["content_base64", "base64", "data"].flatMap((key) => typeof record[key] === "string" ? [record[key] as string] : []); return direct.length ? direct : Object.values(record).flatMap((child) => artifactBase64s(child)); };
 const labelPageSize = (size: "sm" | "md" | "a4" | "std") => size === "sm" ? [105, 148] as [number, number] : size === "md" ? [148, 210] as [number, number] : [210, 297] as [number, number];
 const imageDimensions = (dataUrl: string) => new Promise<{ width: number; height: number }>((resolve, reject) => { const image = new Image(); image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight }); image.onerror = () => reject(new Error("Unable to read Delhivery label dimensions.")); image.src = dataUrl; });
-const downloadLabelPdf = async (name: string, base64s: string[], size: "sm" | "md" | "a4" | "std") => { const [width, height] = labelPageSize(size); const pdf = new jsPDF({ unit: "mm", format: [width, height] }); for (const [index, value] of base64s.entries()) { if (index) pdf.addPage([width, height]); const normalized = value.includes(",") ? value.slice(value.indexOf(",") + 1) : value; const dataUrl = `data:image/png;base64,${normalized}`; const dimensions = await imageDimensions(dataUrl); const ratio = dimensions.width / dimensions.height; const pageRatio = width / height; const imageWidth = ratio >= pageRatio ? width : height * ratio; const imageHeight = ratio >= pageRatio ? width / ratio : height; pdf.addImage(dataUrl, "PNG", (width - imageWidth) / 2, (height - imageHeight) / 2, imageWidth, imageHeight, undefined, "NONE"); } pdf.save(name); };
+const downloadLabelPdf = async (name: string, base64s: string[], size: "sm" | "md" | "a4" | "std") => {
+  const [width, height] = labelPageSize(size);
+  const pdf = new jsPDF({ unit: "mm", format: [width, height], compress: false });
+  for (const [index, value] of base64s.entries()) {
+    if (index) pdf.addPage([width, height]);
+    const normalized = value.includes(",") ? value.slice(value.indexOf(",") + 1) : value;
+    const dataUrl = `data:image/png;base64,${normalized}`;
+    const dimensions = await imageDimensions(dataUrl);
+    const sourceWidth = dimensions.width * 25.4 / 96;
+    const sourceHeight = dimensions.height * 25.4 / 96;
+    const scale = Math.min(1, width / sourceWidth, height / sourceHeight);
+    const imageWidth = sourceWidth * scale;
+    const imageHeight = sourceHeight * scale;
+    pdf.addImage(dataUrl, "PNG", (width - imageWidth) / 2, (height - imageHeight) / 2, imageWidth, imageHeight, undefined, "NONE");
+  }
+  pdf.save(name);
+};
 const findArtifactField = (value: unknown, keys: string[]): string | undefined => { if (!value || typeof value !== "object") return undefined; if (Array.isArray(value)) { for (const item of value) { const found = findArtifactField(item, keys); if (found) return found; } return undefined; } const record = value as Record<string, unknown>; for (const key of keys) if (typeof record[key] === "string" && record[key]) return record[key] as string; for (const child of Object.values(record)) { const found = findArtifactField(child, keys); if (found) return found; } return undefined; };
 const findArtifactUrl = (value: unknown): string | undefined => { if (typeof value === "string") return /^https?:\/\//i.test(value) ? value : undefined; if (Array.isArray(value)) { for (const item of value) { const found = findArtifactUrl(item); if (found) return found; } return undefined; } if (!value || typeof value !== "object") return undefined; const record = value as Record<string, unknown>; for (const key of ["download_url", "downloadUrl", "file_url", "fileUrl", "url", "link"]) { const found = findArtifactUrl(record[key]); if (found) return found; } for (const child of Object.values(record)) { const found = findArtifactUrl(child); if (found) return found; } return undefined; };
 const buildWorkbook = (list: Shipment[], filters: Filters, query: string) => {
