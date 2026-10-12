@@ -103,10 +103,13 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
         const pssReference = String(row.pss_reference ?? id).trim();
         const trackingNumber = String(row.tracking_number ?? "").trim();
         const providerReference = String(row.provider_reference ?? "").trim();
-        const lrReference = String(row.lr_number ?? row.lr ?? row.lrn ?? "").trim();
-        const awbReference = String(row.awb ?? row.master_awb ?? row.master_awb_number ?? "").trim();
+        const lrReference = String(row.lr_number ?? "").trim();
+        const awbReference = String(row.master_awb ?? "").trim();
         const pickupReference = String(row.pickup_reference ?? "").trim();
-        const reference = lrReference || trackingNumber || awbReference || providerReference || pickupReference;
+        const providerBookingId = String(row.provider_booking_id ?? "").trim();
+        const providerPickupId = String(row.provider_pickup_id ?? "").trim();
+        const boxAwbs = String(row.box_awbs_json ?? "").trim();
+        const reference = lrReference || awbReference || pickupReference || trackingNumber || providerReference;
         const destination = String(row.destination ?? "Not provided").trim();
         return {
           id: `shipment-${id}`,
@@ -114,7 +117,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
           title: pssReference || "Shipment",
           detail: `${reference ? `Reference ${reference} · ` : ""}${String(row.origin ?? "Not provided")} → ${destination}`,
           href: `/dashboard/shipmentTracking?id=${encodeURIComponent(id)}`,
-          keywords: [id, pssReference, trackingNumber, providerReference, lrReference, awbReference, pickupReference, String(row.description ?? ""), String(row.client_id ?? "")].join(" "),
+          keywords: [id, pssReference, trackingNumber, providerReference, lrReference, awbReference, pickupReference, providerBookingId, providerPickupId, boxAwbs, String(row.description ?? ""), String(row.client_id ?? "")].join(" "),
         };
       }));
       shipmentSearchLoaded.current = true;

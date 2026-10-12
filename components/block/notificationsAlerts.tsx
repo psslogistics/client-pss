@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCheck, CheckCircle2, CircleAlert, Info, Search, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { pssApi } from "@/lib/pss-api";
+import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import type { NotificationCategory, NotificationItem, NotificationTone } from "@/components/block/notifications-data";
 
 type Filter = "All" | "Unread" | NotificationCategory;
@@ -50,7 +50,7 @@ export default function NotificationsAlerts() {
         actionLabel: "Open", actionHref: String(row.action_href ?? "/dashboard")
       })));
       setHydrated(true);
-    }).catch((reason) => { if (!cancelled) { setError(reason instanceof Error ? reason.message : "Unable to load notifications."); setHydrated(true); } });
+    }).catch((reason) => { if (!cancelled) { const details = getPssErrorDetails(reason, "Notifications are temporarily unavailable."); setError(`Notifications could not be loaded: ${details.message}`); setHydrated(true); } });
     return () => { cancelled = true; };
   }, []);
   const unreadIds = useMemo(() => hydrated ? allNotifications.filter((item) => item.unread).map((item) => item.id) : [], [allNotifications, hydrated]);

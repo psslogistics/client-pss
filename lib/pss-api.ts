@@ -16,13 +16,52 @@ const sessionKey = (userId: string, path: string) => `pss-api:${userId}:${path}`
 export class PssApiError extends Error {
   readonly status: number;
   readonly payload: unknown;
+  readonly category: PssErrorCategory;
+  readonly providerCode?: string;
+  readonly requestId?: string;
+  readonly retryable: boolean;
 
   constructor(message: string, status: number, payload: unknown) {
     super(message);
     this.name = "PssApiError";
     this.status = status;
     this.payload = payload;
+    const details = getPssErrorDetails(this);
+    this.category = details.category;
+    this.providerCode = details.providerCode;
+    this.requestId = details.requestId;
+    this.retryable = details.retryable;
   }
+}
+
+export type PssErrorCategory = "auth" | "permission" | "provider" | "configuration" | "network" | "server" | "request";
+const PssErrorCategoryValues: PssErrorCategory[] = ["auth", "permission", "provider", "configuration", "network", "server", "request"];
+
+export type PssErrorDetails = {
+  category: PssErrorCategory;
+  message: string;
+  technicalMessage: string;
+  providerCode?: string;
+  requestId?: string;
+  retryable: boolean;
+  staleData: boolean;
+};
+
+const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" ? value as Record<string, unknown> : {};
+
+/** Convert API failures into a stable, user-safe state without losing diagnostic metadata. */
+export function getPssErrorDetails(error: unknown, fallback = "The production request could not be completed."): PssErrorDetails {
+  const source = error instanceof PssApiError ? { ...record(error.payload), status: error.status } : record(error);
+  const nestedError = record(source.error);
+  const technicalMessage = typeof nestedError.technical_message === "string" ? nestedError.technical_message : typeof (error as Error | undefined)?.message === "string" ? (error as Error).message : fallback;
+  const contractCategory = nestedError.category;
+  const status = typeof (error as PssApiError | undefined)?.status === "number" ? (error as PssApiError).status : Number(source.status ?? nestedError.status ?? 0);
+  const providerCode = [nestedError.provider_code, nestedError.code, source.provider_code, source.providerCode].find((value) => typeof value === "string") as string | undefined;
+  const requestId = [source.request_id, source.requestId, nestedError.request_id, nestedError.requestId].find((value) => typeof value === "string") as string | undefined;
+  const normalized = technicalMessage.toLowerCase();
+  const category: PssErrorCategory = PssErrorCategoryValues.includes(String(contractCategory) as PssErrorCategory) ? contractCategory as PssErrorCategory : status === 401 || normalized.includes("session has expired") ? "auth" : status === 403 ? "permission" : normalized.includes("not configured") || normalized.includes("configuration") ? "configuration" : providerCode || normalized.includes("provider") || normalized.includes("delhivery") ? "provider" : status >= 500 ? "server" : status === 0 ? "network" : "request";
+  const userMessage = typeof nestedError.user_safe_message === "string" ? nestedError.user_safe_message : category === "auth" ? "Your session has expired. Please sign in again." : category === "permission" ? "You do not have permission to complete this operation." : category === "configuration" ? "This production connection is not configured yet." : category === "provider" ? "The courier provider could not complete this operation." : category === "network" || category === "server" ? "Production data is temporarily unavailable. Existing records are unchanged." : technicalMessage === "The PSS API request failed." ? fallback : technicalMessage;
+  return { category, message: userMessage, technicalMessage, providerCode, requestId, retryable: typeof nestedError.retryable === "boolean" ? nestedError.retryable : category === "network" || category === "server" || category === "provider" || status === 408 || status === 409 || status === 429, staleData: typeof nestedError.stale_data === "boolean" ? nestedError.stale_data : false };
 }
 
 export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -69,8 +108,8 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
       const refreshedToken = refreshed.data.session?.access_token;
       if (refreshedToken) response = await fetch(endpoint, { ...init, signal: controller.signal, headers: requestHeaders(refreshedToken) });
     }
-    const payload = await response.json().catch(() => ({})) as T & { error?: { message?: string } };
-    if (!response.ok) throw new PssApiError(payload.error?.message || "The PSS API request failed.", response.status, payload);
+    const payload = await response.json().catch(() => ({})) as T & { error?: { message?: string; user_safe_message?: string } };
+    if (!response.ok) throw new PssApiError(payload.error?.user_safe_message || payload.error?.message || "The PSS API request failed.", response.status, payload);
     if (!mutating) {
       const expiresAt = Date.now() + GET_CACHE_TTL_MS;
       getCache.set(cacheKey, { expiresAt, value: payload });
@@ -90,7 +129,9 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
   }
   if (staleValue !== undefined) {
     void request.catch(() => undefined);
-    return staleValue;
+    // Expired session data remains useful during a provider/network outage,
+    // but consumers must be able to distinguish it from a fresh response.
+    return (staleValue && typeof staleValue === "object" ? { ...(staleValue as Record<string, unknown>), stale_data: true } : staleValue) as T;
   }
   return request;
 }
@@ -109,8 +150,10 @@ export async function pssApiFile(path: string): Promise<{ blob: Blob; contentTyp
     if (refreshedToken) response = await fetch(endpoint, { headers: { Authorization: `Bearer ${refreshedToken}` } });
   }
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(payload.error?.message || "The document download failed.");
+    const payload = await response.json().catch(() => ({}));
+    const payloadRecord = record(payload);
+    const errorRecord = record(payloadRecord.error);
+    throw new PssApiError(typeof errorRecord.user_safe_message === "string" ? errorRecord.user_safe_message : typeof errorRecord.message === "string" ? errorRecord.message : "The document download failed.", response.status, payload);
   }
   return { blob: await response.blob(), contentType: response.headers.get("content-type") || "application/octet-stream" };
 }

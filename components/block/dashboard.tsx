@@ -27,7 +27,7 @@ import {
   ActivityItem,
   KpiMetric,
 } from "./dashboard-data";
-import { pssApi } from "@/lib/pss-api";
+import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import type { ClientFinancialSnapshot } from "@/lib/client-dashboard-data";
 const ClientDashboardOperations = dynamic(() => import("./client-dashboard-operations"), {
@@ -78,24 +78,33 @@ export default function Dashboard() {
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [productionError, setProductionError] = useState("");
+  const [productionTechnicalError, setProductionTechnicalError] = useState("");
+  const [productionRequestId, setProductionRequestId] = useState("");
+  const [productionLoading, setProductionLoading] = useState(true);
   const [production, setProduction] = useState<{ shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>> }>({ shipments: [], pickups: [], billing: [], wallet: [], exceptions: [], ndr: [] });
 
   const loadProduction = (signal?: AbortSignal, forceRefresh = false) => {
-    return pssApi<{ data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>> } }>("/v1/dashboard/summary?collections=shipments,pickups,billing,wallet,exceptions,ndr,activity", { signal, ...(forceRefresh ? { cache: "no-store" as RequestCache } : {}) }).then(({ data }) => {
+    return pssApi<{ stale_data?: boolean; data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>> } }>("/v1/dashboard/summary?collections=shipments,pickups,billing,wallet,exceptions,ndr,activity", { signal, ...(forceRefresh ? { cache: "no-store" as RequestCache } : {}) }).then((response) => {
+      const { data } = response;
       if (signal?.aborted) return;
-      setProductionError("");
+      setProductionError(response.stale_data ? "Live dashboard refresh is unavailable. Showing the last successful dashboard data." : "");
+      setProductionTechnicalError("");
+      setProductionRequestId("");
       setProduction({ shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, exceptions: data.exceptions, ndr: data.ndr });
       setActivities(data.activity.slice(0, 12).map((row) => ({ id: String(row.id), title: String(row.action ?? "Activity"), description: `${String(row.entity_type ?? "Record")}${row.entity_id ? ` · ${String(row.entity_id)}` : ""}`, timeAgo: relativeTime(String(row.created_at ?? "")), iconType: activityIconType(String(row.action ?? "")), iconName: activityIconName(String(row.action ?? "")) })));
       setAlerts([...data.exceptions, ...data.ndr].filter((row) => !["resolved", "closed", "delivered", "cancelled"].includes(String(row.status ?? "").toLowerCase())).slice(0, 8).map((row) => ({ id: String(row.id), title: String(row.title ?? row.reason ?? "Operational exception"), description: String(row.details ?? row.notes ?? "Requires operational review"), timeAgo: relativeTime(String(row.created_at ?? "")), refId: String(row.shipment_id ?? row.id), type: "warning", dotColor: "bg-amber-500" })));
     }).catch((error) => {
       if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
-      setProductionError(error instanceof Error ? error.message : "Unable to load production dashboard data.");
+      const details = getPssErrorDetails(error, "Dashboard data is temporarily unavailable. Your existing records are unchanged.");
+      setProductionError(details.message);
+      setProductionTechnicalError(details.technicalMessage);
+      setProductionRequestId(details.requestId ?? "");
     });
   };
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadProduction(controller.signal);
+    void loadProduction(controller.signal).finally(() => { if (!controller.signal.aborted) setProductionLoading(false); });
     return () => controller.abort();
   }, []);
 
@@ -167,7 +176,8 @@ export default function Dashboard() {
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    void loadProduction(undefined, true).finally(() => setIsRefreshing(false));
+    setProductionLoading(true);
+    void loadProduction(undefined, true).finally(() => { setProductionLoading(false); setIsRefreshing(false); });
   };
 
   const handleDismissAlerts = () => {
@@ -178,13 +188,17 @@ export default function Dashboard() {
     setAlerts(alerts.filter((a) => a.id !== id));
   };
 
+  const productionReady = !productionError && !productionLoading;
+  const hasLastKnownProduction = Object.values(production).some((collection) => collection.length > 0);
+  const metricValue = (value: number) => productionReady || hasLastKnownProduction ? String(value) : "—";
+  const metricState = productionReady ? "Live" : hasLastKnownProduction ? "Stale" : "Unavailable";
   const liveKpiMetrics: KpiMetric[] = [
-    { id: "shipments", title: "Total shipments", value: String(production.shipments.length), change: "Live", isPositive: true, sparklinePoints: "0,20 15,18 30,22 45,14 60,16 75,8", category: "Operations", description: "Production shipment records" },
-    { id: "active", title: "Active shipments", value: String(production.shipments.filter((shipment) => !["delivered", "cancelled", "Delivered", "Cancelled"].includes(String(shipment.status ?? ""))).length), change: "Live", isPositive: true, sparklinePoints: "0,22 15,20 30,18 45,20 60,12 75,10", category: "Operations", description: "Shipments not delivered or cancelled" },
-    { id: "delayed", title: "Delayed shipments", value: String(production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; return Number.isFinite(edd) && edd < now && !["delivered", "Delivered"].includes(String(shipment.status ?? "")); }).length), change: "Live", isPositive: false, sparklinePoints: "0,10 15,12 30,9 45,16 60,14 75,20", category: "Exceptions", description: "Based on EDD and delivery status" },
-    { id: "exceptions", title: "Open exceptions", value: String(production.exceptions.length + production.ndr.length), change: "Live", isPositive: false, sparklinePoints: "0,20 15,17 30,18 45,12 60,14 75,10", category: "Exceptions", description: "NDR and exception records" },
-    { id: "pickups", title: "Open pickups", value: String(production.pickups.filter((pickup) => !["completed", "cancelled", "Completed", "Cancelled"].includes(String(pickup.status ?? ""))).length), change: "Live", isPositive: true, sparklinePoints: "0,22 15,18 30,20 45,15 60,13 75,8", category: "Operations", description: "Open production pickup requests" },
-    { id: "billing", title: "Pending billing", value: String(production.billing.filter((item) => String(item.status ?? "").toLowerCase() === "pending").length), change: "Live", isPositive: false, sparklinePoints: "0,18 15,18 30,16 45,13 60,15 75,11", category: "Finance", description: "Pending production billing records" },
+    { id: "shipments", title: "Total shipments", value: metricValue(production.shipments.length), change: metricState, isPositive: true, sparklinePoints: "0,20 15,18 30,22 45,14 60,16 75,8", category: "Operations", description: "Production shipment records" },
+    { id: "active", title: "Active shipments", value: metricValue(production.shipments.filter((shipment) => !["delivered", "cancelled", "Delivered", "Cancelled"].includes(String(shipment.status ?? ""))).length), change: metricState, isPositive: true, sparklinePoints: "0,22 15,20 30,18 45,20 60,12 75,10", category: "Operations", description: "Shipments not delivered or cancelled" },
+    { id: "delayed", title: "Delayed shipments", value: metricValue(production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; return Number.isFinite(edd) && edd < now && !["delivered", "Delivered"].includes(String(shipment.status ?? "")); }).length), change: metricState, isPositive: false, sparklinePoints: "0,10 15,12 30,9 45,16 60,14 75,20", category: "Exceptions", description: "Based on EDD and delivery status" },
+    { id: "exceptions", title: "Open exceptions", value: metricValue(production.exceptions.length + production.ndr.length), change: metricState, isPositive: false, sparklinePoints: "0,20 15,17 30,18 45,12 60,14 75,10", category: "Exceptions", description: "NDR and exception records" },
+    { id: "pickups", title: "Open pickups", value: metricValue(production.pickups.filter((pickup) => !["completed", "cancelled", "Completed", "Cancelled"].includes(String(pickup.status ?? ""))).length), change: metricState, isPositive: true, sparklinePoints: "0,22 15,18 30,20 45,15 60,13 75,8", category: "Operations", description: "Open production pickup requests" },
+    { id: "billing", title: "Pending billing", value: metricValue(production.billing.filter((item) => String(item.status ?? "").toLowerCase() === "pending").length), change: metricState, isPositive: false, sparklinePoints: "0,18 15,18 30,16 45,13 60,15 75,11", category: "Finance", description: "Pending production billing records" },
   ];
 
   // Filtered active KPI objects (limit to max 5)
@@ -237,10 +251,10 @@ export default function Dashboard() {
 
   return (
     <div className="w-full space-y-4">
-      {productionError && <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{productionError}</div>}
+      {productionError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"><span>{hasLastKnownProduction ? `Showing last successful dashboard data. Refresh failed: ${productionError}` : `${productionError} Metrics are unavailable until the connection succeeds.`}<details className="mt-1 w-full text-[11px] text-muted-foreground"><summary className="cursor-pointer font-semibold">Technical details</summary><p className="mt-1 break-words">{productionTechnicalError || "No additional diagnostic message."}{productionRequestId ? ` · Request ID: ${productionRequestId}` : ""}</p></details></span><button type="button" onClick={handleRefresh} disabled={isRefreshing} className="rounded-md border border-destructive/30 px-2.5 py-1.5 font-semibold hover:bg-destructive/10 disabled:opacity-50">{isRefreshing ? "Retrying…" : "Retry dashboard"}</button></div>}
       {/* Header Section */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span className="font-semibold text-foreground">{totalShipments} shipments</span><span>·</span><span>{activeShipments} active</span><span className="text-amber-600 dark:text-amber-300">· {delayedShipments} delayed</span><span className="text-destructive">· {exceptionShipments} exception{exceptionShipments === 1 ? "" : "s"}</span></div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span className="font-semibold text-foreground">{productionReady || hasLastKnownProduction ? totalShipments : "—"} shipments</span><span>·</span><span>{productionReady || hasLastKnownProduction ? activeShipments : "—"} active</span><span className="text-amber-600 dark:text-amber-300">· {productionReady || hasLastKnownProduction ? delayedShipments : "—"} delayed</span><span className="text-destructive">· {productionReady || hasLastKnownProduction ? exceptionShipments : "—"} exception{(productionReady || hasLastKnownProduction) && exceptionShipments === 1 ? "" : "s"}</span></div>
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:justify-end">
           {/* URGENT POLICE EMERGENCY SIREN ALERTS BUTTON */}
           <button
