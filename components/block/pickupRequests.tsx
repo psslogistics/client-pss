@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -12,6 +12,7 @@ import {
   MapPin,
   Package,
   Plus,
+  RefreshCw,
   Search,
   SlidersHorizontal,
   Truck,
@@ -22,8 +23,10 @@ import { cn } from "@/lib/utils";
 import Dropdown from "@/components/ui/dropdown";
 import { pssApi } from "@/lib/pss-api";
 
-type PickupStatus = "Scheduled" | "Driver Assigned" | "En Route" | "Completed" | "Failed" | "Cancelled";
+type PickupStatus = "Draft" | "Requested" | "Provider Pending" | "Scheduled" | "Driver Assigned" | "En Route" | "Picked Up" | "Completed" | "Failed" | "Cancelled";
+type NoticeTone = "info" | "success" | "pending" | "error";
 type SortKey = "reference" | "customer" | "status" | "date" | "location" | "driver" | "pieces" | "weight";
+type PickupSlotOption = { date: string; slots: string[]; reason?: string };
 
 type Pickup = {
   id: string;
@@ -38,7 +41,18 @@ type Pickup = {
   pieces: number;
   weight: string;
   contact: string;
+  contactEmail: string;
   address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  provider: string;
+  providerAccountId: string;
+  warehouseId: string;
+  providerReference: string;
+  providerStatus: string;
+  providerErrorCode: string;
+  failureReason: string;
   notes: string;
   createdFrom: "Shipment booking" | "Standalone request";
 };
@@ -46,20 +60,30 @@ type Pickup = {
 type NewPickup = {
   customer: string;
   contact: string;
+  email: string;
   address: string;
   city: string;
+  state: string;
+  pincode: string;
   country: string;
+  provider: string;
+  providerAccountId: string;
+  warehouseId: string;
   date: string;
   window: string;
   pieces: string;
   weight: string;
+  awbNumber: string;
   notes: string;
 };
 
 const initialPickups: Pickup[] = [];
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
-const emptyForm: NewPickup = { customer: "", contact: "", address: "", city: "", country: "", date: todayIso(), window: "9:00 AM – 11:00 AM", pieces: "1", weight: "", notes: "" };
+type ProviderAccount = { id: string; provider: string; account_name: string; enabled?: boolean; status?: string };
+type SavedWarehouse = { id: string; name?: string; label?: string; address_kind?: string; address?: string; city?: string; state?: string; pincode?: string; contact_name?: string; phone?: string; contact?: string };
+
+const emptyForm: NewPickup = { customer: "", contact: "", email: "", address: "", city: "", state: "", pincode: "", country: "India", provider: "", providerAccountId: "", warehouseId: "", date: todayIso(), window: "", pieces: "1", weight: "", awbNumber: "", notes: "" };
 
 const statusStyles: Record<PickupStatus, string> = {
   Scheduled: "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300",
@@ -68,6 +92,10 @@ const statusStyles: Record<PickupStatus, string> = {
   Completed: "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   Failed: "border-destructive/20 bg-destructive/10 text-destructive",
   Cancelled: "border-border bg-muted text-muted-foreground",
+  Draft: "border-border bg-muted text-muted-foreground",
+  Requested: "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  "Provider Pending": "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  "Picked Up": "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
 };
 
 const columns: { key: SortKey; label: string }[] = [
@@ -75,6 +103,12 @@ const columns: { key: SortKey; label: string }[] = [
   { key: "date", label: "Window" }, { key: "location", label: "Location" }, { key: "driver", label: "Driver" },
   { key: "pieces", label: "Pieces" }, { key: "weight", label: "Weight" },
 ];
+
+function normalizePickupStatus(value: unknown): PickupStatus {
+  const normalized = String(value ?? "requested").trim().toLowerCase();
+  const labels: Record<string, PickupStatus> = { draft: "Draft", requested: "Requested", provider_pending: "Provider Pending", scheduled: "Scheduled", assigned: "Driver Assigned", driver_assigned: "Driver Assigned", in_transit: "En Route", en_route: "En Route", picked_up: "Picked Up", completed: "Completed", failed: "Failed", cancelled: "Cancelled" };
+  return labels[normalized] ?? "Requested";
+}
 
 export default function PickupRequests() {
   const [pickups, setPickups] = useState<Pickup[]>(initialPickups);
@@ -85,22 +119,79 @@ export default function PickupRequests() {
   const [visibleColumns, setVisibleColumns] = useState<SortKey[]>(columns.map((column) => column.key));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedPickup, setSelectedPickup] = useState<Pickup | null>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<Pickup | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [noticeTone, setNoticeTone] = useState<NoticeTone>("info");
   const [form, setForm] = useState<NewPickup>(emptyForm);
   const [loading, setLoading] = useState(true);
+  const [providerAccounts, setProviderAccounts] = useState<ProviderAccount[]>([]);
+  const [warehouses, setWarehouses] = useState<SavedWarehouse[]>([]);
+  const [pickupSlotOptions, setPickupSlotOptions] = useState<PickupSlotOption[]>([]);
+  const [rescheduleSlotOptions, setRescheduleSlotOptions] = useState<PickupSlotOption[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
+  const updateForm = (key: keyof NewPickup, value: string) => { if (["provider", "providerAccountId", "pincode", "warehouseId"].includes(key)) setPickupSlotOptions([]); setForm((current) => ({ ...current, [key]: value })); };
+  const notify = (message: string, tone: NoticeTone = "info") => { setNotice(message); setNoticeTone(tone); };
+
+  const loadPickups = useCallback(async (showNotice = false) => {
+    setRefreshing(true);
+    try {
+      const result = await pssApi<{ data?: Array<Record<string, unknown>> }>("/v1/pickups");
+      setPickups((result.data ?? []).map((row) => {
+        const address = String(row.pickup_address ?? "").trim();
+        const date = String(row.requested_date ?? "").slice(0, 10);
+        return { id: String(row.id), reference: String(row.id), customer: String(row.contact_name ?? "Not provided"), status: normalizePickupStatus(row.status), date: date || "Not provided", window: String(row.requested_time_slot ?? "Not provided"), location: address || "Not provided", country: String(row.country ?? "India"), driver: String(row.assigned_to_user_id ?? "Unassigned"), pieces: Math.max(1, Number(row.pieces ?? 1)), weight: row.total_weight_kg ? `${row.total_weight_kg} kg` : "Not provided", contact: String(row.contact_phone ?? "Not provided"), contactEmail: String(row.contact_email ?? ""), address, city: String(row.city ?? ""), state: String(row.state ?? ""), pincode: String(row.pincode ?? ""), provider: String(row.provider ?? "Not provided"), providerAccountId: String(row.provider_account_id ?? ""), warehouseId: String(row.warehouse_id ?? ""), providerReference: String(row.provider_reference ?? ""), providerStatus: String(row.provider_status ?? ""), providerErrorCode: String(row.provider_error_code ?? ""), failureReason: String(row.failure_reason ?? ""), notes: String(row.notes ?? ""), createdFrom: row.shipment_id ? "Shipment booking" : "Standalone request" };
+      }));
+      if (showNotice) notify("Pickup statuses refreshed from production.");
+    } catch { notify("Unable to load production pickup data.", "error"); }
+    finally { setLoading(false); setRefreshing(false); }
+  }, []);
+
+  useEffect(() => { void Promise.resolve().then(() => loadPickups()); }, [loadPickups]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => { void loadPickups(); }, 30000);
+    return () => window.clearInterval(interval);
+  }, [loadPickups]);
+
+  useEffect(() => {
+    if (!scheduleOpen || !form.providerAccountId || !/^\d{6}$/.test(form.pincode)) return;
+    const query = new URLSearchParams({ provider: form.provider || "delhivery", provider_account_id: form.providerAccountId, pincode: form.pincode, ...(form.warehouseId ? { warehouse_id: form.warehouseId } : {}) });
+    void pssApi<{ data?: { dates?: PickupSlotOption[] } }>(`/v1/pickup-slots?${query.toString()}`).then((result) => {
+      const dates = result.data?.dates ?? [];
+      setPickupSlotOptions(dates);
+      setForm((current) => {
+        const currentDate = dates.find((option) => option.date === current.date);
+        if (currentDate && currentDate.slots.includes(current.window)) return current;
+        const first = dates[0];
+        return first ? { ...current, date: first.date, window: first.slots[0] ?? "" } : current;
+      });
+    }).catch(() => setPickupSlotOptions([]));
+  }, [scheduleOpen, form.provider, form.providerAccountId, form.pincode, form.warehouseId]);
 
   useEffect(() => {
     let cancelled = false;
-    void pssApi<{ data?: Array<Record<string, unknown>> }>("/v1/pickups").then((result) => {
+    void Promise.all([
+      pssApi<{ data?: ProviderAccount[] }>("/v1/provider-account-policies"),
+      pssApi<{ data?: SavedWarehouse[] }>("/v1/warehouses"),
+      pssApi<{ data?: SavedWarehouse[] }>("/v1/addresses"),
+    ]).then(([accounts, warehouseResult, addressResult]) => {
       if (cancelled) return;
-      setPickups((result.data ?? []).map((row) => ({ id: String(row.id), reference: String(row.id), customer: "Assigned client", status: String(row.status || "scheduled").replace(/(^|_)(\w)/g, (_, __, letter: string) => ` ${letter.toUpperCase()}`).trim() as PickupStatus, date: String(row.scheduled_date || "").slice(0, 10), window: String(row.window || "Not provided"), location: String(row.location || "Not provided"), country: "India", driver: "Unassigned", pieces: 1, weight: "Not provided", contact: "Not provided", address: String(row.location || "Not provided"), notes: "", createdFrom: "Standalone request" })));
-    }).catch(() => { if (!cancelled) setNotice("Unable to load production pickup data."); }).finally(() => { if (!cancelled) setLoading(false); });
+      setProviderAccounts((accounts.data ?? []).filter((account) => account.enabled !== false && account.status !== "inactive"));
+      const savedAddresses = (addressResult.data ?? []).filter((address) => address.address_kind !== "consignee").map((address) => ({ ...address, name: address.label ?? address.contact_name ?? address.id }));
+      setWarehouses([...(warehouseResult.data ?? []), ...savedAddresses]);
+    }).catch(() => { if (!cancelled) notify("Courier accounts or saved pickup locations could not be loaded.", "error"); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!rescheduleTarget?.providerAccountId || !/^\d{6}$/.test(rescheduleTarget.pincode)) return;
+    const query = new URLSearchParams({ provider: rescheduleTarget.provider || "delhivery", provider_account_id: rescheduleTarget.providerAccountId, pincode: rescheduleTarget.pincode, ...(rescheduleTarget.warehouseId ? { warehouse_id: rescheduleTarget.warehouseId } : {}) });
+    void pssApi<{ data?: { dates?: PickupSlotOption[] } }>(`/v1/pickup-slots?${query.toString()}`).then((result) => setRescheduleSlotOptions(result.data?.dates ?? [])).catch(() => setRescheduleSlotOptions([]));
+  }, [rescheduleTarget]);
 
   useEffect(() => {
     if (!statusOpen) return;
@@ -133,8 +224,6 @@ export default function PickupRequests() {
     failed: pickups.filter((pickup) => pickup.status === "Failed").length,
   }), [pickups]);
 
-  const updateForm = (key: keyof NewPickup, value: string) => setForm((current) => ({ ...current, [key]: value }));
-
   const toggleSort = (key: SortKey) => setSort((current) => current.key === key ? { key, direction: current.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" });
 
   const toggleSelected = (id: string) => setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -154,18 +243,25 @@ export default function PickupRequests() {
     anchor.download = "pickup-requests.csv";
     anchor.click();
     URL.revokeObjectURL(url);
-    setNotice(`${exportRows.length} pickup${exportRows.length === 1 ? "" : "s"} exported.`);
+    notify(`${exportRows.length} pickup${exportRows.length === 1 ? "" : "s"} exported.`, "success");
   };
 
   const schedulePickup = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!pickupSlotOptions.some((option) => option.date === form.date && option.slots.includes(form.window))) {
+      notify("Select a pickup date and time window returned by Delhivery before scheduling.", "error");
+      return;
+    }
     try {
-      const result = await pssApi<{ data: { id: string; status?: string } }>("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ scheduled_date: form.date, window: form.window, location: `${form.address}, ${form.city}, ${form.country}`, contact_name: form.customer, contact_phone: form.contact, pieces: Number(form.pieces) }) });
-      const created: Pickup = { id: result.data.id, reference: result.data.id, customer: form.customer, status: String(result.data.status || "scheduled").replace(/(^|_)(\w)/g, (_, __, letter: string) => ` ${letter.toUpperCase()}`).trim() as PickupStatus, date: form.date, window: form.window, location: `${form.address}, ${form.city}, ${form.country}`, country: form.country, driver: "Unassigned", pieces: Number(form.pieces) || 1, weight: form.weight ? `${form.weight} kg` : "Not provided", contact: form.contact, address: form.address, notes: form.notes, createdFrom: "Standalone request" };
-      setPickups((current) => [created, ...current]); setNotice(`Pickup ${result.data.id} was saved to production.`); setScheduleOpen(false); setForm({ ...emptyForm, date: todayIso() });
-    } catch (error) { setNotice(error instanceof Error ? error.message : "Pickup request failed."); }
+      const location = `${form.address}, ${form.city}, ${form.state}, ${form.pincode}, ${form.country}`;
+      const result = await pssApi<{ data: { id: string; status?: string; provider_status?: string; provider_reference?: string | null } }>("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ requested_date: form.date, requested_time_slot: form.window, pickup_address: location, contact_name: form.customer, contact_phone: form.contact, contact_email: form.email || undefined, city: form.city, state: form.state, pincode: form.pincode, country: form.country, provider: form.provider, provider_account_id: form.providerAccountId, warehouse_id: form.warehouseId || undefined, awb_number: form.awbNumber.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean), pieces: Number(form.pieces), total_weight_kg: Number(form.weight), notes: form.notes }) });
+      const created: Pickup = { id: result.data.id, reference: result.data.id, customer: form.customer, status: normalizePickupStatus(result.data.status || "scheduled"), date: form.date, window: form.window, location, country: form.country, driver: "Unassigned", pieces: Number(form.pieces) || 1, weight: `${form.weight} kg`, contact: form.contact, contactEmail: form.email, address: form.address, city: form.city, state: form.state, pincode: form.pincode, provider: form.provider, providerAccountId: form.providerAccountId, warehouseId: form.warehouseId, providerReference: String(result.data.provider_reference ?? ""), providerStatus: String(result.data.provider_status ?? "pending"), providerErrorCode: "", failureReason: "", notes: form.notes, createdFrom: "Standalone request" };
+      setPickups((current) => [created, ...current]); notify(`Pickup ${result.data.id} was saved to production.`, created.status === "Provider Pending" ? "pending" : "success"); setScheduleOpen(false); setForm({ ...emptyForm, date: todayIso() });
+    } catch (error) { notify(error instanceof Error ? error.message : "Pickup request failed.", "error"); }
   };
-  const cancelPickup = async (pickup: Pickup) => { try { await pssApi(`/v1/pickups/${encodeURIComponent(pickup.id)}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ status: "cancelled" }) }); setPickups((current) => current.map((item) => item.id === pickup.id ? { ...item, status: "Cancelled" } : item)); setSelectedPickup((current) => current?.id === pickup.id ? { ...current, status: "Cancelled" } : current); setNotice(`Pickup ${pickup.reference} was cancelled in production.`); } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to cancel pickup."); } };
+  const cancelPickup = async (pickup: Pickup) => { try { await pssApi(`/v1/pickups/${encodeURIComponent(pickup.id)}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ status: "cancelled" }) }); setPickups((current) => current.map((item) => item.id === pickup.id ? { ...item, status: "Cancelled" } : item)); setSelectedPickup((current) => current?.id === pickup.id ? { ...current, status: "Cancelled" } : current); notify(`Pickup ${pickup.reference} was cancelled in production.`, "success"); } catch (error) { notify(error instanceof Error ? error.message : "Unable to cancel pickup.", "error"); } };
+  const retryPickup = async (pickup: Pickup) => { try { const result = await pssApi<{ data?: { status?: string; requested_date?: string; requested_time_slot?: string; provider_status?: string } }>(`/v1/pickups/${encodeURIComponent(pickup.id)}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ retry: true }) }); const next = { status: normalizePickupStatus(result.data?.status ?? "scheduled"), date: result.data?.requested_date ?? pickup.date, window: result.data?.requested_time_slot ?? pickup.window, failureReason: "", providerErrorCode: "", providerStatus: String(result.data?.provider_status ?? "accepted") }; setPickups((current) => current.map((item) => item.id === pickup.id ? { ...item, ...next } : item)); setSelectedPickup((current) => current?.id === pickup.id ? { ...current, ...next } : current); notify(`Pickup ${pickup.reference} was resubmitted to ${pickup.provider}.`, next.status === "Provider Pending" ? "pending" : "success"); } catch (error) { notify(error instanceof Error ? error.message : "Unable to retry pickup.", "error"); } };
+  const reschedulePickup = async (pickup: Pickup, date: string, window: string) => { try { const result = await pssApi<{ data?: { status?: string; requested_date?: string; requested_time_slot?: string; provider_status?: string } }>(`/v1/pickups/${encodeURIComponent(pickup.id)}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ requested_date: date, requested_time_slot: window }) }); const next = { status: normalizePickupStatus(result.data?.status ?? "scheduled"), date: result.data?.requested_date ?? date, window: result.data?.requested_time_slot ?? window, failureReason: "", providerErrorCode: "", providerStatus: String(result.data?.provider_status ?? "accepted") }; setPickups((current) => current.map((item) => item.id === pickup.id ? { ...item, ...next } : item)); setSelectedPickup((current) => current?.id === pickup.id ? { ...current, ...next } : current); setRescheduleTarget(null); notify(`Pickup ${pickup.reference} was rescheduled with ${pickup.provider}.`, next.status === "Provider Pending" ? "pending" : "success"); } catch (error) { notify(error instanceof Error ? error.message : "Unable to reschedule pickup.", "error"); } };
 
   return (
     <div className="w-full space-y-4 pb-10">
@@ -176,7 +272,7 @@ export default function PickupRequests() {
         <MetricCard label="Failed (7d)" value={metrics.failed} icon={<FileText className="h-4 w-4" />} />
         <div className="flex w-full shrink-0 gap-2 sm:w-auto">
           <button type="button" onClick={() => setCalendarOpen((current) => !current)} className={cn(buttonSecondary, "flex-1 sm:flex-none")}><CalendarDays className="h-4 w-4" /> Calendar View</button>
-          <button type="button" onClick={() => setScheduleOpen(true)} className={cn(buttonPrimary, "flex-1 sm:flex-none")}><Plus className="h-4 w-4" /> Schedule Pickup</button>
+          <button type="button" onClick={() => { setPickupSlotOptions([]); setScheduleOpen(true); }} className={cn(buttonPrimary, "flex-1 sm:flex-none")}><Plus className="h-4 w-4" /> Schedule Pickup</button>
         </div>
       </div>
 
@@ -188,7 +284,7 @@ export default function PickupRequests() {
           <div className="flex flex-wrap gap-2">
             <Dropdown label="All statuses" value={statusFilter} options={Object.keys(statusStyles)} open={statusOpen} onOpenChange={setStatusOpen} onChange={(value) => setStatusFilter(value as PickupStatus | "")} className="min-w-36" />
             <div className="relative"><button type="button" onClick={() => setColumnsOpen((current) => !current)} className={buttonSecondary}><SlidersHorizontal className="h-3.5 w-3.5" /> Columns</button>{columnsOpen && <ColumnPanel visibleColumns={visibleColumns} toggleColumn={toggleColumn} close={() => setColumnsOpen(false)} />}</div>
-            <button type="button" onClick={exportCsv} className={buttonSecondary}><Download className="h-3.5 w-3.5" /> Export</button>
+            <button type="button" onClick={() => void loadPickups(true)} disabled={refreshing} className={buttonSecondary}><RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh</button><button type="button" onClick={exportCsv} className={buttonSecondary}><Download className="h-3.5 w-3.5" /> Export</button>
           </div>
         </div>
         <div className="flex items-center justify-between px-4 py-2.5 text-[11px] text-muted-foreground"><span>{filtered.length} of {pickups.length} pickup requests</span><span>{selectedIds.length} selected</span></div>
@@ -201,9 +297,10 @@ export default function PickupRequests() {
         </div>
       </div>
 
-      {notice && <div role="status" className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary"><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X className="h-3.5 w-3.5" /></button></div>}
-      {selectedPickup && <PickupDetail pickup={selectedPickup} close={() => setSelectedPickup(null)} cancel={() => void cancelPickup(selectedPickup)} />}
-      {scheduleOpen && <ScheduleModal form={form} updateForm={updateForm} submit={schedulePickup} close={() => { setScheduleOpen(false); setForm(emptyForm); }} />}
+      {notice && <div role="status" className={cn("flex items-center justify-between rounded-lg border px-3 py-2 text-xs", noticeTone === "success" && "border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300", noticeTone === "pending" && "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-300", noticeTone === "error" && "border-destructive/20 bg-destructive/5 text-destructive", noticeTone === "info" && "border-primary/20 bg-primary/5 text-primary")}><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X className="h-3.5 w-3.5" /></button></div>}
+      {selectedPickup && <PickupDetail pickup={selectedPickup} close={() => setSelectedPickup(null)} cancel={() => void cancelPickup(selectedPickup)} retry={() => void retryPickup(selectedPickup)} reschedule={() => { setRescheduleSlotOptions([]); setRescheduleTarget(selectedPickup); }} />}
+      {rescheduleTarget && <RescheduleModal pickup={rescheduleTarget} slotOptions={rescheduleSlotOptions} submit={(date, window) => void reschedulePickup(rescheduleTarget, date, window)} close={() => { setRescheduleSlotOptions([]); setRescheduleTarget(null); }} />}
+      {scheduleOpen && <ScheduleModal form={form} updateForm={updateForm} providerAccounts={providerAccounts} warehouses={warehouses} slotOptions={pickupSlotOptions} selectWarehouse={(warehouse) => { setPickupSlotOptions([]); setForm((current) => ({ ...current, warehouseId: warehouse.id, customer: warehouse.contact_name ?? warehouse.name ?? current.customer, contact: warehouse.phone ?? warehouse.contact ?? current.contact, address: warehouse.address ?? current.address, city: warehouse.city ?? current.city, state: warehouse.state ?? current.state, pincode: warehouse.pincode ?? current.pincode })); }} submit={schedulePickup} close={() => { setPickupSlotOptions([]); setScheduleOpen(false); setForm(emptyForm); }} />}
     </div>
   );
 }
@@ -231,14 +328,26 @@ function CalendarPanel({ pickups, close }: { pickups: Pickup[]; close: () => voi
   return <section className="rounded-xl border border-border bg-card p-4 shadow-xs"><div className="flex items-start justify-between"><div><h2 className="flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" /> Pickup calendar</h2><p className="mt-1 text-xs text-muted-foreground">Upcoming pickup windows grouped by day.</p></div><button type="button" onClick={close} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent" aria-label="Close calendar"><X className="h-4 w-4" /></button></div><div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{Object.entries(grouped).slice(0, 8).map(([date, items]) => <div key={date} className="rounded-lg border border-border bg-background p-3"><p className="text-xs font-semibold">{date}</p><div className="mt-2 space-y-2">{items.slice(0, 3).map((pickup) => <button type="button" key={pickup.id} onClick={close} className="block w-full text-left"><p className="truncate text-[11px] font-medium">{pickup.window}</p><p className="truncate text-[10px] text-muted-foreground">{pickup.location} · {pickup.status}</p></button>)}</div></div>)}</div></section>;
 }
 
-function PickupDetail({ pickup, close, cancel }: { pickup: Pickup; close: () => void; cancel: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={close}><div role="dialog" aria-modal="true" aria-labelledby="pickup-detail-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between border-b border-border/70 pb-4"><div><div className="flex flex-wrap items-center gap-2"><h2 id="pickup-detail-title" className="font-mono text-lg font-bold tracking-tight">{pickup.reference}</h2><StatusBadge status={pickup.status} /></div><p className="mt-1 text-xs text-muted-foreground">{pickup.createdFrom} · pickup request details</p></div><button type="button" onClick={close} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent" aria-label="Close pickup details"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-2 gap-2"><Detail label="Customer" value={pickup.customer} /><Detail label="Contact" value={pickup.contact} /><Detail label="Pickup date" value={`${pickup.date} · ${pickup.window}`} /><Detail label="Driver" value={pickup.driver} /><Detail label="Pieces" value={String(pickup.pieces)} /><Detail label="Weight" value={pickup.weight} /></div><div className="mt-3 rounded-lg border border-border bg-background p-3"><p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> Pickup location</p><p className="mt-1 text-sm font-semibold">{pickup.location}, {pickup.country}</p><p className="mt-0.5 text-xs text-muted-foreground">{pickup.address}</p></div><div className="mt-3 rounded-lg bg-primary/5 p-3 text-xs leading-5 text-muted-foreground"><p className="font-semibold text-foreground">Pickup notes</p><p className="mt-1">{pickup.notes}</p></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={close} className={buttonSecondary}>Close</button>{!['Cancelled', 'Completed', 'Failed'].includes(pickup.status) && <button type="button" onClick={cancel} className={buttonSecondary}>Cancel pickup</button>}<button type="button" onClick={() => { navigator.clipboard?.writeText(pickup.reference); close(); }} className={buttonPrimary}><Check className="h-3.5 w-3.5" /> Copy reference</button></div></div></div>;
+function PickupDetail({ pickup, close, cancel, retry, reschedule }: { pickup: Pickup; close: () => void; cancel: () => void; retry: () => void; reschedule: () => void }) {
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={close}><div role="dialog" aria-modal="true" aria-labelledby="pickup-detail-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between border-b border-border/70 pb-4"><div><div className="flex flex-wrap items-center gap-2"><h2 id="pickup-detail-title" className="font-mono text-lg font-bold tracking-tight">{pickup.reference}</h2><StatusBadge status={pickup.status} /></div><p className="mt-1 text-xs text-muted-foreground">{pickup.createdFrom} · pickup request details</p></div><button type="button" onClick={close} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent" aria-label="Close pickup details"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-2 gap-2"><Detail label="Customer" value={pickup.customer} /><Detail label="Contact" value={pickup.contact} /><Detail label="Courier" value={pickup.provider} /><Detail label="Provider account" value={pickup.providerAccountId || "Not reported"} /><Detail label="Provider reference" value={pickup.providerReference || "Pending"} /><Detail label="Pickup date" value={`${pickup.date} · ${pickup.window}`} /><Detail label="Driver" value={pickup.driver} /><Detail label="Pieces" value={String(pickup.pieces)} /><Detail label="Weight" value={pickup.weight} /></div><div className="mt-3 rounded-lg border border-border bg-background p-3"><p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> Pickup location</p><p className="mt-1 text-sm font-semibold">{pickup.location}, {pickup.country}</p><p className="mt-0.5 text-xs text-muted-foreground">{pickup.address}{pickup.city ? ` · ${pickup.city}` : ""}{pickup.state ? ` · ${pickup.state}` : ""}{pickup.pincode ? ` · ${pickup.pincode}` : ""}</p></div><div className="mt-3 rounded-lg bg-primary/5 p-3 text-xs leading-5 text-muted-foreground"><p className="font-semibold text-foreground">Provider state</p><p className="mt-1">{pickup.providerStatus || "Not reported"}{pickup.providerErrorCode ? ` · ${pickup.providerErrorCode}` : ""}{pickup.failureReason ? ` · ${pickup.failureReason}` : ""}</p><p className="mt-2 font-semibold text-foreground">Pickup notes</p><p className="mt-1">{pickup.notes || "No notes"}</p></div><div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={close} className={buttonSecondary}>Close</button>{pickup.status === "Failed" && <button type="button" onClick={retry} className={buttonSecondary}>Retry pickup</button>}{!['Cancelled', 'Completed'].includes(pickup.status) && <button type="button" onClick={reschedule} className={buttonSecondary}>Reschedule</button>}{!['Cancelled', 'Completed', 'Failed'].includes(pickup.status) && <button type="button" onClick={cancel} className={buttonSecondary}>Cancel pickup</button>}<button type="button" onClick={() => { navigator.clipboard?.writeText(pickup.reference); close(); }} className={buttonPrimary}><Check className="h-3.5 w-3.5" /> Copy reference</button></div></div></div>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-lg border border-border bg-background p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 truncate text-xs font-semibold" title={value}>{value}</p></div>; }
 
-function ScheduleModal({ form, updateForm, submit, close }: { form: NewPickup; updateForm: (key: keyof NewPickup, value: string) => void; submit: (event: React.FormEvent<HTMLFormElement>) => void; close: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={close}><div role="dialog" aria-modal="true" aria-labelledby="schedule-pickup-title" className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between"><div><div className="mb-1 flex items-center gap-2"><Truck className="h-4 w-4 text-primary" /><h2 id="schedule-pickup-title" className="text-base font-semibold">Schedule a pickup</h2></div><p className="text-xs text-muted-foreground">Create a pickup request directly from a location, even when no shipment has been booked.</p></div><button type="button" onClick={close} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent" aria-label="Close schedule pickup dialog"><X className="h-4 w-4" /></button></div><form onSubmit={submit} className="mt-5 space-y-5"><div><div className="mb-3 flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-primary/10 text-primary"><MapPin className="h-3.5 w-3.5" /></span><h3 className="text-sm font-semibold">Pickup location</h3></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Customer or business name" value={form.customer} onChange={(value) => updateForm("customer", value)} placeholder="e.g. Northstar Supplies" required /><Field label="Contact phone" value={form.contact} onChange={(value) => updateForm("contact", value)} placeholder="+91 98765 43210" required /><Field label="Address" value={form.address} onChange={(value) => updateForm("address", value)} placeholder="Building, street, or warehouse" required className="sm:col-span-2" /><Field label="City" value={form.city} onChange={(value) => updateForm("city", value)} placeholder="Mumbai" required /><Field label="Country" value={form.country} onChange={(value) => updateForm("country", value)} placeholder="India" required /></div></div><div><div className="mb-3 flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-sky-500/10 text-sky-600"><CalendarDays className="h-3.5 w-3.5" /></span><h3 className="text-sm font-semibold">Pickup window</h3></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Pickup date" type="date" value={form.date} onChange={(value) => updateForm("date", value)} required /><label className="grid gap-1.5 text-xs font-medium text-muted-foreground">Preferred time window<select value={form.window} onChange={(event) => updateForm("window", event.target.value)} className={cn(inputClass, "w-full")}><option>9:00 AM – 11:00 AM</option><option>11:30 AM – 1:30 PM</option><option>2:00 PM – 4:00 PM</option><option>4:30 PM – 6:30 PM</option><option>6:30 PM – 8:30 PM</option></select></label></div></div><div><div className="mb-3 flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-amber-500/10 text-amber-600"><Package className="h-3.5 w-3.5" /></span><h3 className="text-sm font-semibold">Package details</h3></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Pieces" type="number" min="1" value={form.pieces} onChange={(value) => updateForm("pieces", value)} required /><Field label="Total weight (kg)" type="number" min="0.1" step="0.1" value={form.weight} onChange={(value) => updateForm("weight", value)} placeholder="e.g. 25" required /><Field label="Notes (optional)" value={form.notes} onChange={(value) => updateForm("notes", value)} placeholder="Loading instructions, access notes…" className="sm:col-span-2" /></div></div><div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"><p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />This request is independent of shipment booking and can be assigned to a driver later.</p><div className="flex justify-end gap-2"><button type="button" onClick={close} className={buttonSecondary}>Cancel</button><button type="submit" className={buttonPrimary}><Check className="h-3.5 w-3.5" /> Schedule pickup</button></div></div></form></div></div>;
+function RescheduleModal({ pickup, slotOptions, submit, close }: { pickup: Pickup; slotOptions: PickupSlotOption[]; submit: (date: string, window: string) => void; close: () => void }) {
+  const dates = slotOptions.map((option) => option.date);
+  const [date, setDate] = useState(pickup.date !== "Not provided" ? pickup.date : dates[0] ?? todayIso());
+  const effectiveDate = dates.includes(date) ? date : dates[0] ?? date;
+  const slots = slotOptions.find((option) => option.date === effectiveDate)?.slots ?? slotOptions.flatMap((option) => option.slots);
+  const [window, setWindow] = useState(pickup.window !== "Not provided" ? pickup.window : slots[0] ?? "");
+  const effectiveWindow = slots.includes(window) ? window : slots[0] ?? "";
+  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={close}><div role="dialog" aria-modal="true" aria-labelledby="reschedule-pickup-title" className="w-full max-w-md rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl" onClick={(event) => event.stopPropagation()}><h2 id="reschedule-pickup-title" className="text-base font-semibold">Reschedule pickup</h2><p className="mt-1 text-xs text-muted-foreground">{dates.length ? "Choose a provider-returned date and window." : "Delhivery has not returned a reschedule slot for this pickup yet. Refresh after the provider publishes availability."} The pickup remains unchanged until the provider accepts this request.</p>{!dates.length ? <p className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-5 text-amber-700 dark:text-amber-300">Manual dates and windows are disabled so the panel cannot submit an unverified pickup request.</p> : <div className="mt-4 grid gap-3"><label className="grid gap-1.5 text-xs font-medium text-muted-foreground">Pickup date<select required value={effectiveDate} onChange={(event) => { setDate(event.target.value); setWindow(""); }} className={cn(inputClass, "w-full")}>{dates.map((option) => <option key={option} value={option}>{option}</option>)}</select></label><label className="grid gap-1.5 text-xs font-medium text-muted-foreground">Pickup window<select required value={effectiveWindow} onChange={(event) => setWindow(event.target.value)} className={cn(inputClass, "w-full")}><option value="">Select a provider window</option>{Array.from(new Set(slots)).map((option) => <option key={option}>{option}</option>)}</select></label></div>}<div className="mt-5 flex justify-end gap-2"><button type="button" onClick={close} className={buttonSecondary}>Cancel</button><button type="button" disabled={!dates.length || !effectiveDate || !effectiveWindow} onClick={() => submit(effectiveDate, effectiveWindow)} className={cn(buttonPrimary, (!dates.length || !effectiveDate || !effectiveWindow) && "cursor-not-allowed opacity-50")}>Request reschedule</button></div></div></div>;
 }
 
-function Field({ label, value, onChange, placeholder, required, type = "text", min, step, className }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; required?: boolean; type?: string; min?: string; step?: string; className?: string }) { return <label className={cn("grid gap-1.5 text-xs font-medium text-muted-foreground", className)}>{label}<input required={required} type={type} min={min} step={step} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={cn(inputClass, "w-full")} /></label>; }
+function ScheduleModal({ form, updateForm, providerAccounts, warehouses, slotOptions, selectWarehouse, submit, close }: { form: NewPickup; updateForm: (key: keyof NewPickup, value: string) => void; providerAccounts: ProviderAccount[]; warehouses: SavedWarehouse[]; slotOptions: PickupSlotOption[]; selectWarehouse: (warehouse: SavedWarehouse) => void; submit: (event: React.FormEvent<HTMLFormElement>) => void; close: () => void }) {
+  const dateOption = slotOptions.find((option) => option.date === form.date);
+  const availableSlots = dateOption?.slots ?? [];
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={close}><div role="dialog" aria-modal="true" aria-labelledby="schedule-pickup-title" className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between"><div><div className="mb-1 flex items-center gap-2"><Truck className="h-4 w-4 text-primary" /><h2 id="schedule-pickup-title" className="text-base font-semibold">Schedule a pickup</h2></div><p className="text-xs text-muted-foreground">Choose the courier and pickup location first. Dates and windows are provider-confirmed.</p></div><button type="button" onClick={close} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent" aria-label="Close schedule pickup dialog"><X className="h-4 w-4" /></button></div><form onSubmit={submit} className="mt-5 space-y-5"><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-xs font-medium text-muted-foreground">Courier account<select required aria-label="Courier account" value={form.providerAccountId} onChange={(event) => { const account = providerAccounts.find((item) => item.id === event.target.value); updateForm("providerAccountId", event.target.value); updateForm("provider", account?.provider ?? ""); }} className={cn(inputClass, "w-full")}><option value="">Select active courier account</option>{providerAccounts.map((account) => <option key={account.id} value={account.id}>{account.account_name} · {account.provider}</option>)}</select></label><label className="grid gap-1.5 text-xs font-medium text-muted-foreground">Saved pickup location<select aria-label="Saved pickup location" value={form.warehouseId} onChange={(event) => { const warehouse = warehouses.find((item) => item.id === event.target.value); if (warehouse) selectWarehouse(warehouse); else updateForm("warehouseId", ""); }} className={cn(inputClass, "w-full")}><option value="">Enter a new pickup location</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name ?? warehouse.label ?? warehouse.address ?? warehouse.id}</option>)}</select></label></div><div><div className="mb-3 flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-primary/10 text-primary"><MapPin className="h-3.5 w-3.5" /></span><h3 className="text-sm font-semibold">Pickup location</h3></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Customer or business name" value={form.customer} onChange={(value) => updateForm("customer", value)} placeholder="e.g. Northstar Supplies" required /><Field label="Contact phone" value={form.contact} onChange={(value) => updateForm("contact", value)} placeholder="+91 98765 43210" required /><Field label="Contact email" type="email" value={form.email} onChange={(value) => updateForm("email", value)} placeholder="ops@example.com" className="sm:col-span-2" /><Field label="Address" value={form.address} onChange={(value) => updateForm("address", value)} placeholder="Building, street, or warehouse" required className="sm:col-span-2" /><Field label="City" value={form.city} onChange={(value) => updateForm("city", value)} placeholder="Mumbai" required /><Field label="State" value={form.state} onChange={(value) => updateForm("state", value)} placeholder="Maharashtra" required /><Field label="PIN code" value={form.pincode} onChange={(value) => updateForm("pincode", value.replace(/\D/g, "").slice(0, 6))} placeholder="400001" required pattern="\d{6}" /><Field label="Country" value={form.country} onChange={(value) => updateForm("country", value)} placeholder="India" required /></div></div><div><div className="mb-3 flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-sky-500/10 text-sky-600"><CalendarDays className="h-3.5 w-3.5" /></span><h3 className="text-sm font-semibold">Pickup window</h3></div><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-xs font-medium text-muted-foreground">Pickup date{slotOptions.length ? <select required aria-label="Provider pickup date" value={form.date} onChange={(event) => { const option = slotOptions.find((item) => item.date === event.target.value); updateForm("date", event.target.value); updateForm("window", option?.slots[0] ?? ""); }} className={cn(inputClass, "w-full")}>{slotOptions.map((option) => <option key={option.date} value={option.date}>{option.date}{option.reason ? ` · ${option.reason.replaceAll("_", " ")}` : ""}</option>)}</select> : <input required type="date" min={todayIso()} value={form.date} disabled className={cn(inputClass, "w-full")} />}</label>{slotOptions.length ? <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">Preferred time window<select required aria-label="Preferred time window" value={form.window} onChange={(event) => updateForm("window", event.target.value)} className={cn(inputClass, "w-full")}><option value="">Select provider window</option>{availableSlots.map((slot) => <option key={slot}>{slot}</option>)}</select></label> : <input required aria-label="Requested time window" value="" disabled placeholder="Waiting for provider-confirmed windows" className={cn(inputClass, "w-full")} />}</div><p className="mt-2 text-[11px] text-muted-foreground">{slotOptions.length ? "Dates and windows are supplied by the provider scheduling response." : form.providerAccountId && /^\d{6}$/.test(form.pincode) ? "No provider-confirmed pickup slot is currently available for this courier account and PIN code." : "Enter the courier account, pickup location, and PIN code to load Delhivery-confirmed dates and windows."}</p></div><div><div className="mb-3 flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-amber-500/10 text-amber-600"><Package className="h-3.5 w-3.5" /></span><h3 className="text-sm font-semibold">Package details</h3></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Delhivery AWB(s)" value={form.awbNumber} onChange={(value) => updateForm("awbNumber", value)} placeholder="AWB numbers separated by commas" required={form.provider === "delhivery"} className="sm:col-span-2" /><Field label="Pieces" type="number" min="1" value={form.pieces} onChange={(value) => updateForm("pieces", value)} required /><Field label="Total weight (kg)" type="number" min="0.1" step="0.1" value={form.weight} onChange={(value) => updateForm("weight", value)} placeholder="e.g. 25" required /><Field label="Notes (optional)" value={form.notes} onChange={(value) => updateForm("notes", value)} placeholder="Loading instructions, access notes…" className="sm:col-span-2" /></div></div><div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"><p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />The provider will confirm the requested date and slot. It will not be shown as scheduled until accepted.</p><div className="flex justify-end gap-2"><button type="button" onClick={close} className={buttonSecondary}>Cancel</button><button type="submit" disabled={!slotOptions.some((option) => option.date === form.date && option.slots.includes(form.window))} className={buttonPrimary}><Check className="h-3.5 w-3.5" /> Schedule pickup</button></div></div></form></div></div>;
+}
+
+function Field({ label, value, onChange, placeholder, required, type = "text", min, step, pattern, className }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; required?: boolean; type?: string; min?: string; step?: string; pattern?: string; className?: string }) { return <label className={cn("grid gap-1.5 text-xs font-medium text-muted-foreground", className)}>{label}<input required={required} type={type} min={min} step={step} pattern={pattern} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={cn(inputClass, "w-full")} /></label>; }

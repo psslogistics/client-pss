@@ -13,6 +13,18 @@ let sessionInFlight: ReturnType<ReturnType<typeof createClient>["auth"]["getSess
 const isSessionCachedRead = (path: string) => path.startsWith("/v1/dashboard/summary") || path.startsWith("/v1/reports/client-complete") || path === "/v1/provider-capabilities" || path === "/v1/provider-account-policies";
 const sessionKey = (userId: string, path: string) => `pss-api:${userId}:${path}`;
 
+export class PssApiError extends Error {
+  readonly status: number;
+  readonly payload: unknown;
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message);
+    this.name = "PssApiError";
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!sessionInFlight) {
     sessionInFlight = createClient().auth.getSession().finally(() => { sessionInFlight = null; });
@@ -58,7 +70,7 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
       if (refreshedToken) response = await fetch(endpoint, { ...init, signal: controller.signal, headers: requestHeaders(refreshedToken) });
     }
     const payload = await response.json().catch(() => ({})) as T & { error?: { message?: string } };
-    if (!response.ok) throw new Error(payload.error?.message || "The PSS API request failed.");
+    if (!response.ok) throw new PssApiError(payload.error?.message || "The PSS API request failed.", response.status, payload);
     if (!mutating) {
       const expiresAt = Date.now() + GET_CACHE_TTL_MS;
       getCache.set(cacheKey, { expiresAt, value: payload });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   CalendarClock,
@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import Dropdown from "@/components/ui/dropdown";
 import ConfirmationToast, { type ConfirmationToastTone } from "@/components/ui/confirmationToast";
-import { pssApi } from "@/lib/pss-api";
+import { pssApi, PssApiError } from "@/lib/pss-api";
 import { isActiveDelhiveryB2BAccount } from "@/lib/client-pricing-data";
 import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 
@@ -32,6 +32,13 @@ type PinStatus = "idle" | "loading" | "success" | "error";
 type PaymentMode = "COD" | "Prepaid";
 type RiskType = "owner" | "carrier";
 type PickupOption = { date: string; slots: string[]; reason?: string };
+type PendingPickupRecovery = {
+  shipmentId: string;
+  shipmentIdempotencyKey: string;
+  pickupId: string;
+  pickupPayload: Record<string, unknown>;
+  pricingAmount: number;
+};
 type BulkShipment = {
   id: string;
   sourceRow: number;
@@ -76,7 +83,7 @@ const emptyContact: Contact = { name: "", phone: "", email: "" };
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
 const fileAsBase64 = async (file: File) => { const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary); };
 const allCouriers = [
-  { id: "delhivery", provider: "delhivery", name: "DELHIVERY", service: "PSS rate card applied at booking", eta: "Provider confirmation pending", rate: "PSS pricing", confidence: 0, accountName: "", accountCode: "other", accountId: "", health: "unknown", lastError: "", accent: "bg-violet-500/10 text-violet-600" },
+  { id: "delhivery", provider: "delhivery", name: "DELHIVERY", service: "PSS rate card applied at booking", eta: "", rate: "PSS pricing", confidence: 0, accountName: "", accountCode: "other", accountId: "", health: "unknown", lastError: "", accent: "bg-violet-500/10 text-violet-600" },
 ];
 const indiaDate = (offsetDays = 0) => {
   const date = new Date(Date.now() + offsetDays * 86_400_000);
@@ -225,6 +232,7 @@ export default function ShipmentBooking() {
   const [showReview, setShowReview] = useState(false);
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null);
   const [singleAttemptId, setSingleAttemptId] = useState("");
+  const [pendingPickupRecovery, setPendingPickupRecovery] = useState<PendingPickupRecovery | null>(null);
   const [singleSubmitting, setSingleSubmitting] = useState(false);
   const [providerHealth, setProviderHealth] = useState<Record<string, { health?: string; last_error_code?: string | null }>>({});
   const [accountPolicies, setAccountPolicies] = useState<Array<{ id: string; provider: string; account_name: string; enabled?: boolean; confidence_score?: number; priority?: number }>>([]);
@@ -266,26 +274,30 @@ export default function ShipmentBooking() {
   const pinAbortRef = useRef<{ pickup?: AbortController; delivery?: AbortController }>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const loadPickupOptions = async () => {
+  const loadPickupOptions = useCallback(async () => {
     setPickupOptionsLoading(true);
+    setPickupOptions([]);
     try {
-      const result = await pssApi<{ data: { dates?: PickupOption[] } }>("/v1/pickup-slots");
+      const courier = couriers.find((item) => item.id === selectedCourier);
+      const query = new URLSearchParams({ provider: "delhivery", provider_account_id: courier?.accountId || "", pincode: pickup.pincode, ...(selectedSavedPickupId ? { warehouse_id: selectedSavedPickupId } : {}) });
+      const result = await pssApi<{ data: { dates?: PickupOption[]; note?: string } }>(`/v1/pickup-slots?${query.toString()}`);
       const dates = result.data?.dates ?? [];
       setPickupOptions(dates);
-      if (!selectedPickupDate || !dates.some((option) => option.date === selectedPickupDate)) setSelectedPickupDate(dates[0]?.date ?? null);
+      if (dates.length && (!selectedPickupDate || !dates.some((option) => option.date === selectedPickupDate))) setSelectedPickupDate(dates[0]?.date ?? null);
+      if (!dates.length && !selectedPickupDate) setSelectedPickupDate(indiaDate());
       if (!selectedSlot && dates[0]?.slots[0]) setSelectedSlot(dates[0].slots[0]);
     } catch (error) {
       setBookingNotice(error instanceof Error ? error.message : "Pickup availability could not be loaded.");
     } finally {
       setPickupOptionsLoading(false);
     }
-  };
+  }, [couriers, pickup.pincode, selectedCourier, selectedPickupDate, selectedSlot, selectedSavedPickupId]);
 
   useEffect(() => {
     // The modal opening is the external trigger for refreshing provider options.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (slotOpen) void loadPickupOptions();
-  }, [slotOpen]);
+  }, [loadPickupOptions, slotOpen]);
 
   useEffect(() => () => {
     pinAbortRef.current.pickup?.abort();
@@ -401,6 +413,7 @@ export default function ShipmentBooking() {
           origin_pincode: pickup.pincode,
           destination_pincode: delivery.pincode,
           provider: "delhivery",
+          provider_managed: true,
           pieces: Number(shipmentDetails.pieces) || 1,
           risk_type: riskType,
         }),
@@ -611,6 +624,10 @@ export default function ShipmentBooking() {
 
   const confirmSingle = async () => {
     if (singleSubmitting || !selectedCourier || !selectedSlot) return;
+    if (!selectedPickupDate || !pickupOptions.some((option) => option.date === selectedPickupDate && option.slots.includes(selectedSlot))) {
+      setBookingNotice("Select a pickup date and window returned by Delhivery before confirming this booking.");
+      return;
+    }
     const courier = couriers.find((item) => item.id === selectedCourier) || couriers[0];
     if (!courier) {
       setBookingNotice("No active Delhivery B2B account is assigned to this client.");
@@ -619,6 +636,31 @@ export default function ShipmentBooking() {
     setSingleSubmitting(true);
     const idempotencyKey = singleAttemptId || crypto.randomUUID();
     setSingleAttemptId(idempotencyKey);
+    if (pendingPickupRecovery) {
+      try {
+        setBookingNotice("The shipment is already saved. Retrying its pickup request without creating another shipment…");
+        const requestedDate = selectedPickupDate ?? String(pendingPickupRecovery.pickupPayload.requested_date ?? indiaDate());
+        const requestedWindow = selectedSlot;
+        const result = await pssApi<{ data: { status?: string; requested_date?: string; requested_time_slot?: string } }>(`/v1/pickups/${encodeURIComponent(pendingPickupRecovery.pickupId)}`, {
+          method: "PATCH",
+          headers: { "Idempotency-Key": `${pendingPickupRecovery.shipmentIdempotencyKey}-pickup-retry-${crypto.randomUUID()}` },
+          body: JSON.stringify({ retry: true, requested_date: requestedDate, requested_time_slot: requestedWindow }),
+        });
+        const acceptedDate = result.data?.requested_date ?? requestedDate;
+        const acceptedWindow = result.data?.requested_time_slot ?? requestedWindow;
+        setSelectedPickupDate(acceptedDate);
+        setSelectedSlot(acceptedWindow);
+        setBookingAmount(pendingPickupRecovery.pricingAmount);
+        setPendingPickupRecovery(null);
+        setSingleCompleted(true);
+        setBookingNotice(`Booking saved. Pickup request resubmitted for ${acceptedDate} (${acceptedWindow}).`);
+      } catch (error) {
+        setBookingNotice(error instanceof Error ? `Shipment saved, but pickup retry failed: ${error.message}` : "Shipment saved, but pickup retry failed. Retry the pickup again.");
+      } finally {
+        setSingleSubmitting(false);
+      }
+      return;
+    }
     // Use the provider's India business date instead of UTC. Near midnight,
     // UTC can send yesterday's date to Delhivery and trigger "pickup time
     // cannot be in past" even though it is still the correct local day.
@@ -638,12 +680,25 @@ export default function ShipmentBooking() {
     const documentReference = documentMode === "dc"
       ? dc.number.trim()
       : invoices[0]?.name.trim() || `PSS-${idempotencyKey.slice(0, 12)}`;
-    const invoiceDocuments = await Promise.all(invoices.map(async (file) => {
-      const contentType = documentContentType(file);
-      if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`);
-      return { name: file.name, content_type: contentType, body_base64: await fileAsBase64(file), invoice_number: documentReference };
-    }));
+    let invoiceDocuments: Array<{ name: string; content_type: string; body_base64: string; invoice_number: string }>;
+    try {
+      invoiceDocuments = await Promise.all(invoices.map(async (file) => {
+        const contentType = documentContentType(file);
+        if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`);
+        return { name: file.name, content_type: contentType, body_base64: await fileAsBase64(file), invoice_number: documentReference };
+      }));
+    } catch (error) {
+      setSingleAttemptId("");
+      setSingleSubmitting(false);
+      setBookingNotice(error instanceof Error ? error.message : "The invoice could not be read. Please upload it again.");
+      return;
+    }
     setBookingNotice("Calculating the PSS charge and saving booking securely…");
+    let createdShipmentId: string | null = null;
+    let createdPickupId: string | null = null;
+    let pickupRequestInProgress = false;
+    let recoveryPickupPayload: Record<string, unknown> | null = null;
+    let createdPricingAmount = 0;
     try {
       const result = await pssApi<{ data: { id: string; status: string; pricing_amount?: number; provider_status?: string } }>("/v1/shipments", {
         method: "POST",
@@ -672,11 +727,15 @@ export default function ShipmentBooking() {
           risk_type: riskType,
           rov_type: riskType === "carrier",
           cod_amount: paymentMode === "COD" ? Number(codAmount) || 0 : 0,
-          edd: courier.eta,
+          // EDD is a provider-supplied delivery date, not a confirmation
+          // status. Delhivery may return no EDD at booking time.
+          edd: null,
           invoice_documents: invoiceDocuments,
         }),
       });
       const serverId = result.data.id;
+      createdShipmentId = serverId;
+      createdPricingAmount = Number(result.data.pricing_amount ?? 0);
       setBookingAmount(Number(result.data.pricing_amount ?? 0));
       if (ewayBill) {
         const contentType = documentContentType(ewayBill);
@@ -690,16 +749,24 @@ export default function ShipmentBooking() {
       const pickupPayload = {
           shipment_id: serverId,
           provider: "delhivery",
+          provider_managed: true,
           delhivery_pickup_location: `${pickupPerson.name} ${pickup.pincode}`.replace(/\s+/g, " ").trim().slice(0, 50),
           provider_account_id: courier.accountId || undefined,
-          scheduled_date: date,
-          window: selectedSlot,
-          location: pickup.line || `${pickup.city}, ${pickup.state}`,
+          requested_date: date,
+          requested_time_slot: selectedSlot,
+          pickup_address: pickup.line || `${pickup.city}, ${pickup.state}`,
+          city: pickup.city,
+          state: pickup.state,
+          pincode: pickup.pincode,
+          country: pickup.country || "India",
           expected_package_count: Number(shipmentDetails.pieces) || 1,
+          pieces: Number(shipmentDetails.pieces) || 1,
+          weight: declaredWeight,
           contact_name: pickupPerson.name,
           contact_phone: pickupPerson.phone,
           notes: "Created from Delhivery B2B PSS booking",
         };
+      recoveryPickupPayload = pickupPayload;
       let chosenPickupDate = date;
       let chosenPickupWindow = selectedSlot;
       let pickupRescheduled = false;
@@ -712,13 +779,23 @@ export default function ShipmentBooking() {
       for (let index = 0; index < pickupCandidates.length; index += 1) {
         const candidate = pickupCandidates[index];
         try {
-          await pssApi("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-pickup-${index}` }, body: JSON.stringify({ ...pickupPayload, ...candidate }) });
+          pickupRequestInProgress = true;
+          const candidatePayload = { ...pickupPayload, requested_date: candidate.scheduled_date, requested_time_slot: candidate.window };
+          const pickupResult: { data?: { id?: string } } = createdPickupId
+            ? await pssApi<{ data?: { id?: string } }>(`/v1/pickups/${encodeURIComponent(createdPickupId)}`, { method: "PATCH", headers: { "Idempotency-Key": `${idempotencyKey}-pickup-retry-${index}` }, body: JSON.stringify({ retry: true, requested_date: candidate.scheduled_date, requested_time_slot: candidate.window }) })
+            : await pssApi<{ data?: { id?: string } }>("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": `${idempotencyKey}-pickup-${index}` }, body: JSON.stringify(candidatePayload) });
+          createdPickupId = pickupResult.data?.id ?? createdPickupId;
           chosenPickupDate = candidate.scheduled_date;
           chosenPickupWindow = candidate.window;
           pickupRescheduled = index > 0;
           lastPickupError = null;
           break;
         } catch (pickupError) {
+          if (pickupError instanceof PssApiError) {
+            const payload = pickupError.payload as { data?: { id?: unknown } } | null;
+            const failedPickupId = typeof payload?.data?.id === "string" ? payload.data.id : null;
+            if (failedPickupId) createdPickupId = failedPickupId;
+          }
           const pickupMessage = pickupError instanceof Error ? pickupError.message : "";
           const isStaleProviderSlot = /pickup.*past|pickup.*time.*past|provider_http_400.*pickup/i.test(pickupMessage);
           if (!isStaleProviderSlot) throw pickupError;
@@ -733,12 +810,13 @@ export default function ShipmentBooking() {
         ? `Booking saved. Pickup was aligned for ${chosenPickupDate} (${chosenPickupWindow}).`
         : result.data.provider_status === "accepted" ? "Booking saved and submitted for courier processing." : "Booking saved. Courier processing is pending.");
     } catch (error) {
-      // A failed attempt must not be reused after the user edits the shipment.
-      // The API intentionally rejects an idempotency key with a different
-      // payload; the next submission gets a fresh key while duplicate clicks
-      // during this attempt remain idempotent.
-      setSingleAttemptId("");
-      setBookingNotice(error instanceof Error ? error.message : "Unable to save booking.");
+      if (pickupRequestInProgress && createdShipmentId && createdPickupId && recoveryPickupPayload) {
+        setPendingPickupRecovery({ shipmentId: createdShipmentId, shipmentIdempotencyKey: idempotencyKey, pickupId: createdPickupId, pickupPayload: recoveryPickupPayload, pricingAmount: createdPricingAmount });
+        setBookingNotice(error instanceof Error ? `Shipment saved, but pickup was not accepted: ${error.message}. Retry pickup to continue; the shipment will not be duplicated.` : "Shipment saved, but pickup was not accepted. Retry pickup to continue; the shipment will not be duplicated.");
+      } else {
+        setSingleAttemptId("");
+        setBookingNotice(error instanceof Error ? error.message : "Unable to save booking.");
+      }
     } finally {
       setSingleSubmitting(false);
     }
@@ -828,20 +906,21 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
             const degraded = courier.health === "degraded";
             const checking = courier.health === "pending";
             const courierQuote = courierQuotes[courier.id];
-            return <button type="button" key={courier.id} onClick={() => { setSelectedCourier(courier.id); setSlotOpen(true); }} className={`group rounded-xl border bg-card p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md ${isSelected ? "border-primary ring-4 ring-primary/10" : "border-border"}`}><div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold ${courier.accent}`}>{courier.name.slice(0, 2).toUpperCase()}</span><span><span className="block text-sm font-semibold text-foreground">{courier.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{courier.service}</span>{courier.accountName && <span className="mt-1 block text-[11px] text-muted-foreground">Account: {courier.accountName}</span>}{degraded && <span className="mt-1 block text-[11px] font-semibold text-amber-700 dark:text-amber-300">Degraded{courier.lastError ? ` · ${courier.lastError}` : ""}</span>}{checking && <span className="mt-1 block text-[11px] font-semibold text-sky-700 dark:text-sky-300">Provider check in progress</span>}{courierQuoteErrors[courier.id] && <span className="mt-1 block text-[11px] font-semibold text-destructive">{courierQuoteErrors[courier.id]}</span>}</span></div><div className="text-right"><span className="block text-lg font-semibold tracking-tight text-foreground">{courierQuote ? `₹${courierQuote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : courierQuoteErrors[courier.id] ? "Rate unavailable" : "Calculating…"}</span>{courier.accountName && <span className="mt-1 block text-[11px] font-semibold text-emerald-600">Confidence {courier.confidence.toFixed(0)}%</span>}</div></div><div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3 text-xs"><span className="text-muted-foreground">Estimated delivery <span className="font-medium text-foreground">{courier.eta}</span></span><span className="font-semibold text-primary">{isSelected ? "Change slot" : "Select courier"} <ArrowRight className="ml-1 inline h-3.5 w-3.5" /></span></div>{isSelected && selectedSlot && <div className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-medium text-primary">Pickup slot: {selectedSlot}</div>}</button>;
+            return <button type="button" key={courier.id} onClick={() => { setSelectedCourier(courier.id); setSlotOpen(true); }} className={`group rounded-xl border bg-card p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md ${isSelected ? "border-primary ring-4 ring-primary/10" : "border-border"}`}><div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold ${courier.accent}`}>{courier.name.slice(0, 2).toUpperCase()}</span><span><span className="block text-sm font-semibold text-foreground">{courier.name}</span><span className="mt-0.5 block text-xs text-muted-foreground">{courier.service}</span>{courier.accountName && <span className="mt-1 block text-[11px] text-muted-foreground">Account: {courier.accountName}</span>}{degraded && <span className="mt-1 block text-[11px] font-semibold text-amber-700 dark:text-amber-300">Degraded{courier.lastError ? ` · ${courier.lastError}` : ""}</span>}{checking && <span className="mt-1 block text-[11px] font-semibold text-sky-700 dark:text-sky-300">Provider check in progress</span>}{courierQuoteErrors[courier.id] && <span className="mt-1 block text-[11px] font-semibold text-destructive">{courierQuoteErrors[courier.id]}</span>}</span></div><div className="text-right"><span className="block text-lg font-semibold tracking-tight text-foreground">{courierQuote ? `₹${courierQuote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : courierQuoteErrors[courier.id] ? "Rate unavailable" : "Calculating…"}</span>{courier.accountName && <span className="mt-1 block text-[11px] font-semibold text-emerald-600">Confidence {courier.confidence.toFixed(0)}%</span>}</div></div><div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3 text-xs"><span className="text-muted-foreground">Estimated delivery <span className="font-medium text-foreground">{courier.eta || "Awaiting provider estimate"}</span></span><span className="font-semibold text-primary">{isSelected ? "Change slot" : "Select courier"} <ArrowRight className="ml-1 inline h-3.5 w-3.5" /></span></div>{isSelected && selectedSlot && <div className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-medium text-primary">Pickup slot: {selectedSlot}</div>}</button>;
           })}
         </div>
         <div className="rounded-xl border border-border bg-card p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">Risk responsibility</p><p className="mt-1 text-xs text-muted-foreground">Owner Risk: higher of ₹50 or 0.1%. Carrier Risk: higher of ₹80 or 0.3% of invoice value.</p></div><div className="flex gap-2"><button type="button" onClick={() => setRiskType("owner")} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${riskType === "owner" ? "border-primary bg-primary/5 text-primary" : "border-input text-muted-foreground"}`}>Owner Risk · ₹50 min / 0.1%</button><button type="button" onClick={() => setRiskType("carrier")} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${riskType === "carrier" ? "border-primary bg-primary/5 text-primary" : "border-input text-muted-foreground"}`}>Carrier Risk · ₹80 min / 0.3%</button></div></div></div>
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">PSS wallet debit before confirmation</p><p className="mt-1 text-xs text-muted-foreground">This is the client-facing PSS amount. Courier cost is never displayed.</p></div>{reviewQuoteLoading ? <span className="text-xs font-semibold text-muted-foreground">Calculating…</span> : reviewQuote ? <span className="text-xl font-semibold">₹{reviewQuote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span> : <span className="text-xs font-semibold text-destructive">{reviewQuoteError || "Unavailable"}</span>}</div>{reviewQuote && <div className="mt-3 grid gap-2 border-t border-primary/10 pt-3 sm:grid-cols-2"><p className="text-xs text-muted-foreground">Chargeable weight <span className="font-semibold text-foreground">{reviewQuote.chargeableWeightKg} kg</span></p><p className="text-xs text-muted-foreground">Lane <span className="font-semibold text-foreground">{reviewQuote.lane}</span></p>{reviewQuote.lines.map((line) => <p key={line.code} className="text-xs text-muted-foreground">{line.label}{line.marker ?? ""} <span className="font-semibold text-foreground">₹{line.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></p>)}</div>}</div>
         {selectedCourier && selectedSlot && <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"><div className="space-y-1"><p className="text-xs text-muted-foreground">The pickup slot can be changed before final confirmation.</p>{bookingNotice && !singleCompleted && <p role="alert" className="text-xs font-medium text-destructive">{bookingNotice}</p>}</div><button type="button" onClick={() => void confirmSingle()} disabled={singleSubmitting || reviewQuoteLoading || !reviewQuote} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" /> {singleSubmitting ? "Saving booking…" : "Confirm production booking"}</button></div>}
 
-        {slotOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs" onClick={() => setSlotOpen(false)}><div className="w-full max-w-md rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between"><div><div className="mb-1 flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /><h2 className="text-base font-semibold">Choose a Delhivery pickup slot</h2></div><p className="text-xs text-muted-foreground">Choose the pickup date and window returned for this provider flow.</p></div><button type="button" aria-label="Close" onClick={() => setSlotOpen(false)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"><span className="text-lg leading-none">×</span></button></div>{pickupOptionsLoading ? <p className="mt-4 text-sm text-muted-foreground">Loading pickup availability…</p> : <div className="mt-4 grid gap-4">{pickupOptions.map((option) => <div key={option.date}><p className="mb-2 text-xs font-semibold text-muted-foreground">{option.date}</p><div className="grid gap-2">{option.slots.map((slot) => <button type="button" key={`${option.date}-${slot}`} onClick={() => { setSelectedPickupDate(option.date); setSelectedSlot(slot); setSlotOpen(false); }} className={`flex items-center justify-between rounded-lg border px-3 py-3 text-left text-sm transition hover:border-primary hover:bg-primary/5 ${selectedPickupDate === option.date && selectedSlot === slot ? "border-primary bg-primary/5 font-semibold text-primary" : "border-border"}`}><span>{slot}</span>{selectedPickupDate === option.date && selectedSlot === slot && <Check className="h-4 w-4" />}</button>)}</div></div>)}</div>}{!pickupOptionsLoading && !pickupOptions.length && <p className="mt-4 text-sm text-destructive">No pickup dates are available right now. Refresh and try again.</p>}<div className="mt-4 flex gap-2 rounded-lg bg-amber-500/10 p-3 text-xs leading-5 text-amber-700 dark:text-amber-300"><Info className="mt-0.5 h-4 w-4 shrink-0" /><span>Dates are policy-aware; Delhivery may still adjust them to the pickup location’s configured working days and capacity.</span></div></div></div>}
+        {slotOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs" onClick={() => setSlotOpen(false)}><div className="w-full max-w-md rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between"><div><div className="mb-1 flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /><h2 className="text-base font-semibold">Choose a Delhivery pickup slot</h2></div><p className="text-xs text-muted-foreground">{pickupOptions.length ? "Choose a date and window returned for this provider flow." : "No provider-confirmed pickup slot is available for this account and pickup location."}</p></div><button type="button" aria-label="Close" onClick={() => setSlotOpen(false)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"><span className="text-lg leading-none">×</span></button></div>{pickupOptionsLoading ? <p className="mt-4 text-sm text-muted-foreground">Loading pickup availability…</p> : pickupOptions.length ? <div className="mt-4 grid gap-4">{pickupOptions.map((option) => <div key={option.date}><p className="mb-2 text-xs font-semibold text-muted-foreground">{option.date}</p><div className="grid gap-2">{option.slots.map((slot) => <button type="button" key={`${option.date}-${slot}`} onClick={() => { setSelectedPickupDate(option.date); setSelectedSlot(slot); setSlotOpen(false); }} className={`flex items-center justify-between rounded-lg border px-3 py-3 text-left text-sm transition hover:border-primary hover:bg-primary/5 ${selectedPickupDate === option.date && selectedSlot === slot ? "border-primary bg-primary/5 font-semibold text-primary" : "border-border"}`}><span>{slot}</span>{selectedPickupDate === option.date && selectedSlot === slot && <Check className="h-4 w-4" />}</button>)}</div></div>)}</div> : null} {pickupOptions.length > 0 && <div className="mt-4 flex gap-2 rounded-lg bg-amber-500/10 p-3 text-xs leading-5 text-amber-700 dark:text-amber-300"><Info className="mt-0.5 h-4 w-4 shrink-0" /><span>Dates and windows are provider-supplied. The pickup is not considered Scheduled until Delhivery accepts it.</span></div>}</div></div>}
       </div>
     );
   }
 
   return (
     <div className="w-full space-y-4 pb-10">
+      {slotOpen && !pickupOptionsLoading && pickupOptions.length === 0 && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="provider-slot-unavailable-title"><div className="w-full max-w-md rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl"><h2 id="provider-slot-unavailable-title" className="text-base font-semibold">Delhivery pickup availability</h2><p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-5 text-amber-700 dark:text-amber-300">Delhivery has not returned a valid pickup date and time window for this account and pickup location. Manual dates are disabled so an unverified pickup cannot be submitted.</p><div className="mt-5 flex justify-end"><button type="button" onClick={() => setSlotOpen(false)} className="inline-flex h-9 items-center justify-center rounded-lg border border-input px-3 text-xs font-semibold hover:bg-accent">Close</button></div></div></div>}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1">{milestones.map((label, index) => { const step = index + 1; return <div key={label} className="flex min-w-max items-center gap-1"><span className={`grid h-6 w-6 place-items-center rounded-full text-[10px] font-bold ${step < milestoneStep ? "bg-emerald-500/10 text-emerald-600" : step === milestoneStep ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{step < milestoneStep ? <Check className="h-3 w-3" /> : step}</span><span className={`text-[11px] font-semibold ${step === milestoneStep ? "text-primary" : step < milestoneStep ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>{step < milestones.length && <span className={`mx-1 h-px w-5 ${step < milestoneStep ? "bg-emerald-500/50" : "bg-border"}`} />}</div>; })}</div>
         <div className="flex flex-wrap items-center justify-end gap-2 sm:ml-auto"><div className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4 text-emerald-500" /> Documentation is required</div><button type="button" onClick={() => setBulkOpen(true)} className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"><Upload className="h-3.5 w-3.5" /> Bulk upload</button></div>
