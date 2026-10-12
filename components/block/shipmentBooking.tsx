@@ -304,13 +304,6 @@ export default function ShipmentBooking() {
     pinAbortRef.current.delivery?.abort();
   }, []);
 
-  // Reconcile the dimension editor with the persisted piece count.
-  useEffect(() => {
-    const count = Math.max(1, Math.floor(Number(shipmentDetails.pieces) || 1));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setBoxDimensions((current) => Array.from({ length: count }, (_, index) => current[index] || { length: "", width: "", height: "" }));
-  }, [shipmentDetails.pieces]);
-
   useEffect(() => {
     let cancelled = false;
     void Promise.all([pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses"), pssApi<{ data: Array<Record<string, string>> }>("/v1/addresses")]).then(([warehouseResult, addressResult]) => { if (cancelled) return; const map = (row: Record<string, string>): SavedPickup => ({ id: row.id, name: row.name ?? row.label ?? "Saved address", address: { line: row.address ?? "", city: row.city ?? "", state: row.state ?? "", pincode: row.pincode ?? "", country: "India" }, contact: { name: row.contact_name ?? "", phone: row.phone ?? row.contact ?? "", email: "" } }); setSavedPickups(warehouseResult.data.map(map)); setSavedConsignees(addressResult.data.map(map)); }).catch((error) => { if (!cancelled) setNotice(error instanceof Error ? error.message : "Saved addresses could not be loaded from production."); });
