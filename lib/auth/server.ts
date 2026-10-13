@@ -17,6 +17,7 @@ export async function requireClientAccess() {
   if (membershipError) redirect('/auth-error?reason=membership');
   const activeMemberships = (memberships ?? []).filter((membership) => membership.membership_status === 'active');
   if (!activeMemberships.length) redirect('/access-pending?reason=client-assignment');
+  if (activeMemberships.length > 1) redirect('/access-pending?reason=multiple-client-assignments');
   const [{ data: role, error: roleLookupError }, { data: accounts, error: accountError }] = await Promise.all([
     supabase.from('roles').select('role_code,scope').eq('id', userRole.role_id).maybeSingle(),
     supabase.from('client_accounts').select('id,status').in('id', activeMemberships.map((membership) => membership.client_id)),

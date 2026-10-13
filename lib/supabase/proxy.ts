@@ -25,6 +25,7 @@ export async function updateSession(request: NextRequest) {
     if (membershipError) return NextResponse.redirect(new URL('/auth-error?reason=membership', request.url))
     const activeMemberships = (memberships ?? []).filter((membership) => membership.membership_status === 'active')
     if (!activeMemberships.length) return NextResponse.redirect(new URL('/access-pending?reason=client-assignment', request.url))
+    if (activeMemberships.length > 1) return NextResponse.redirect(new URL('/access-pending?reason=multiple-client-assignments', request.url))
     const [{ data: role, error: roleLookupError }, { data: accounts, error: accountError }] = await Promise.all([
       supabase.from('roles').select('role_code').eq('id', userRole.role_id).maybeSingle(),
       supabase.from('client_accounts').select('id,status').in('id', activeMemberships.map((membership) => membership.client_id)),
