@@ -13,6 +13,7 @@ const checks = [
   ["notifications distinguish outcomes", source.includes("NoticeTone") && source.includes('"pending"') && source.includes('"error"') && source.includes("role=\"status\"")],
   ["shipment retry does not duplicate a saved shipment", bookingSource.includes("pendingPickupRecovery") && bookingSource.includes("Retrying its pickup request without creating another shipment") && bookingSource.includes("pendingPickupRecovery.pickupId")],
   ["failed pickup fallback reuses the pickup record", bookingSource.includes("const pickupResult") && bookingSource.includes("createdPickupId") && bookingSource.includes("pickup-retry-")],
+  ["Delhivery stale end-time failures advance to another window", bookingSource.includes("end\\s*time\\s*cannot\\s*be\\s*in\\s*past") && bookingSource.includes("time.*window.*past")],
   ["invoice validation does not leave booking stuck", bookingSource.includes("setSingleSubmitting(false)") && bookingSource.includes("The invoice could not be read")],
 ];
 

@@ -831,7 +831,12 @@ export default function ShipmentBooking() {
             if (failedPickupId) createdPickupId = failedPickupId;
           }
           const pickupMessage = pickupError instanceof Error ? pickupError.message : "";
-          const isStaleProviderSlot = /pickup.*past|pickup.*time.*past|provider_http_400.*pickup/i.test(pickupMessage);
+          // Delhivery returns the precise message `End time cannot be in past`
+          // when the user leaves the review page open until the selected window
+          // expires. Treat all known stale-window variants as retryable so the
+          // already-created pickup record advances to the next provider window
+          // instead of surfacing a terminal booking failure.
+          const isStaleProviderSlot = /end\s*time\s*cannot\s*be\s*in\s*past|pickup.*past|pickup.*time.*past|time.*window.*past|provider_http_400.*pickup/i.test(pickupMessage);
           if (!isStaleProviderSlot) throw pickupError;
           lastPickupError = pickupError;
         }
