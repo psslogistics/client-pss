@@ -26,7 +26,7 @@ const parseBoxAwbs = (value: unknown): string[] => {
   }
 };
 const shipmentReferences = (row: Record<string, unknown>) => {
-  const lr = textValue(row.lr_number);
+  const lr = textValue(row.lr_number || row.pss_reference);
   const masterAwb = textValue(row.master_awb);
   const pur = textValue(row.pickup_reference);
   const legacy = textValue(row.tracking_number || row.provider_reference);

@@ -64,7 +64,7 @@ function mapApiShipment(row: Record<string, unknown>, trackingEvents: Array<Reco
   const publicId = String(row.pss_reference || id);
   const date = String(row.created_at || new Date().toISOString()).slice(0, 10);
   const events: Event[] = trackingEvents.length ? trackingEvents.map((event) => { const normalizedEvent = normalizeStatus(event.status); return { title: normalizedEvent, description: String(event.description || "Tracking event received from production API"), location: String(event.location || "Not provided"), date: String(event.event_time || date).slice(0, 10), time: String(event.event_time || "").slice(11, 16) || "Not provided", status: normalizedEvent }; }) : [{ title: "Shipment booked", description: "Shipment persisted in the production operations API", location: String(row.origin || "Not provided"), date, time: "Not provided", status: "Booked" }];
-  const lrn = String(row.lr_number ?? "").trim();
+  const lrn = String(row.lr_number ?? row.pss_reference ?? "").trim();
   const masterAwb = String(row.master_awb ?? row.provider_awb ?? "").trim();
   const pur = String(row.pickup_reference ?? "").trim();
   const legacyProviderReference = String(row.tracking_number ?? row.provider_reference ?? "").trim();
