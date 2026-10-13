@@ -36,10 +36,14 @@ export default function PssRateCheck() {
     const currentRequestId = ++requestId.current;
     const requestedAccounts = selectedAccountId === "all" ? accounts : accounts.filter((account) => account.id === selectedAccountId);
     if (!requestedAccounts.length) { setError("No assigned Delhivery B2B account is available for this client."); return; }
+    const weight = Number(form.weight_kg);
+    const invoiceValue = Number(form.invoice_value);
+    if (!form.weight_kg.trim() || !Number.isFinite(weight) || weight <= 0) { setError("Enter a weight greater than 0 kg before calculating."); return; }
+    if (!form.invoice_value.trim() || !Number.isFinite(invoiceValue) || invoiceValue < 0) { setError("Enter a valid invoice value of ₹0 or more before calculating."); return; }
     setLoading(true); setError(""); setQuotes([]);
     try {
       const results = await Promise.allSettled(requestedAccounts.map(async (account) => {
-        const response = await pssApi<{ data: Quote }>("/v1/pricing/quotes", { method: "POST", body: JSON.stringify({ origin_pincode: form.origin_pincode, destination_pincode: form.destination_pincode, actual_weight_kg: Number(form.weight_kg), volumetric_weight_kg: 0, invoice_value: Number(form.invoice_value || 0), provider_account_id: account.id, preview_only: true }) });
+        const response = await pssApi<{ data: Quote }>("/v1/pricing/quotes", { method: "POST", body: JSON.stringify({ origin_pincode: form.origin_pincode, destination_pincode: form.destination_pincode, actual_weight_kg: weight, volumetric_weight_kg: 0, invoice_value: invoiceValue, provider_account_id: account.id, preview_only: true }) });
         return { ...response.data, provider_account_id: account.id, provider_account_name: account.account_name };
       }));
       if (currentRequestId !== requestId.current) return;
