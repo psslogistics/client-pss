@@ -291,9 +291,14 @@ export default function ShipmentBooking() {
       const result = await pssApi<{ data: { dates?: PickupOption[]; note?: string } }>(`/v1/pickup-slots?${query.toString()}`);
       const dates = result.data?.dates ?? [];
       setPickupOptions(dates);
-      if (dates.length && (!selectedPickupDate || !dates.some((option) => option.date === selectedPickupDate))) setSelectedPickupDate(dates[0]?.date ?? null);
-      if (!dates.length && !selectedPickupDate) setSelectedPickupDate(indiaDate());
-      if (!selectedSlot && dates[0]?.slots[0]) setSelectedSlot(dates[0].slots[0]);
+      setSelectedPickupDate((current) => {
+        if (current && dates.some((option) => option.date === current)) return current;
+        return dates[0]?.date ?? current ?? indiaDate();
+      });
+      setSelectedSlot((current) => {
+        const availableSlots = dates.flatMap((option) => option.slots);
+        return current && availableSlots.includes(current) ? current : dates[0]?.slots[0] ?? null;
+      });
     } catch (error) {
       const details = getPssErrorDetails(error, "Pickup availability could not be loaded.");
       setPickupOptionsError(details.message);
@@ -302,7 +307,7 @@ export default function ShipmentBooking() {
     } finally {
       setPickupOptionsLoading(false);
     }
-  }, [couriers, pickup.pincode, selectedCourier, selectedPickupDate, selectedSlot, selectedSavedPickupId]);
+  }, [couriers, pickup.pincode, selectedCourier, selectedSavedPickupId]);
 
   useEffect(() => {
     // The modal opening is the external trigger for refreshing provider options.
