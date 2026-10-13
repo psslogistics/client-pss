@@ -81,16 +81,16 @@ export default function Dashboard() {
   const [productionTechnicalError, setProductionTechnicalError] = useState("");
   const [productionRequestId, setProductionRequestId] = useState("");
   const [productionLoading, setProductionLoading] = useState(true);
-  const [production, setProduction] = useState<{ shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>> }>({ shipments: [], pickups: [], billing: [], wallet: [], exceptions: [], ndr: [] });
+  const [production, setProduction] = useState<{ shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; shipmentStats: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } }>({ shipments: [], pickups: [], billing: [], wallet: [], exceptions: [], ndr: [], shipmentStats: { total: 0, delayed: 0, statuses: {}, providers: {} } });
 
   const loadProduction = (signal?: AbortSignal, forceRefresh = false) => {
-    return pssApi<{ stale_data?: boolean; data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>> } }>("/v1/dashboard/summary?collections=shipments,pickups,billing,wallet,exceptions,ndr,activity", { signal, ...(forceRefresh ? { cache: "no-store" as RequestCache } : {}) }).then((response) => {
+    return pssApi<{ stale_data?: boolean; data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>>; shipment_stats?: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } } }>("/v1/dashboard/summary?collections=shipments,pickups,billing,wallet,exceptions,ndr,activity", { signal, ...(forceRefresh ? { cache: "no-store" as RequestCache } : {}) }).then((response) => {
       const { data } = response;
       if (signal?.aborted) return;
       setProductionError(response.stale_data ? "Live dashboard refresh is unavailable. Showing the last successful dashboard data." : "");
       setProductionTechnicalError("");
       setProductionRequestId("");
-      setProduction({ shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, exceptions: data.exceptions, ndr: data.ndr });
+      setProduction({ shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, exceptions: data.exceptions, ndr: data.ndr, shipmentStats: data.shipment_stats ?? { total: data.shipments.length, delayed: 0, statuses: {}, providers: {} } });
       setActivities(data.activity.slice(0, 12).map((row) => ({ id: String(row.id), title: String(row.action ?? "Activity"), description: `${String(row.entity_type ?? "Record")}${row.entity_id ? ` · ${String(row.entity_id)}` : ""}`, timeAgo: relativeTime(String(row.created_at ?? "")), iconType: activityIconType(String(row.action ?? "")), iconName: activityIconName(String(row.action ?? "")) })));
       setAlerts([...data.exceptions, ...data.ndr].filter((row) => !["resolved", "closed", "delivered", "cancelled"].includes(String(row.status ?? "").toLowerCase())).slice(0, 8).map((row) => ({ id: String(row.id), title: String(row.title ?? row.reason ?? "Operational exception"), description: String(row.details ?? row.notes ?? "Requires operational review"), timeAgo: relativeTime(String(row.created_at ?? "")), refId: String(row.shipment_id ?? row.id), type: "warning", dotColor: "bg-amber-500" })));
     }).catch((error) => {
@@ -189,13 +189,13 @@ export default function Dashboard() {
   };
 
   const productionReady = !productionError && !productionLoading;
-  const hasLastKnownProduction = Object.values(production).some((collection) => collection.length > 0);
+  const hasLastKnownProduction = [production.shipments, production.pickups, production.billing, production.wallet, production.exceptions, production.ndr].some((collection) => collection.length > 0);
   const metricValue = (value: number) => productionReady || hasLastKnownProduction ? String(value) : "—";
   const metricState = productionReady ? "Live" : hasLastKnownProduction ? "Stale" : "Unavailable";
   const liveKpiMetrics: KpiMetric[] = [
-    { id: "shipments", title: "Total shipments", value: metricValue(production.shipments.length), change: metricState, isPositive: true, sparklinePoints: "0,20 15,18 30,22 45,14 60,16 75,8", category: "Operations", description: "Production shipment records" },
-    { id: "active", title: "Active shipments", value: metricValue(production.shipments.filter((shipment) => !["delivered", "cancelled", "Delivered", "Cancelled"].includes(String(shipment.status ?? ""))).length), change: metricState, isPositive: true, sparklinePoints: "0,22 15,20 30,18 45,20 60,12 75,10", category: "Operations", description: "Shipments not delivered or cancelled" },
-    { id: "delayed", title: "Delayed shipments", value: metricValue(production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; return Number.isFinite(edd) && edd < now && !["delivered", "Delivered"].includes(String(shipment.status ?? "")); }).length), change: metricState, isPositive: false, sparklinePoints: "0,10 15,12 30,9 45,16 60,14 75,20", category: "Exceptions", description: "Based on EDD and delivery status" },
+    { id: "shipments", title: "Total shipments", value: metricValue(production.shipmentStats.total), change: metricState, isPositive: true, sparklinePoints: "0,20 15,18 30,22 45,14 60,16 75,8", category: "Operations", description: "All production shipment records" },
+    { id: "active", title: "Active shipments", value: metricValue(Object.entries(production.shipmentStats.statuses).reduce((total, [status, count]) => total + (["delivered", "cancelled"].includes(status.toLowerCase()) ? 0 : count), 0)), change: metricState, isPositive: true, sparklinePoints: "0,22 15,20 30,18 45,20 60,12 75,10", category: "Operations", description: "All shipments not delivered or cancelled" },
+    { id: "delayed", title: "Delayed shipments", value: metricValue(production.shipmentStats.delayed), change: metricState, isPositive: false, sparklinePoints: "0,10 15,12 30,9 45,16 60,14 75,20", category: "Exceptions", description: "All shipments past their expected delivery date" },
     { id: "exceptions", title: "Open exceptions", value: metricValue(production.exceptions.length + production.ndr.length), change: metricState, isPositive: false, sparklinePoints: "0,20 15,17 30,18 45,12 60,14 75,10", category: "Exceptions", description: "NDR and exception records" },
     { id: "pickups", title: "Open pickups", value: metricValue(production.pickups.filter((pickup) => !["completed", "cancelled", "Completed", "Cancelled"].includes(String(pickup.status ?? ""))).length), change: metricState, isPositive: true, sparklinePoints: "0,22 15,18 30,20 45,15 60,13 75,8", category: "Operations", description: "Open production pickup requests" },
     { id: "billing", title: "Pending billing", value: metricValue(production.billing.filter((item) => String(item.status ?? "").toLowerCase() === "pending").length), change: metricState, isPositive: false, sparklinePoints: "0,18 15,18 30,16 45,13 60,15 75,11", category: "Finance", description: "Pending production billing records" },
@@ -225,14 +225,14 @@ export default function Dashboard() {
     }
   };
 
-  const statusCounts = new Map<string, number>(); production.shipments.forEach((shipment) => { const status = String(shipment.status ?? "Booked"); statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1); });
-  const totalShipments = production.shipments.length;
-  const activeShipments = production.shipments.filter((shipment) => ["booked", "picked_up", "in_transit", "out_for_delivery", "Booked", "Picked Up", "In Transit", "Out for Delivery"].includes(String(shipment.status ?? ""))).length;
+  const statusCounts = new Map<string, number>(Object.entries(production.shipmentStats.statuses));
+  const totalShipments = production.shipmentStats.total;
+  const activeShipments = Object.entries(production.shipmentStats.statuses).reduce((total, [status, count]) => total + (["delivered", "cancelled"].includes(status.toLowerCase()) ? 0 : count), 0);
   const delayedRows = production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; const delivered = shipment.delivered_at ? Date.parse(String(shipment.delivered_at)) : NaN; return Number.isFinite(edd) && ((Number.isFinite(delivered) && delivered > edd) || (!Number.isFinite(delivered) && edd < now)); }).map((shipment) => ({ id: String(shipment.id), trackingId: String(shipment.tracking_number ?? shipment.id), origin: String(shipment.origin ?? "Origin pending"), destination: String(shipment.destination ?? "Destination pending"), carrier: publicCourierName(shipment.provider, shipment.account_name), mode: publicCourierName(shipment.provider, shipment.account_name), date: String(shipment.edd ?? "—") }));
-  const delayedShipments = delayedRows.length;
+  const delayedShipments = production.shipmentStats.delayed;
   const exceptionShipments = production.exceptions.length + production.ndr.length;
   const shipmentStatusData = [...statusCounts.entries()].map(([status, count]) => ({ status, count, percentage: totalShipments ? Math.round((count / totalShipments) * 100) : 0, badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary", barClass: "bg-primary" }));
-  const transportCounts = new Map<string, number>(); production.shipments.forEach((shipment) => { const mode = publicCourierName(shipment.provider, shipment.account_name); transportCounts.set(mode, (transportCounts.get(mode) ?? 0) + 1); });
+  const transportCounts = new Map<string, number>(Object.entries(production.shipmentStats.providers).map(([provider, count]) => [publicCourierName(provider, ""), count]));
   const transportModes = [...transportCounts.entries()].map(([name, shipments]) => ({ name, shipments, percentage: totalShipments ? Math.round((shipments / totalShipments) * 100) : 0, color: "var(--primary)" }));
   const financialSnapshot: ClientFinancialSnapshot = { balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null, pendingCharges: production.billing.filter((item) => String(item.status).toLowerCase() === "pending").reduce((sum, item) => sum + Number(item.amount ?? 0), 0) || null, codExposure: null, recentTransactions: [] };
   const todayIso = new Date().toISOString().slice(0, 10);
