@@ -80,7 +80,7 @@ function mapApiShipment(row: Record<string, unknown>, trackingEvents: Array<Reco
   const boxAwbs = parseBoxAwbs(row.box_awbs_json);
   const providerBookingId = String(row.provider_booking_id ?? "").trim() || undefined;
   const providerPickupId = String(row.provider_pickup_id ?? "").trim() || undefined;
-  const providerSyncStatus = String(row.provider_sync_status ?? "").trim() || undefined;
+  const providerSyncStatus = String(row.provider_sync_status ?? "").trim() || (safeStatus === "Exception" && !lrn && !pur && !providerAwb ? "failed" : undefined);
   const providerFailureReason = String(row.provider_failure_reason ?? "").trim() || undefined;
   const podDocumentId = String(row.pod_document_id || "").trim() || undefined;
   const podFilename = String(row.pod_filename || "").trim() || undefined;
