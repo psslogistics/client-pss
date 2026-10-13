@@ -61,6 +61,7 @@ export default function AllShipments() {
   const [loading, setLoading] = useState(true);
   const [staleData, setStaleData] = useState(false);
   const [offset, setOffset] = useState(0); const [hasMore, setHasMore] = useState(false); const [loadingMore, setLoadingMore] = useState(false);
+  const [serverTotal, setServerTotal] = useState<number | null>(null); const [serverStatusCounts, setServerStatusCounts] = useState<Record<string, number>>({});
   const hadRowsRef = useRef(false);
   // This effect owns the remote shipment fetch and its loading lifecycle.
   useEffect(() => {
@@ -69,11 +70,11 @@ export default function AllShipments() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setLoadError("");
-    void pssApi<{ data: Array<Record<string, unknown>>; stale_data?: boolean; pagination?: { next_offset?: number; has_more?: boolean } }>("/v1/shipments?limit=50&offset=0")
+    void pssApi<{ data: Array<Record<string, unknown>>; stale_data?: boolean; pagination?: { next_offset?: number; has_more?: boolean; total?: number; status_counts?: Record<string, number> } }>("/v1/shipments?limit=50&offset=0")
       .then((result) => {
         if (cancelled) return;
         hadRowsRef.current = (result.data ?? []).length > 0;
-        setRows((result.data ?? []).map(mapShipmentRow)); setOffset(Number(result.pagination?.next_offset ?? (result.data ?? []).length)); setHasMore(Boolean(result.pagination?.has_more));
+        setRows((result.data ?? []).map(mapShipmentRow)); setOffset(Number(result.pagination?.next_offset ?? (result.data ?? []).length)); setHasMore(Boolean(result.pagination?.has_more)); setServerTotal(typeof result.pagination?.total === "number" ? result.pagination.total : null); setServerStatusCounts(result.pagination?.status_counts ?? {});
         setStaleData(result.stale_data === true);
         setNotice(result.stale_data ? "Showing the last successful shipment list. Refresh when production data is available." : "");
       })
@@ -88,7 +89,8 @@ export default function AllShipments() {
     return () => { cancelled = true; };
   }, [reloadKey]);
   const loadMore = async () => { if (loadingMore || !hasMore) return; setLoadingMore(true); try { const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${offset}`); const nextRows = (result.data ?? []).map(mapShipmentRow); setRows((current) => [...current, ...nextRows.filter((next) => !current.some((existing) => existing.id === next.id))]); setOffset(Number(result.pagination?.next_offset ?? offset + nextRows.length)); setHasMore(Boolean(result.pagination?.has_more)); } catch (error) { setNotice(getPssErrorDetails(error, "More shipments could not be loaded.").message); } finally { setLoadingMore(false); } };
-  const counts = statuses.reduce<Record<ShipmentStatus, number>>((result, item) => { result[item] = item === "All" ? rows.length : item === "Active" ? rows.filter((row) => activeStatuses.has(row.status)).length : rows.filter((row) => row.status === item).length; return result; }, {} as Record<ShipmentStatus, number>);
+  const statusCount = (statusName: ShipmentStatus) => { if (!Object.keys(serverStatusCounts).length) return statusName === "All" ? rows.length : statusName === "Active" ? rows.filter((row) => activeStatuses.has(row.status)).length : rows.filter((row) => row.status === statusName).length; const key = statusName.toLowerCase().replaceAll(" ", "_"); if (statusName === "All") return serverTotal ?? rows.length; if (statusName === "Active") return ["booked", "picked_up", "in_transit", "out_for_delivery", "delayed", "exception"].reduce((sum, keyName) => sum + Number(serverStatusCounts[keyName] ?? 0), 0); if (statusName === "Returned") return Number(serverStatusCounts.rto ?? 0) + Number(serverStatusCounts.returned ?? 0); return Number(serverStatusCounts[key] ?? 0); };
+  const counts = statuses.reduce<Record<ShipmentStatus, number>>((result, item) => { result[item] = statusCount(item); return result; }, {} as Record<ShipmentStatus, number>);
   const filtered = rows.filter((row) => (!query.trim() || searchable(row).includes(query.trim().toLowerCase())) && (status === "All" || status === "Active" ? status === "All" || activeStatuses.has(row.status) : row.status === status));
 
   return <div className="flex h-[calc(100dvh-6.5rem)] min-h-0 w-full flex-col gap-3 overflow-hidden">
