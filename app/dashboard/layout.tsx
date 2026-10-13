@@ -146,6 +146,15 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const handleAuthExpired = () => {
+      router.replace("/sign-in?reason=session-expired");
+      router.refresh();
+    };
+    window.addEventListener("pss-auth-expired", handleAuthExpired);
+    return () => window.removeEventListener("pss-auth-expired", handleAuthExpired);
+  }, [router]);
+
+  useEffect(() => {
     const initialTimer = window.setTimeout(() => { void loadShipmentSearchResults(); }, 700);
     return () => window.clearTimeout(initialTimer);
   }, [loadShipmentSearchResults]);
