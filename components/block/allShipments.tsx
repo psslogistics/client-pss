@@ -70,7 +70,8 @@ export default function AllShipments() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setLoadError("");
-    void pssApi<{ data: Array<Record<string, unknown>>; stale_data?: boolean; pagination?: { next_offset?: number; has_more?: boolean; total?: number; status_counts?: Record<string, number> } }>("/v1/shipments?limit=50&offset=0")
+    const statusQuery = status === "All" ? "" : `&status=${encodeURIComponent(status)}`;
+    void pssApi<{ data: Array<Record<string, unknown>>; stale_data?: boolean; pagination?: { next_offset?: number; has_more?: boolean; total?: number; status_counts?: Record<string, number> } }>(`/v1/shipments?limit=50&offset=0${statusQuery}`)
       .then((result) => {
         if (cancelled) return;
         hadRowsRef.current = (result.data ?? []).length > 0;
@@ -87,8 +88,8 @@ export default function AllShipments() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [reloadKey]);
-  const loadMore = async () => { if (loadingMore || !hasMore) return; setLoadingMore(true); try { const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${offset}`); const nextRows = (result.data ?? []).map(mapShipmentRow); setRows((current) => [...current, ...nextRows.filter((next) => !current.some((existing) => existing.id === next.id))]); setOffset(Number(result.pagination?.next_offset ?? offset + nextRows.length)); setHasMore(Boolean(result.pagination?.has_more)); } catch (error) { setNotice(getPssErrorDetails(error, "More shipments could not be loaded.").message); } finally { setLoadingMore(false); } };
+  }, [reloadKey, status]);
+  const loadMore = async () => { if (loadingMore || !hasMore) return; setLoadingMore(true); try { const statusQuery = status === "All" ? "" : `&status=${encodeURIComponent(status)}`; const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${offset}${statusQuery}`); const nextRows = (result.data ?? []).map(mapShipmentRow); setRows((current) => [...current, ...nextRows.filter((next) => !current.some((existing) => existing.id === next.id))]); setOffset(Number(result.pagination?.next_offset ?? offset + nextRows.length)); setHasMore(Boolean(result.pagination?.has_more)); } catch (error) { setNotice(getPssErrorDetails(error, "More shipments could not be loaded.").message); } finally { setLoadingMore(false); } };
   const statusCount = (statusName: ShipmentStatus) => { if (!Object.keys(serverStatusCounts).length) return statusName === "All" ? rows.length : statusName === "Active" ? rows.filter((row) => activeStatuses.has(row.status)).length : rows.filter((row) => row.status === statusName).length; const key = statusName.toLowerCase().replaceAll(" ", "_"); if (statusName === "All") return serverTotal ?? rows.length; if (statusName === "Active") return ["booked", "picked_up", "in_transit", "out_for_delivery", "delayed", "exception"].reduce((sum, keyName) => sum + Number(serverStatusCounts[keyName] ?? 0), 0); if (statusName === "Returned") return Number(serverStatusCounts.rto ?? 0) + Number(serverStatusCounts.returned ?? 0); return Number(serverStatusCounts[key] ?? 0); };
   const counts = statuses.reduce<Record<ShipmentStatus, number>>((result, item) => { result[item] = statusCount(item); return result; }, {} as Record<ShipmentStatus, number>);
   const filtered = rows.filter((row) => (!query.trim() || searchable(row).includes(query.trim().toLowerCase())) && (status === "All" || status === "Active" ? status === "All" || activeStatuses.has(row.status) : row.status === status));
