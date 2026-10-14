@@ -14,7 +14,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:pickup": "node tools/pickup-contract-acceptance.mjs"
+    "test:pickup": "node tools/pickup-contract-acceptance.mjs",
+    "test:warehouse": "node tools/exact-warehouse-client-contract.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
