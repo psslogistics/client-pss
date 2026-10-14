@@ -283,6 +283,58 @@ th { white-space: nowrap; }
 tbody tr:last-child td { border-bottom: 0; }
 .overflow-x-auto, .overflow-auto { scrollbar-gutter: stable; }
 
+/* Client tracking detail surface: preserve the Delhivery information hierarchy while
+   keeping the pane on the shared PSS token system. */
+.tracking-pane .bg-white,
+.tracking-pane .bg-white\/95 { background-color: var(--card) !important; }
+.tracking-pane .bg-\[\#f7f8fa\] { background-color: var(--background) !important; }
+.tracking-pane .bg-slate-50 { background-color: color-mix(in oklch, var(--muted) 72%, var(--card)) !important; }
+.tracking-pane .bg-slate-950 { background-color: var(--primary) !important; }
+.tracking-pane .bg-slate-950\/45 { background-color: color-mix(in oklch, var(--foreground) 45%, transparent) !important; }
+.tracking-pane .bg-slate-200 { background-color: var(--muted) !important; }
+.tracking-pane .bg-slate-300 { background-color: var(--border) !important; }
+.tracking-pane .bg-rose-50,
+.tracking-pane .bg-purple-50,
+.tracking-pane .bg-blue-50 { background-color: color-mix(in oklch, var(--primary) 10%, transparent) !important; }
+.tracking-pane .bg-emerald-50,
+.tracking-pane .bg-emerald-50\/70 { background-color: color-mix(in oklch, var(--chart-2) 12%, transparent) !important; }
+.tracking-pane .bg-amber-50 { background-color: color-mix(in oklch, var(--chart-3) 15%, transparent) !important; }
+.tracking-pane .border-slate-100,
+.tracking-pane .border-slate-200,
+.tracking-pane .border-slate-300,
+.tracking-pane .border-slate-900 { border-color: var(--border) !important; }
+.tracking-pane .border-blue-100,
+.tracking-pane .border-blue-200,
+.tracking-pane .border-purple-200,
+.tracking-pane .border-emerald-200,
+.tracking-pane .border-amber-200 { border-color: color-mix(in oklch, var(--primary) 28%, var(--border)) !important; }
+.tracking-pane .border-emerald-500,
+.tracking-pane .bg-emerald-500 { border-color: var(--primary) !important; background-color: var(--primary) !important; }
+.tracking-pane .text-slate-900,
+.tracking-pane .text-slate-800,
+.tracking-pane .text-slate-700 { color: var(--foreground) !important; }
+.tracking-pane .text-slate-600,
+.tracking-pane .text-slate-500,
+.tracking-pane .text-slate-400 { color: var(--muted-foreground) !important; }
+.tracking-pane .text-slate-300 { color: var(--border) !important; }
+.tracking-pane .text-white { color: var(--primary-foreground) !important; }
+.tracking-pane .text-rose-600,
+.tracking-pane .text-purple-700,
+.tracking-pane .text-blue-600,
+.tracking-pane .text-blue-700,
+.tracking-pane .text-emerald-600,
+.tracking-pane .text-emerald-700 { color: var(--primary) !important; }
+.tracking-pane .text-amber-700,
+.tracking-pane .text-amber-800 { color: color-mix(in oklch, var(--foreground) 76%, var(--chart-3)) !important; }
+.tracking-pane .hover\:bg-slate-50:hover,
+.tracking-pane .hover\:bg-slate-100:hover,
+.tracking-pane .hover\:bg-slate-800:hover { background-color: var(--muted) !important; }
+.tracking-pane button { border-radius: var(--radius-md); }
+.tracking-pane button.bg-slate-950,
+.tracking-pane button.bg-primary { box-shadow: var(--shadow-xs); }
+.tracking-pane input,
+.tracking-pane select { background-color: var(--background); border-color: var(--input); color: var(--foreground); }
+
 /* The source logo has a white matte; do not invert the matte into a blank block on the dark auth panel. */
 section.relative img[alt="PSS Logistics"] { filter: invert(1) !important; mix-blend-mode: screen; }
 
