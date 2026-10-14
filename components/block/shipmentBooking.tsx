@@ -82,7 +82,7 @@ type InvoiceUpload = { file: File; body_base64: string };
 const emptyAddress: Address = { line: "", city: "", state: "", pincode: "", country: "India" };
 const emptyContact: Contact = { name: "", phone: "", email: "" };
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
-const fileAsBase64 = async (file: File) => { const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary); };
+const fileAsBase64 = async (file: File) => await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => { const result = typeof reader.result === "string" ? reader.result : ""; const separator = result.indexOf(","); if (separator < 0) reject(new Error("The uploaded file could not be read.")); else resolve(result.slice(separator + 1)); }; reader.onerror = () => reject(reader.error ?? new Error("The uploaded file could not be read.")); reader.readAsDataURL(file); });
 const invoiceFileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
 const allCouriers = [
   { id: "delhivery", provider: "delhivery", name: "DELHIVERY", service: "PSS rate card applied at booking", eta: "", rate: "PSS pricing", confidence: 0, accountName: "", accountCode: "other", accountId: "", health: "unknown", lastError: "", accent: "bg-violet-500/10 text-violet-600" },
