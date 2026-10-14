@@ -664,7 +664,7 @@ export default function ShipmentBooking() {
       return;
     }
     setSingleSubmitting(true);
-    const idempotencyKey = singleAttemptId || crypto.randomUUID();
+    const idempotencyKey = singleAttemptId || `shipment-${courier.accountId || courier.id}-${selectedSavedPickupId || "warehouse"}-${crypto.randomUUID()}`;
     setSingleAttemptId(idempotencyKey);
     if (pendingPickupRecovery) {
       try {
