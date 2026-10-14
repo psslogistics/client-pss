@@ -5,4 +5,6 @@ const occurrences = (source.match(/warehouse_id: selectedSavedPickupId \|\| unde
 if (occurrences < 2) throw new Error("Client booking and pickup payloads must both carry the selected warehouse ID");
 if (!source.includes("shipment-${courier.accountId || courier.id}-${selectedSavedPickupId || \"warehouse\"}")) throw new Error("Client shipment idempotency keys must include the selected account and warehouse");
 if (!source.includes('"/v1/warehouses"') || !source.includes("provider_account_id: courier?.accountId || undefined")) throw new Error("Saved warehouses must preserve the selected Delhivery account when one is selected");
+if (!source.includes("contact_name: pickupPerson.name")) throw new Error("Saved warehouses must preserve the consignor name");
+if (!source.includes('row.contact_name ?? (row.name ? row.name.split(" · ")[0] : "")')) throw new Error("Saved warehouses must restore the consignor name after reload");
 console.log("Client exact warehouse contract passed");
