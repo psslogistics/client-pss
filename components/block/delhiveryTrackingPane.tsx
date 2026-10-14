@@ -65,6 +65,25 @@ const parseBoxAwbs = (value: unknown) => {
   try { const parsed = JSON.parse(value) as unknown; return Array.isArray(parsed) ? parsed.map(String).map((item) => item.trim()).filter(Boolean) : []; } catch { return []; }
 };
 
+const formatDimensions = (value: unknown) => {
+  let parsed = value;
+  if (typeof value === "string" && value.trim()) {
+    try { parsed = JSON.parse(value) as unknown; } catch { return value; }
+  }
+  if (!Array.isArray(parsed)) return "Not provided";
+  const groups = parsed.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const group = item as Record<string, unknown>;
+    const length = Number(group.length);
+    const width = Number(group.width ?? group.breadth);
+    const height = Number(group.height);
+    const quantity = Number(group.quantity ?? group.boxCount ?? group.box_count ?? 1);
+    if (![length, width, height, quantity].every((number) => Number.isFinite(number) && number > 0)) return [];
+    return [`${length} × ${width} × ${height} cm${quantity > 1 ? ` · ${quantity} boxes` : ""}`];
+  });
+  return groups.join(" · ") || "Not provided";
+};
+
 const formatDate = (value: string) => {
   if (!value || value === "Not provided") return "Not provided";
   const date = new Date(value);
@@ -112,7 +131,7 @@ function mapShipment(row: Record<string, unknown>): Shipment {
     createdAt,
     updatedAt: String(row.updated_at ?? createdAt),
     edd: String(row.edd ?? "Awaiting provider estimate"),
-    dimensions: String(row.dimensions ?? "Not provided"),
+    dimensions: formatDimensions(row.dimensions_json ?? row.dimensions),
     productDescription: String(row.description ?? row.product_description ?? "Not provided"),
     paymentMode: String(row.payment_mode ?? "Not provided"),
     invoiceValue: String(row.declared_value ?? "Not provided"),
