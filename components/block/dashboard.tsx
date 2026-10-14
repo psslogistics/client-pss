@@ -29,6 +29,7 @@ import {
 } from "./dashboard-data";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { publicCourierName } from "@/lib/client-pricing-data";
+import { formatStatusLabel } from "@/lib/display";
 import type { ClientFinancialSnapshot } from "@/lib/client-dashboard-data";
 const ClientDashboardOperations = dynamic(() => import("./client-dashboard-operations"), {
   ssr: false,
@@ -396,11 +397,11 @@ export default function Dashboard() {
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                     <PieChart className="mb-1 size-5 text-primary" />
                     <span className="text-2xl font-bold tabular-nums text-foreground">{selectedStatus ? shipmentStatusData.find((item) => item.status === selectedStatus)?.count : total}</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{selectedStatus || "Total shipments"}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{selectedStatus ? formatStatusLabel(selectedStatus) : "Total shipments"}</span>
                   </div>
                 </div>
                 <div className="w-full max-w-xs space-y-2">
-                  {shipmentStatusData.map((item) => <button type="button" key={item.status} onClick={() => setSelectedStatus(selectedStatus === item.status ? null : item.status)} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors ${selectedStatus === item.status ? "bg-primary/10" : "hover:bg-muted/60"}`}><span className="flex items-center gap-2 font-semibold text-foreground"><span className="size-2.5 rounded-full bg-primary" />{item.status}</span><span className="tabular-nums text-muted-foreground">{item.count} <span className="ml-1 text-[10px]">({item.percentage}%)</span></span></button>)}
+                  {shipmentStatusData.map((item) => <button type="button" key={item.status} onClick={() => setSelectedStatus(selectedStatus === item.status ? null : item.status)} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors ${selectedStatus === item.status ? "bg-primary/10" : "hover:bg-muted/60"}`}><span className="flex items-center gap-2 font-semibold text-foreground"><span className="size-2.5 rounded-full bg-primary" />{formatStatusLabel(item.status)}</span><span className="tabular-nums text-muted-foreground">{item.count} <span className="ml-1 text-[10px]">({item.percentage}%)</span></span></button>)}
                 </div>
               </>;
             })() : <div className="py-16 text-center"><PieChart className="mx-auto size-9 text-muted-foreground/40" /><p className="mt-3 text-sm font-semibold text-foreground">No shipment data available</p><p className="mt-1 text-xs text-muted-foreground">Your shipment status distribution will appear here.</p></div>}
@@ -454,7 +455,7 @@ export default function Dashboard() {
                     className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap w-28 justify-start shrink-0 ${item.badgeClass}`}
                   >
                     <span className={`h-1.5 w-1.5 rounded-full ${item.dotClass}`} />
-                    {item.status}
+                    {formatStatusLabel(item.status)}
                   </span>
                   <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
                     <div
