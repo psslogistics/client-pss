@@ -229,7 +229,11 @@ export default function DelhiveryTrackingPane() {
       const result = await pssApi<{ data?: Array<Record<string, unknown>>; provider_status?: string }>(`/v1/shipments/${encodeURIComponent(selected.id)}/tracking`);
       const events = (result.data ?? []).map((event) => ({ title: normalizeStatus(event.status), description: String(event.description ?? "Tracking event received from Delhivery"), location: String(event.location ?? "Not provided"), eventTime: String(event.event_time ?? selected.updatedAt), status: normalizeStatus(event.status) }));
       setShipments((current) => current.map((shipment) => shipment.id === selected.id ? { ...shipment, events: events.length ? events : shipment.events, status: events.at(-1)?.status ?? shipment.status, updatedAt: events.at(-1)?.eventTime ?? shipment.updatedAt } : shipment));
-      setNotice(`Live tracking loaded${result.provider_status ? ` · ${result.provider_status}` : ""}.`);
+      const providerStatus = String(result.provider_status ?? "").toLowerCase();
+      const providerFailed = ["invalid_request", "error", "failed"].includes(providerStatus);
+      setNotice(providerFailed
+        ? `Live tracking could not be loaded${result.provider_status ? ` · ${result.provider_status}` : ""}.`
+        : `Live tracking loaded${result.provider_status ? ` · ${result.provider_status}` : ""}.`);
     } catch (error) { setNotice(getPssErrorDetails(error, "Live tracking could not be loaded.").message); } finally { setRefreshing(false); }
   };
 
