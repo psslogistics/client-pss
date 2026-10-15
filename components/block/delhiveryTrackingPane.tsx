@@ -99,6 +99,37 @@ const formatDateTime = (value: string) => {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date);
 };
 
+const podBase64 = (value: unknown): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(podBase64);
+  if (typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  const direct = ["content_base64", "base64", "data"].flatMap((key) => typeof record[key] === "string" ? [record[key] as string] : []);
+  return direct.length ? direct : Object.values(record).flatMap(podBase64);
+};
+
+const podUrl = (value: unknown): string | undefined => {
+  if (typeof value === "string") return /^https?:\/\//i.test(value) ? value : undefined;
+  if (Array.isArray(value)) return value.map(podUrl).find(Boolean);
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of ["download_url", "downloadUrl", "file_url", "fileUrl", "url", "link"]) {
+    const found = podUrl(record[key]);
+    if (found) return found;
+  }
+  return Object.values(record).map(podUrl).find(Boolean);
+};
+
+const savePod = (name: string, value: string, contentType: string) => {
+  const normalized = value.replace(/^data:[^;]+;base64,/, "");
+  const bytes = Uint8Array.from(atob(normalized), (character) => character.charCodeAt(0));
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([bytes], { type: contentType }));
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 500);
+};
+
 function mapShipment(row: Record<string, unknown>): Shipment {
   const status = normalizeStatus(row.status);
   const id = String(row.id ?? "unknown");
@@ -170,9 +201,9 @@ function SectionHeader({ icon, title, open, onClick }: { icon: React.ReactNode; 
   return <button type="button" onClick={onClick} aria-expanded={open} className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition hover:bg-slate-50 sm:px-5"><span className="flex items-center gap-2 text-sm font-semibold text-slate-900">{icon}{title}</span>{open ? <ChevronUp className="size-4 text-slate-500" /> : <ChevronDown className="size-4 text-slate-500" />}</button>;
 }
 
-function ShipmentActions({ onNotice, onInvoice }: { onNotice: (message: string) => void; onInvoice: () => void }) {
+function ShipmentActions({ onNotice, onInvoice, onPod }: { onNotice: (message: string) => void; onInvoice: () => void; onPod: () => void }) {
   const actionClass = "inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50";
-  return <div className="grid grid-cols-6 gap-2 sm:grid-cols-5"><button type="button" onClick={() => onNotice("Raise ticket is available through the PSS support workflow.")} className={cn(actionClass, "col-span-2 sm:col-span-1")}><LifeBuoy className="size-3.5" />Raise ticket</button><button type="button" onClick={() => onNotice("The LR document is not available for this shipment yet.")} className={cn(actionClass, "col-span-2 sm:col-span-1")}><Download className="size-3.5" />Download LR</button><button type="button" onClick={() => onNotice("POD is available after delivery confirmation.")} className={cn(actionClass, "col-span-2 sm:col-span-1")}><FileCheck2 className="size-3.5" />POD</button><button type="button" onClick={onInvoice} className={cn(actionClass, "col-span-2 col-start-2 sm:col-start-auto sm:col-span-1")}><ReceiptText className="size-3.5" />Invoice</button><button type="button" onClick={() => onNotice("Print label action is ready for the provider document workflow.")} className={cn(actionClass, "col-span-2 col-start-4 sm:col-start-auto sm:col-span-1")}><Printer className="size-3.5" />Print label</button></div>;
+  return <div className="grid grid-cols-6 gap-2 sm:grid-cols-5"><button type="button" onClick={() => onNotice("Raise ticket is available through the PSS support workflow.")} className={cn(actionClass, "col-span-2 sm:col-span-1")}><LifeBuoy className="size-3.5" />Raise ticket</button><button type="button" onClick={() => onNotice("The LR document is not available for this shipment yet.")} className={cn(actionClass, "col-span-2 sm:col-span-1")}><Download className="size-3.5" />Download LR</button><button type="button" onClick={onPod} className={cn(actionClass, "col-span-2 sm:col-span-1")}><FileCheck2 className="size-3.5" />POD</button><button type="button" onClick={onInvoice} className={cn(actionClass, "col-span-2 col-start-2 sm:col-start-auto sm:col-span-1")}><ReceiptText className="size-3.5" />Invoice</button><button type="button" onClick={() => onNotice("Print label action is ready for the provider document workflow.")} className={cn(actionClass, "col-span-2 col-start-4 sm:col-start-auto sm:col-span-1")}><Printer className="size-3.5" />Print label</button></div>;
 }
 
 function TrackingTimeline({ shipment, scanOpen, setScanOpen }: { shipment: Shipment; scanOpen: boolean; setScanOpen: (value: boolean) => void }) {
@@ -251,13 +282,37 @@ export default function DelhiveryTrackingPane() {
     setNotice("Invoice details are shown in Order summary.");
   };
 
+  const downloadPod = async () => {
+    setNotice("Requesting POD from Delhivery…");
+    try {
+      const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(selected.id)}/document?doc_type=LM_POD`);
+      const artifact = result.data?.artifact;
+      const base64 = podBase64(artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).find((value) => value.length > 100);
+      const directUrl = podUrl(artifact);
+      if (base64) {
+        const type = typeof (artifact as Record<string, unknown> | undefined)?.content_type === "string" ? String((artifact as Record<string, unknown>).content_type) : "image/jpeg";
+        savePod(`delhivery-pod-${selected.reference}.${type.includes("pdf") ? "pdf" : "jpg"}`, base64, type);
+        setNotice("POD downloaded from Delhivery.");
+        return;
+      }
+      if (directUrl) {
+        window.open(directUrl, "_blank", "noopener,noreferrer");
+        setNotice("POD opened from Delhivery.");
+        return;
+      }
+      setNotice("POD is pending Delhivery publication; please retry shortly.");
+    } catch (error) {
+      setNotice(`POD download failed: ${getPssErrorDetails(error, "The POD could not be retrieved from Delhivery.").message}`);
+    }
+  };
+
   return <div className="tracking-pane relative min-h-full w-full min-w-0 bg-background text-foreground">
     <main className="mx-auto w-full max-w-[1400px] space-y-4 p-4 sm:p-6">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="px-4 pb-4 pt-5 sm:px-6"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><div className="grid size-11 shrink-0 place-items-center rounded-md bg-rose-50 text-rose-600"><Truck className="size-5" /></div><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold tracking-tight">{selected.referenceLabel} {selected.reference}</h1><button type="button" aria-label="Copy shipment reference" onClick={() => void copyReference()} className="rounded p-1 text-slate-500 hover:bg-slate-100"><Copy className="size-3.5" /></button></div><p className="mt-1 text-sm text-slate-600">{selected.masterAwb ? `Master AWB: ${selected.masterAwb} · ` : ""}{selected.pieces} {selected.pieces === 1 ? "Box" : "Boxes"}</p><p className="mt-1 text-sm text-slate-600">· Created on: {formatDate(selected.createdAt)}</p></div></div><button type="button" onClick={() => void refreshTracking()} disabled={refreshing} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />Refresh</button></div><div className="mt-4 border-t border-slate-200 pt-4"><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"><Identifier label="PSS shipment ID" value={selected.pssReference} /><Identifier label="LR / LRN" value={selected.lrNumber} /><Identifier label="AWB / waybill" value={selected.masterAwb || selected.trackingNumber || selected.providerReference} /><Identifier label="Box AWB(s)" value={selected.boxAwbs.length ? selected.boxAwbs.join(", ") : undefined} /><Identifier label="Invoice number" value={selected.invoiceNumber} /><Identifier label="Pickup reference" value={selected.pickupReference} /><Identifier label="Provider booking ID" value={selected.providerBookingId} /><Identifier label="Provider pickup ID" value={selected.providerPickupId} /></div><div className="mt-3 flex flex-wrap gap-2"><StatusChip tone={tone === "danger" ? "purple" : "neutral"}>{selected.status === "Exception" ? "Exception" : selected.status}</StatusChip><StatusChip tone="blue">{selected.provider}</StatusChip><StatusChip tone="blue">BTC</StatusChip><StatusChip tone="blue">{selected.paymentMode === "Not provided" ? "Prepaid" : selected.paymentMode}</StatusChip></div><div className={cn("mt-4 flex items-start gap-3 rounded-md px-3 py-3", tone === "danger" ? "bg-rose-50" : "bg-emerald-50/70")}><Truck className={cn("mt-0.5 size-4 shrink-0", tone === "danger" ? "text-rose-600" : "text-emerald-600")} /><div><p className="text-sm font-medium">{statusLabel(selected)}</p><p className="mt-0.5 text-xs text-slate-600">{isReadyToShip ? "Print shipping label and schedule pickup to get it delivered without any delays" : latest?.description ?? "Shipment movement is being tracked from the provider."}</p></div></div></div></div></section>
       <TrackingTimeline shipment={selected} scanOpen={scanOpen} setScanOpen={setScanOpen} />
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<ReceiptText className="size-4 text-rose-600" />} title="Order summary" open={summaryOpen} onClick={() => setSummaryOpen(!summaryOpen)} />{summaryOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Box details</h3><div className="grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Box count</p><p className="mt-1 text-xs font-semibold">{selected.pieces}</p></div><div><p className="text-xs text-slate-500">Dimensions</p><p className="mt-1 text-xs font-semibold">{selected.dimensions}</p></div></div></div><div className="mt-4 space-y-1"><DetailRow label="Chargeable weight" value={selected.weight} /><DetailRow label="Actual weight" value={selected.weight} /></div><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Invoice details</h3><DetailRow label="Payment mode" value={selected.paymentMode === "Not provided" ? "Prepaid" : selected.paymentMode} /><DetailRow label="Product description" value={selected.productDescription} /><DetailRow label="PO number" value="NIL" action={<button type="button" onClick={() => setNotice("PO editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="PO expiry date" value="NIL" action={<button type="button" onClick={() => setNotice("PO expiry editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="Invoices" value="1" /><DetailRow label="Total invoice value" value={selected.invoiceValue} /><DetailRow label="E-way bills" value={selected.ewayBills} /></div></div>}</section>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<MapPin className="size-4 text-rose-600" />} title="Addresses" open={addressesOpen} onClick={() => setAddressesOpen(!addressesOpen)} />{addressesOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><p className="text-xs text-slate-500">Pickup Address</p><p className="mt-1 text-sm font-semibold">PSS Logistics</p><p className="text-xs text-slate-600">{selected.origin}</p></div><div><p className="text-xs text-slate-500">Delivery Address</p><p className="mt-1 text-sm font-semibold">{selected.consignee}</p><p className="text-xs text-slate-600">{fullAddress ? fullDeliveryAddress : fullDeliveryAddress.length > 44 ? `${fullDeliveryAddress.slice(0, 44)}…` : fullDeliveryAddress}</p>{fullDeliveryAddress.length > 44 && <button type="button" onClick={() => setFullAddress(!fullAddress)} className="mt-1 text-xs font-medium text-blue-600">{fullAddress ? "Show less" : "View Address"}</button>}</div></div></div>}</section>
-      <section aria-label="Shipment actions" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><div className="grid size-7 place-items-center rounded-md bg-rose-50 text-rose-600"><ReceiptText className="size-4" /></div><div><h2 className="text-sm font-semibold text-slate-900">Shipment actions</h2><p className="text-xs text-slate-500">Documents and support for this shipment</p></div></div><ShipmentActions onNotice={setNotice} onInvoice={showInvoice} /></section>
+      <section aria-label="Shipment actions" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><div className="grid size-7 place-items-center rounded-md bg-rose-50 text-rose-600"><ReceiptText className="size-4" /></div><div><h2 className="text-sm font-semibold text-slate-900">Shipment actions</h2><p className="text-xs text-slate-500">Documents and support for this shipment</p></div></div><ShipmentActions onNotice={setNotice} onInvoice={showInvoice} onPod={() => void downloadPod()} /></section>
     </main>
     {notice && <div role="status" className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 shadow-lg"><CheckCircle2 className="size-3.5 text-emerald-600" />{notice}<button type="button" aria-label="Dismiss notice" onClick={() => setNotice("")}><X className="size-3.5" /></button></div>}
     {copied && <div role="status" className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2 text-xs font-medium text-white">Copied</div>}
