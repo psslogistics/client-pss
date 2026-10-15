@@ -10,7 +10,7 @@ import { getPssErrorDetails, pssApi, pssApiFile } from "@/lib/pss-api";
 import { publicCourierName } from "@/lib/client-pricing-data";
 
 type ShipmentStatus = "All" | "Active" | "Booked" | "Picked Up" | "In Transit" | "Out for Delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
-type ShipmentRow = { id: string; pssTracking: string; courierTracking: string; courierReferenceLabel: string; pur?: string; lr?: string; masterAwb?: string; boxAwbs: string[]; providerBookingId?: string; providerPickupId?: string; providerSyncStatus?: string; providerFailureReason?: string; consignor: string; consignee: string; courier: string; status: Exclude<ShipmentStatus, "All" | "Active">; nextAction: string; pieces: number; weight: string; eta: string; booked: string; podDocumentId?: string; invoiceDocumentId?: string };
+type ShipmentRow = { id: string; pssTracking: string; courierTracking: string; courierReferenceLabel: string; pur?: string; lr?: string; masterAwb?: string; boxAwbs: string[]; providerBookingId?: string; providerPickupId?: string; providerSyncStatus?: string; providerFailureReason?: string; consignor: string; consignorAddress?: string; consignee: string; consigneeAddress?: string; courier: string; status: Exclude<ShipmentStatus, "All" | "Active">; nextAction: string; pieces: number; weight: string; eta: string; booked: string; podDocumentId?: string; invoiceDocumentId?: string };
 
 const statuses: ShipmentStatus[] = ["All", "Active", "Booked", "Picked Up", "In Transit", "Out for Delivery", "Delivered", "Delayed", "Exception", "Returned", "Cancelled"];
 const activeStatuses = new Set(["Booked", "Picked Up", "In Transit", "Out for Delivery", "Delayed", "Exception"]);
@@ -31,13 +31,15 @@ const parseBoxAwbs = (value: unknown): string[] => {
     return [];
   }
 };
-const addressName = (value: unknown, fallback: string) => {
-  if (typeof value !== "string" || !value.trim()) return fallback;
+const addressDetails = (value: unknown, fallback: string) => {
+  if (typeof value !== "string" || !value.trim()) return { name: fallback, address: "" };
   try {
     const parsed = JSON.parse(value) as Record<string, unknown>;
-    return String(parsed.name ?? parsed.company ?? fallback).trim() || fallback;
+    const name = String(parsed.name ?? parsed.company ?? fallback).trim() || fallback;
+    const address = [parsed.line, parsed.address, parsed.city, parsed.state, parsed.pincode, parsed.country].map((part) => String(part ?? "").trim()).filter(Boolean).join(", ");
+    return { name: address ? `${name} · ${address}` : name, address };
   } catch {
-    return fallback;
+    return { name: fallback, address: "" };
   }
 };
 const shipmentReferences = (row: Record<string, unknown>) => {
@@ -64,7 +66,7 @@ const nextActionFor = (status: ShipmentRow["status"], providerSyncStatus: string
 const statusStyles: Record<ShipmentRow["status"], string> = {
   Booked: "bg-blue-500/10 text-blue-700 dark:text-blue-300", "Picked Up": "bg-sky-500/10 text-sky-700 dark:text-sky-300", "In Transit": "bg-sky-500/10 text-sky-700 dark:text-sky-300", "Out for Delivery": "bg-amber-500/10 text-amber-700 dark:text-amber-300", Delivered: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300", Delayed: "bg-amber-500/10 text-amber-700 dark:text-amber-300", Exception: "bg-destructive/10 text-destructive", Returned: "bg-violet-500/10 text-violet-700 dark:text-violet-300", Cancelled: "bg-muted text-muted-foreground",
 };
-const mapShipmentRow = (row: Record<string, unknown>): ShipmentRow => { const reference = shipmentReferences(row); const status = mapStatus(row.status); const providerSyncStatus = textValue(row.provider_sync_status) || undefined; const origin = String(row.origin ?? "Not provided"); const destination = String(row.destination ?? row.consignee ?? "Not provided"); return { id: String(row.id), pssTracking: String(row.pss_reference ?? row.id), courierTracking: reference.value, courierReferenceLabel: reference.label, pur: reference.pur || undefined, lr: reference.lr || undefined, masterAwb: reference.masterAwb || undefined, boxAwbs: parseBoxAwbs(row.box_awbs_json), providerBookingId: textValue(row.provider_booking_id) || undefined, providerPickupId: textValue(row.provider_pickup_id) || undefined, providerSyncStatus, providerFailureReason: textValue(row.provider_failure_reason) || undefined, consignor: addressName(row.origin_address_json, origin), consignee: addressName(row.destination_address_json, destination), courier: publicCourierName(row.provider, row.account_name), status, nextAction: nextActionFor(status, providerSyncStatus, Boolean(reference.lr || reference.masterAwb || reference.pur || reference.legacy)), pieces: Number(row.pieces ?? 1), weight: `${Number(row.total_weight_kg ?? 0)} kg`, eta: String(row.edd ?? "Not provided"), booked: String(row.created_at ?? "Not provided").slice(0, 10), podDocumentId: textValue(row.pod_document_id) || undefined, invoiceDocumentId: textValue(row.invoice_document_id) || undefined }; };
+const mapShipmentRow = (row: Record<string, unknown>): ShipmentRow => { const reference = shipmentReferences(row); const status = mapStatus(row.status); const providerSyncStatus = textValue(row.provider_sync_status) || undefined; const origin = String(row.origin ?? "Not provided"); const destination = String(row.destination ?? row.consignee ?? "Not provided"); const consignor = addressDetails(row.origin_address_json, origin); const consignee = addressDetails(row.destination_address_json, destination); return { id: String(row.id), pssTracking: String(row.pss_reference ?? row.id), courierTracking: reference.value, courierReferenceLabel: reference.label, pur: reference.pur || undefined, lr: reference.lr || undefined, masterAwb: reference.masterAwb || undefined, boxAwbs: parseBoxAwbs(row.box_awbs_json), providerBookingId: textValue(row.provider_booking_id) || undefined, providerPickupId: textValue(row.provider_pickup_id) || undefined, providerSyncStatus, providerFailureReason: textValue(row.provider_failure_reason) || undefined, consignor: consignor.name, consignorAddress: consignor.address || undefined, consignee: consignee.name, consigneeAddress: consignee.address || undefined, courier: publicCourierName(row.provider, row.account_name), status, nextAction: nextActionFor(status, providerSyncStatus, Boolean(reference.lr || reference.masterAwb || reference.pur || reference.legacy)), pieces: Number(row.pieces ?? 1), weight: `${Number(row.total_weight_kg ?? 0)} kg`, eta: String(row.edd ?? "Not provided"), booked: String(row.created_at ?? "Not provided").slice(0, 10), podDocumentId: textValue(row.pod_document_id) || undefined, invoiceDocumentId: textValue(row.invoice_document_id) || undefined }; };
 
 export default function AllShipments() {
   const router = useRouter();
