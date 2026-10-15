@@ -292,7 +292,23 @@ export default function DelhiveryTrackingPane() {
     try {
       const result = await pssApi<{ data?: Array<Record<string, unknown>>; provider_status?: string }>(`/v1/shipments/${encodeURIComponent(shipment.id)}/tracking`);
       const events = (result.data ?? []).map((event) => ({ title: normalizeStatus(event.status), description: String(event.description ?? "Tracking event received from Delhivery"), location: String(event.location ?? "Not provided"), eventTime: String(event.event_time ?? shipment.updatedAt), status: normalizeStatus(event.status) }));
-      setShipments((current) => current.map((currentShipment) => currentShipment.id === shipment.id ? { ...currentShipment, events: events.length ? events : currentShipment.events, status: events.at(-1)?.status ?? currentShipment.status, updatedAt: events.at(-1)?.eventTime ?? currentShipment.updatedAt } : currentShipment));
+      let refreshedShipment: Shipment | undefined;
+      try {
+        const detail = await pssApi<{ data?: Record<string, unknown> }>(`/v1/shipments/${encodeURIComponent(shipment.id)}`);
+        if (detail.data) refreshedShipment = mapShipment(detail.data);
+      } catch {
+        // Tracking status can still be displayed if the follow-up record read fails.
+      }
+      setShipments((current) => current.map((currentShipment) => {
+        if (currentShipment.id !== shipment.id) return currentShipment;
+        const latestEvent = events.at(-1);
+        return {
+          ...(refreshedShipment ? { ...currentShipment, ...refreshedShipment } : currentShipment),
+          events: events.length ? events : currentShipment.events,
+          status: latestEvent?.status ?? refreshedShipment?.status ?? currentShipment.status,
+          updatedAt: latestEvent?.eventTime ?? refreshedShipment?.updatedAt ?? currentShipment.updatedAt,
+        };
+      }));
       const providerStatus = String(result.provider_status ?? "").toLowerCase();
       const providerFailed = ["invalid_request", "error", "failed"].includes(providerStatus);
       setNotice(providerFailed
