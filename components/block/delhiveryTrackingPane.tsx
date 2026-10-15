@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -233,6 +233,8 @@ export default function DelhiveryTrackingPane() {
   const [fullAddress, setFullAddress] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [routeShipmentLoaded, setRouteShipmentLoaded] = useState(false);
+  const routeRefreshId = useRef<string | null>(null);
 
   const load = async (showNotice = false) => {
     setLoading(true); setLoadError("");
@@ -240,10 +242,18 @@ export default function DelhiveryTrackingPane() {
       const result = await pssApi<{ data: Record<string, unknown>[] }>("/v1/shipments?limit=50&offset=0&include_tracking=1");
       const rows = (result.data ?? []).map(mapShipment);
       setShipments(rows);
+      if (selectedId && !rows.some((shipment) => shipment.id === selectedId || shipment.pssReference === selectedId)) {
+        const detail = await pssApi<{ data?: Record<string, unknown> }>(`/v1/shipments/${encodeURIComponent(selectedId)}`);
+        if (detail.data) {
+          const linkedShipment = mapShipment(detail.data);
+          setShipments((current) => [linkedShipment, ...current.filter((shipment) => shipment.id !== linkedShipment.id)]);
+        }
+      }
+      setRouteShipmentLoaded(true);
       if (showNotice) setNotice("Tracking data refreshed from production.");
     } catch (error) {
       const message = getPssErrorDetails(error, "Shipment data is temporarily unavailable.").message;
-      setLoadError(message); setNotice(message);
+      setLoadError(message); setNotice(message); setRouteShipmentLoaded(true);
     } finally { setLoading(false); }
   };
 
@@ -251,15 +261,18 @@ export default function DelhiveryTrackingPane() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, []);
 
-  const selected = useMemo(() => shipments.find((shipment) => shipment.id === selectedId || shipment.reference === selectedId) ?? shipments[0], [shipments, selectedId]);
+  const selected = useMemo(() => {
+    const linked = selectedId ? shipments.find((shipment) => shipment.id === selectedId || shipment.pssReference === selectedId || shipment.reference === selectedId) : undefined;
+    return linked ?? (selectedId ? undefined : shipments[0]);
+  }, [shipments, selectedId]);
 
-  const refreshTracking = async () => {
-    if (!selected) return;
+  const refreshTracking = async (shipment: Shipment = selected as Shipment) => {
+    if (!shipment) return;
     setRefreshing(true); setNotice("");
     try {
-      const result = await pssApi<{ data?: Array<Record<string, unknown>>; provider_status?: string }>(`/v1/shipments/${encodeURIComponent(selected.id)}/tracking`);
-      const events = (result.data ?? []).map((event) => ({ title: normalizeStatus(event.status), description: String(event.description ?? "Tracking event received from Delhivery"), location: String(event.location ?? "Not provided"), eventTime: String(event.event_time ?? selected.updatedAt), status: normalizeStatus(event.status) }));
-      setShipments((current) => current.map((shipment) => shipment.id === selected.id ? { ...shipment, events: events.length ? events : shipment.events, status: events.at(-1)?.status ?? shipment.status, updatedAt: events.at(-1)?.eventTime ?? shipment.updatedAt } : shipment));
+      const result = await pssApi<{ data?: Array<Record<string, unknown>>; provider_status?: string }>(`/v1/shipments/${encodeURIComponent(shipment.id)}/tracking`);
+      const events = (result.data ?? []).map((event) => ({ title: normalizeStatus(event.status), description: String(event.description ?? "Tracking event received from Delhivery"), location: String(event.location ?? "Not provided"), eventTime: String(event.event_time ?? shipment.updatedAt), status: normalizeStatus(event.status) }));
+      setShipments((current) => current.map((currentShipment) => currentShipment.id === shipment.id ? { ...currentShipment, events: events.length ? events : currentShipment.events, status: events.at(-1)?.status ?? currentShipment.status, updatedAt: events.at(-1)?.eventTime ?? currentShipment.updatedAt } : currentShipment));
       const providerStatus = String(result.provider_status ?? "").toLowerCase();
       const providerFailed = ["invalid_request", "error", "failed"].includes(providerStatus);
       setNotice(providerFailed
@@ -268,8 +281,14 @@ export default function DelhiveryTrackingPane() {
     } catch (error) { setNotice(getPssErrorDetails(error, "Live tracking could not be loaded.").message); } finally { setRefreshing(false); }
   };
 
+  useEffect(() => {
+    if (!routeShipmentLoaded || !selected || routeRefreshId.current === selected.id) return;
+    routeRefreshId.current = selected.id;
+    void refreshTracking(selected);
+  }, [routeShipmentLoaded, selected]);
+
   if (loading && !shipments.length) return <div className="tracking-pane w-full min-w-0 bg-background p-4 text-foreground sm:p-6"><div className="mx-auto grid w-full max-w-[1400px] gap-4"><div className="h-44 animate-pulse rounded-xl border border-border bg-card" /><div className="h-64 animate-pulse rounded-xl border border-border bg-card" /><div className="h-52 animate-pulse rounded-xl border border-border bg-card" /><div className="flex items-center justify-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading production tracking…</div></div></div>;
-  if (!selected) return <div className="tracking-pane grid min-h-[420px] w-full min-w-0 place-items-center rounded-xl border border-border bg-card p-8 text-center text-foreground"><div><Package className="mx-auto size-7 text-muted-foreground" /><h1 className="mt-3 text-base font-semibold">{loadError ? "Shipment data is unavailable" : "No shipments yet"}</h1><p className="mt-1 text-sm text-muted-foreground">{loadError || "Shipment tracking will appear here once a shipment is available."}</p><button type="button" onClick={() => void load(true)} className="mt-4 rounded-md border border-input px-3 py-2 text-xs font-semibold">Retry</button></div></div>;
+  if (!selected) return <div className="tracking-pane grid min-h-[420px] w-full min-w-0 place-items-center rounded-xl border border-border bg-card p-8 text-center text-foreground"><div><Package className="mx-auto size-7 text-muted-foreground" /><h1 className="mt-3 text-base font-semibold">{loadError ? "Shipment data is unavailable" : selectedId ? "Shipment not found" : "No shipments yet"}</h1><p className="mt-1 text-sm text-muted-foreground">{loadError || (selectedId ? `The linked shipment ${selectedId} could not be loaded.` : "Shipment tracking will appear here once a shipment is available.")}</p><button type="button" onClick={() => void load(true)} className="mt-4 rounded-md border border-input px-3 py-2 text-xs font-semibold">Retry</button></div></div>;
 
   const tone = statusTone(selected.status);
   const latest = selected.events.at(-1);
