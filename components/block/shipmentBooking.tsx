@@ -191,6 +191,28 @@ const update = <T extends object>(setter: React.Dispatch<React.SetStateAction<T>
 
 const normalizePhone = (value: string) => { let digits = value.replace(/\D/g, "").replace(/^0+/, ""); if (digits.startsWith("91") && digits.length > 10) digits = digits.slice(2); return digits.slice(0, 10); };
 const validPhone = (value: string) => /^[6-9]\d{9}$/.test(value);
+type ParsedPastedAddress = { name: string; phone: string; line: string; pincode: string };
+const parsePastedAddress = (value: string): ParsedPastedAddress | null => {
+  const raw = value.replace(/\s+/g, " ").trim();
+  if (!raw) return null;
+  const phoneMatch = raw.match(/(?:\+?91[\s-]?)?[6-9]\d{9}/);
+  const phone = phoneMatch ? normalizePhone(phoneMatch[0]) : "";
+  const pincodeMatch = raw.match(/(?:p(?:in|incode)|zip(?:\s*code)?)\s*[:#-]?\s*(\d{6})/i) ?? raw.match(/\b\d{6}\b/);
+  const pincode = pincodeMatch?.[1] ?? pincodeMatch?.[0] ?? "";
+  if (!phone && !pincode) return null;
+  const prefix = phoneMatch ? raw.slice(0, phoneMatch.index).trim() : "";
+  const name = prefix ? prefix.split(",")[0].trim() : "";
+  const line = raw
+    .replace(phoneMatch?.[0] ?? "", "")
+    .replace(pincodeMatch?.[0] ?? "", "")
+    .replace(pincode ? new RegExp(`\\b${pincode}\\b`, "g") : /$^/, "")
+    .replace(name, "")
+    .replace(/\s*,\s*,+/g, ",")
+    .replace(/^\s*,|,\s*$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return { name, phone, line, pincode };
+};
 
 function PartyFieldsCompact({ title, tone, address, setAddress, person, setPerson, pinStatus, onPincodeChange, savedPickups, selectedSavedPickupId, onSelectSaved, onSave, savedName, isRenaming, onSavedNameChange, onRename, onStartRename, onCancelRename, onDelete }: { title: string; tone: string; address: Address; setAddress: React.Dispatch<React.SetStateAction<Address>>; person: Contact; setPerson: React.Dispatch<React.SetStateAction<Contact>>; pinStatus: { state: PinStatus; message: string }; onPincodeChange: (value: string) => void; savedPickups: SavedPickup[]; selectedSavedPickupId: string; onSelectSaved: (id: string) => void; onSave: () => void; savedName: string; isRenaming: boolean; onSavedNameChange: (value: string) => void; onRename: () => void; onStartRename: () => void; onCancelRename: () => void; onDelete: () => void }) {
   const phoneInvalid = person.phone.length > 0 && !validPhone(person.phone);
@@ -571,6 +593,26 @@ export default function ShipmentBooking() {
       setStatus({ state: "error", message: "Location lookup unavailable; verify the city and state" });
     }
   };
+
+  useEffect(() => {
+    const handleAddressPaste = (event: ClipboardEvent) => {
+      const target = event.target as HTMLInputElement | null;
+      if (!target?.id.endsWith("-address")) return;
+      const parsed = parsePastedAddress(event.clipboardData?.getData("text") ?? "");
+      if (!parsed) return;
+      const summary = [parsed.name && `Name: ${parsed.name}`, parsed.phone && `Phone: ${parsed.phone}`, parsed.pincode && `PIN: ${parsed.pincode}`].filter(Boolean).join("\n");
+      if (!window.confirm(`Address details detected. Fill the form automatically?\n\n${summary}`)) return;
+      event.preventDefault();
+      const kind = target.id.startsWith("consignor-") ? "pickup" : "delivery";
+      const setAddress = kind === "pickup" ? setPickup : setDelivery;
+      const setPerson = kind === "pickup" ? setPickupPerson : setDeliveryPerson;
+      setAddress((current) => ({ ...current, line: parsed.line }));
+      setPerson((current) => ({ ...current, name: parsed.name || current.name, phone: parsed.phone || current.phone }));
+      if (parsed.pincode) void lookupPincode(kind, parsed.pincode);
+    };
+    document.addEventListener("paste", handleAddressPaste);
+    return () => document.removeEventListener("paste", handleAddressPaste);
+  }, []);
 
   const downloadDc = () => {
     void createChallanPdf([{ ...dc, paymentMode, codAmount, from: pickup.line, to: delivery.line }]).then(() => { setDcOpen(false); setNotice("Delivery Challan PDF created and downloaded"); }).catch(() => setNotice("Unable to create the Delivery Challan PDF"));
