@@ -186,8 +186,12 @@ const downloadLabelPdf = async (name: string, base64s: string[], contentType: st
     const cellWidth = (pageWidth - margin * 2 - gap * (grid.columns - 1)) / grid.columns;
     const cellHeight = (pageHeight - margin * 2 - gap * (grid.rows - 1)) / grid.rows;
     const column = pageIndex % grid.columns; const row = Math.floor(pageIndex / grid.columns);
-    const scale = Math.min(cellWidth / image.width, cellHeight / image.height);
-    const width = image.width * scale; const height = image.height * scale;
+    // Treat provider pixels at their native 96-DPI physical size. Never
+    // enlarge a Delhivery image; upscaling is what made small labels blur.
+    const nativeWidth = image.width * 25.4 / 96;
+    const nativeHeight = image.height * 25.4 / 96;
+    const scale = Math.min(1, cellWidth / nativeWidth, cellHeight / nativeHeight);
+    const width = nativeWidth * scale; const height = nativeHeight * scale;
     const x = margin + column * (cellWidth + gap) + (cellWidth - width) / 2;
     const y = margin + row * (cellHeight + gap) + (cellHeight - height) / 2;
     pdf.addImage(image.dataUrl, image.format, x, y, width, height, undefined, "NONE");
