@@ -360,6 +360,26 @@ export default function ShipmentBooking() {
     return () => { cancelled = true; };
   }, []);
 
+  // A saved warehouse ID must never remain attached to independently edited
+  // consignor fields. Clearing the ID routes the edited address through the
+  // existing unsaved-address registration path without changing that path.
+  useEffect(() => {
+    if (!selectedSavedPickupId) return;
+    const saved = savedPickups.find((item) => item.id === selectedSavedPickupId);
+    if (!saved) return;
+    const sameAddress = saved.address.line === pickup.line
+      && saved.address.city === pickup.city
+      && saved.address.state === pickup.state
+      && saved.address.pincode === pickup.pincode
+      && saved.address.country === pickup.country;
+    const sameContact = saved.contact.name === pickupPerson.name && saved.contact.phone === pickupPerson.phone;
+    if (!sameAddress || !sameContact) {
+      setSelectedSavedPickupId("");
+      setSavedName("");
+      setIsRenamingSaved(false);
+    }
+  }, [pickup, pickupPerson, savedPickups, selectedSavedPickupId]);
+
   useEffect(() => {
     void pssApi<{ data: Record<string, { enabled?: boolean; health?: string; last_error_code?: string | null }> }>("/v1/provider-capabilities")
       .then((result) => {
