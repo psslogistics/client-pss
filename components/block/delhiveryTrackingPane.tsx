@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
+import { jsPDF } from "jspdf";
 
 type Status = "Booked" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type TrackingEvent = { title: string; description: string; location: string; eventTime: string; status: Status };
@@ -152,6 +153,46 @@ const artifactCopies = (value: unknown) => {
   const record = value as Record<string, unknown>;
   const copies = Number(record.copies);
   return Number.isFinite(copies) && copies > 0 ? copies : Array.isArray(record.artifacts) ? record.artifacts.length : 1;
+};
+
+const labelImage = (base64: string, contentType: string) => new Promise<{ dataUrl: string; width: number; height: number; format: "PNG" | "JPEG" }>((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => {
+    const normalizedType = contentType.toLowerCase();
+    if (normalizedType.includes("png") || normalizedType.includes("jpeg") || normalizedType.includes("jpg")) {
+      resolve({ dataUrl: `data:${contentType};base64,${base64}`, width: image.naturalWidth, height: image.naturalHeight, format: normalizedType.includes("jpeg") || normalizedType.includes("jpg") ? "JPEG" : "PNG" });
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (!context) { reject(new Error("Unable to prepare the Delhivery label image.")); return; }
+    context.drawImage(image, 0, 0);
+    resolve({ dataUrl: canvas.toDataURL("image/png"), width: image.naturalWidth, height: image.naturalHeight, format: "PNG" });
+  };
+  image.onerror = () => reject(new Error("Unable to read the Delhivery label image."));
+  image.src = `data:${contentType};base64,${base64}`;
+});
+
+const downloadLabelPdf = async (name: string, base64s: string[], contentType: string, size: string) => {
+  const images = await Promise.all(base64s.map((value) => labelImage(value, contentType)));
+  const pdf = new jsPDF({ unit: "mm", format: "a4", compress: false });
+  const pageWidth = 210; const pageHeight = 297; const margin = 6; const gap = 4;
+  const grid = size === "sm" ? { columns: 2, rows: 3 } : size === "md" ? { columns: 2, rows: 2 } : size === "std" ? { columns: 1, rows: 2 } : { columns: 1, rows: 1 };
+  const perPage = grid.columns * grid.rows;
+  images.forEach((image, index) => {
+    if (index > 0 && index % perPage === 0) pdf.addPage("a4", "portrait");
+    const pageIndex = index % perPage;
+    const cellWidth = (pageWidth - margin * 2 - gap * (grid.columns - 1)) / grid.columns;
+    const cellHeight = (pageHeight - margin * 2 - gap * (grid.rows - 1)) / grid.rows;
+    const column = pageIndex % grid.columns; const row = Math.floor(pageIndex / grid.columns);
+    const scale = Math.min(cellWidth / image.width, cellHeight / image.height);
+    const width = image.width * scale; const height = image.height * scale;
+    const x = margin + column * (cellWidth + gap) + (cellWidth - width) / 2;
+    const y = margin + row * (cellHeight + gap) + (cellHeight - height) / 2;
+    pdf.addImage(image.dataUrl, image.format, x, y, width, height, undefined, "NONE");
+  });
+  pdf.save(name);
 };
 
 function mapShipment(row: Record<string, unknown>): Shipment {
@@ -410,12 +451,18 @@ export default function DelhiveryTrackingPane() {
   };
 
   const downloadLabel = (option: LabelOption) => {
-    const base64 = podBase64(option.artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).find((value) => value.length > 100);
+    const base64s = podBase64(option.artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).filter((value) => value.length > 100);
     const directUrl = podUrl(option.artifact);
     const contentType = option.contentType || artifactContentType(option.artifact);
-    if (base64) {
-      savePod(`delhivery-label-${selected.reference}-${option.size}.${contentType.includes("pdf") ? "pdf" : contentType.includes("jpeg") || contentType.includes("jpg") ? "jpg" : "png"}`, base64, contentType);
+    if (base64s.length && contentType.includes("pdf")) {
+      savePod(`delhivery-label-${selected.reference}-${option.size}.pdf`, base64s[0], contentType);
       setNotice(`Delhivery ${option.size} label downloaded${option.copies > 1 ? ` (${option.copies} copies returned)` : ""}.`);
+      return;
+    }
+    if (base64s.length) {
+      void downloadLabelPdf(`delhivery-label-${selected.reference}-${option.size}.pdf`, base64s, contentType, option.size)
+        .then(() => setNotice(`Delhivery ${option.size} PDF downloaded${option.copies > 1 ? ` (${option.copies} stickers)` : ""}.`))
+        .catch((error) => setNotice(`Label PDF generation failed: ${error instanceof Error ? error.message : "Unable to generate the label PDF."}`));
       return;
     }
     if (directUrl) {
