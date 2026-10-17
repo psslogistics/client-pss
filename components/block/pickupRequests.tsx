@@ -25,7 +25,7 @@ import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 
 type PickupStatus = "Draft" | "Requested" | "Provider Pending" | "Scheduled" | "Driver Assigned" | "En Route" | "Picked Up" | "Completed" | "Failed" | "Cancelled";
 type NoticeTone = "info" | "success" | "pending" | "error";
-type SortKey = "reference" | "customer" | "status" | "date" | "location" | "driver" | "pieces" | "weight";
+type SortKey = "reference" | "customer" | "status" | "date" | "location" | "driver" | "pieces" | "weight" | "createdAt";
 type PickupSlotOption = { date: string; slots: string[]; reason?: string };
 
 type Pickup = {
@@ -56,6 +56,7 @@ type Pickup = {
   notes: string;
   createdFrom: "Shipment booking" | "Standalone request";
   shipmentCount: number;
+  createdAt: string;
 };
 
 type PickupCandidate = { id: string; pss_reference?: string | null; order_id?: string | null; tracking_number?: string | null; lr_number?: string | null; provider_reference?: string | null; awb?: string | null; origin?: string | null; total_weight_kg?: number | null; pieces?: number | null };
@@ -118,7 +119,7 @@ export default function PickupRequests() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<PickupStatus | "">("");
   const [statusOpen, setStatusOpen] = useState(false);
-  const [sort, setSort] = useState<{ key: SortKey; direction: "asc" | "desc" }>({ key: "date", direction: "asc" });
+  const [sort, setSort] = useState<{ key: SortKey; direction: "asc" | "desc" }>({ key: "createdAt", direction: "desc" });
   const [visibleColumns, setVisibleColumns] = useState<SortKey[]>(columns.map((column) => column.key));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedPickup, setSelectedPickup] = useState<Pickup | null>(null);
@@ -159,7 +160,7 @@ export default function PickupRequests() {
         const address = String(row.pickup_address ?? "").trim();
         const date = String(row.requested_date ?? "").slice(0, 10);
         const providerReference = String(row.provider_reference ?? "").trim();
-        return { id: String(row.id), reference: providerReference || "Not scheduled", customer: String(row.contact_name ?? "Not provided"), status: normalizePickupStatus(row.status), date: date || "Not provided", window: String(row.requested_time_slot ?? "Not provided"), location: address || "Not provided", country: String(row.country ?? "India"), driver: String(row.assigned_to_user_id ?? "Unassigned"), pieces: Math.max(1, Number(row.pieces ?? 1)), weight: row.total_weight_kg ? `${row.total_weight_kg} kg` : "Not provided", contact: String(row.contact_phone ?? "Not provided"), contactEmail: String(row.contact_email ?? ""), address, city: String(row.city ?? ""), state: String(row.state ?? ""), pincode: String(row.pincode ?? ""), provider: String(row.provider ?? "Not provided"), providerAccountId: String(row.provider_account_id ?? ""), warehouseId: String(row.warehouse_id ?? ""), providerReference, providerStatus: String(row.provider_status ?? ""), providerErrorCode: String(row.provider_error_code ?? ""), failureReason: String(row.failure_reason ?? ""), notes: String(row.notes ?? ""), createdFrom: row.shipment_id ? "Shipment booking" : "Standalone request", shipmentCount: Math.max(0, Number(row.shipment_count ?? (row.shipment_id ? 1 : 0))) };
+        return { id: String(row.id), reference: providerReference || "Not scheduled", customer: String(row.contact_name ?? "Not provided"), status: normalizePickupStatus(row.status), date: date || "Not provided", window: String(row.requested_time_slot ?? "Not provided"), location: address || "Not provided", country: String(row.country ?? "India"), driver: String(row.assigned_to_user_id ?? "Unassigned"), pieces: Math.max(1, Number(row.pieces ?? 1)), weight: row.total_weight_kg ? `${row.total_weight_kg} kg` : "Not provided", contact: String(row.contact_phone ?? "Not provided"), contactEmail: String(row.contact_email ?? ""), address, city: String(row.city ?? ""), state: String(row.state ?? ""), pincode: String(row.pincode ?? ""), provider: String(row.provider ?? "Not provided"), providerAccountId: String(row.provider_account_id ?? ""), warehouseId: String(row.warehouse_id ?? ""), providerReference, providerStatus: String(row.provider_status ?? ""), providerErrorCode: String(row.provider_error_code ?? ""), failureReason: String(row.failure_reason ?? ""), notes: String(row.notes ?? ""), createdFrom: row.shipment_id ? "Shipment booking" : "Standalone request", shipmentCount: Math.max(0, Number(row.shipment_count ?? (row.shipment_id ? 1 : 0))), createdAt: String(row.created_at ?? "") };
       }));
       if (showNotice) notify("Pickup statuses refreshed from production.");
     } catch (error) { const message = getPssErrorDetails(error, "Pickup data is temporarily unavailable. Your existing requests are unchanged.").message; setLoadError(message); notify(pickupsCountRef.current ? `Showing last successful pickup data. Refresh failed: ${message}` : message, "error"); }
@@ -246,7 +247,7 @@ export default function PickupRequests() {
     return result.sort((a, b) => {
       const first = String(a[sort.key]);
       const second = String(b[sort.key]);
-      const comparison = sort.key === "pieces" ? a.pieces - b.pieces : first.localeCompare(second);
+      const comparison = sort.key === "pieces" ? a.pieces - b.pieces : sort.key === "createdAt" ? (Date.parse(a.createdAt || "") || 0) - (Date.parse(b.createdAt || "") || 0) : first.localeCompare(second);
       return sort.direction === "asc" ? comparison : -comparison;
     });
   }, [pickups, query, sort, statusFilter]);
@@ -295,7 +296,7 @@ export default function PickupRequests() {
       const weight = manifested ? selectedCandidates.reduce((sum, item) => sum + Math.max(0, Number(item.total_weight_kg ?? 0)), 0) : Number(form.weight);
       const providerReference = String(result.data.provider_reference ?? "").trim();
       const displayReference = providerReference || "Not scheduled";
-      const created: Pickup = { id: result.data.id, reference: displayReference, customer: form.customer, status: normalizePickupStatus(result.data.status || "scheduled"), date: form.date, window: form.window, location, country: form.country, driver: "Unassigned", pieces, weight: `${weight} kg`, contact: form.contact, contactEmail: form.email, address: form.address, city: form.city, state: form.state, pincode: form.pincode, provider: form.provider, providerAccountId: form.providerAccountId, warehouseId: form.warehouseId, providerReference, providerStatus: String(result.data.provider_status ?? "pending"), providerErrorCode: "", failureReason: "", notes: form.notes, createdFrom: manifested ? "Shipment booking" : "Standalone request", shipmentCount: manifested ? selectedCandidates.length : 0 };
+      const created: Pickup = { id: result.data.id, reference: displayReference, customer: form.customer, status: normalizePickupStatus(result.data.status || "scheduled"), date: form.date, window: form.window, location, country: form.country, driver: "Unassigned", pieces, weight: `${weight} kg`, contact: form.contact, contactEmail: form.email, address: form.address, city: form.city, state: form.state, pincode: form.pincode, provider: form.provider, providerAccountId: form.providerAccountId, warehouseId: form.warehouseId, providerReference, providerStatus: String(result.data.provider_status ?? "pending"), providerErrorCode: "", failureReason: "", notes: form.notes, createdFrom: manifested ? "Shipment booking" : "Standalone request", shipmentCount: manifested ? selectedCandidates.length : 0, createdAt: new Date().toISOString() };
       setPickups((current) => [created, ...current]); notify(`Pickup ${displayReference} was saved to production.`, created.status === "Provider Pending" ? "pending" : "success"); setScheduleOpen(false); setForm({ ...emptyForm, date: todayIso() });
     } catch (error) { const details = getPssErrorDetails(error, "Pickup request failed. The request was not confirmed."); notify(`${details.message}${details.requestId ? ` · Request ID ${details.requestId}` : ""}`, "error"); }
   };
