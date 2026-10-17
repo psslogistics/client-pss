@@ -210,6 +210,52 @@ const downloadLabelPdf = async (name: string, base64s: string[], contentType: st
   pdf.save(name);
 };
 
+const downloadA4PdfGrid = async (name: string, base64: string) => {
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+  const pdfDocument = await getDocument({ data: bytes }).promise;
+  const pdf = new jsPDF({ unit: "mm", format: "a4", compress: false });
+  const pageWidth = 210; const pageHeight = 297; const margin = 6; const gap = 4;
+  const columns = 2; const rows = 2; const perPage = columns * rows;
+  const cellWidth = (pageWidth - margin * 2 - gap) / columns;
+  const cellHeight = (pageHeight - margin * 2 - gap) / rows;
+
+  for (let index = 1; index <= pdfDocument.numPages; index += 1) {
+    if (index > 1 && (index - 1) % perPage === 0) pdf.addPage("a4", "portrait");
+    const page = await pdfDocument.getPage(index);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Unable to prepare the Delhivery label PDF.");
+    await page.render({ canvas, canvasContext: context, viewport }).promise;
+
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let left = canvas.width; let top = canvas.height; let right = 0; let bottom = 0;
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        const pixel = (y * canvas.width + x) * 4;
+        if (pixels[pixel] < 245 || pixels[pixel + 1] < 245 || pixels[pixel + 2] < 245) {
+          left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y);
+        }
+      }
+    }
+    if (right <= left || bottom <= top) { left = 0; top = 0; right = canvas.width - 1; bottom = canvas.height - 1; }
+    const cropWidth = right - left + 1; const cropHeight = bottom - top + 1;
+    const image = document.createElement("canvas");
+    image.width = cropWidth; image.height = cropHeight;
+    image.getContext("2d")?.drawImage(canvas, left, top, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+    const imageWidth = cropWidth * 25.4 / 96; const imageHeight = cropHeight * 25.4 / 96;
+    const scale = Math.min(cellWidth / imageWidth, cellHeight / imageHeight);
+    const width = imageWidth * scale; const height = imageHeight * scale;
+    const slot = (index - 1) % perPage; const column = slot % columns; const row = Math.floor(slot / columns);
+    const x = margin + column * (cellWidth + gap) + (cellWidth - width) / 2;
+    const y = margin + row * (cellHeight + gap) + (cellHeight - height) / 2;
+    pdf.addImage(image.toDataURL("image/png"), "PNG", x, y, width, height, undefined, "NONE");
+  }
+  pdf.save(name);
+};
+
 function mapShipment(row: Record<string, unknown>): Shipment {
   const status = normalizeStatus(row.status);
   const id = String(row.id ?? "unknown");
@@ -475,6 +521,12 @@ export default function DelhiveryTrackingPane() {
     const directUrl = podUrl(option.artifact);
     const contentType = option.contentType || artifactContentType(option.artifact);
     if (base64s.length && contentType.includes("pdf")) {
+      if (option.size === "a4") {
+        void downloadA4PdfGrid(`delhivery-label-${selected.reference}-${option.size}.pdf`, base64s[0])
+          .then(() => setNotice(`Delhivery ${option.size} PDF downloaded in a 4-sticker A4 layout.`))
+          .catch((error) => setNotice(`Label PDF generation failed: ${error instanceof Error ? error.message : "Unable to generate the label PDF."}`));
+        return;
+      }
       savePod(`delhivery-label-${selected.reference}-${option.size}.pdf`, base64s[0], contentType);
       setNotice(`Delhivery ${option.size} label downloaded${option.copies > 1 ? ` (${option.copies} copies returned)` : ""}.`);
       return;
