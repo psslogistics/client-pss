@@ -189,7 +189,7 @@ const downloadLabelPdf = async (name: string, base64s: string[], contentType: st
   const images = await Promise.all(base64s.map((value) => labelImage(value, contentType)));
   const pdf = new jsPDF({ unit: "mm", format: "a4", compress: false });
   const pageWidth = 210; const pageHeight = 297; const margin = 6; const gap = 4;
-  const grid = size === "sm" ? { columns: 2, rows: 3 } : size === "md" ? { columns: 2, rows: 2 } : size === "std" ? { columns: 1, rows: 2 } : { columns: 1, rows: 1 };
+  const grid = size === "sm" ? { columns: 2, rows: 3 } : size === "md" || size === "a4" ? { columns: 2, rows: 2 } : size === "std" ? { columns: 1, rows: 2 } : { columns: 1, rows: 1 };
   const perPage = grid.columns * grid.rows;
   images.forEach((image, index) => {
     if (index > 0 && index % perPage === 0) pdf.addPage("a4", "portrait");
