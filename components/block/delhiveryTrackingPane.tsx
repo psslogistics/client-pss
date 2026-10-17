@@ -491,7 +491,7 @@ export default function DelhiveryTrackingPane() {
       const returnedStickerCount = Math.max(1, option.copies);
       const stickers = base64s.slice(0, returnedStickerCount);
       void downloadLabelPdf(`delhivery-label-${selected.reference}-${option.size}.pdf`, stickers, contentType, option.size)
-        .then(() => setNotice(`Delhivery ${option.size} PDF downloaded${option.copies > 1 ? ` (${option.copies} stickers)` : ""}.`))
+        .then(() => setNotice(`Delhivery ${option.size} PDF downloaded${option.copies > 1 ? ` (${option.copies} assets)` : ""}.`))
         .catch((error) => setNotice(`Label PDF generation failed: ${error instanceof Error ? error.message : "Unable to generate the label PDF."}`));
       return;
     }
