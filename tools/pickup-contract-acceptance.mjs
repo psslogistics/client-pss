@@ -7,7 +7,7 @@ const checks = [
   ["provider account and saved pickup location are selectable", source.includes("Courier account") && source.includes("Saved pickup location")],
   ["pickup reference uses Delhivery PUR with a muted unscheduled fallback", source.includes('reference: providerReference || "Not scheduled"') && source.includes('pickup.reference === "Not scheduled"') && source.includes('value={pickup.providerReference || "Not scheduled"}')],
   ["latest pickup requests sort first", source.includes('key: "createdAt", direction: "desc"') && source.includes("Date.parse(a.createdAt || \"\")") && source.includes("createdAt: String(row.created_at ?? \"\")")],
-  ["invalid Delhivery references remain unscheduled", source.includes('provider === "delhivery"') && source.includes('!/^\\d+$/.test(rawProviderReference)')],
+  ["invalid provider references remain unscheduled", source.includes('rawProviderReference && /^\\d+$/.test(rawProviderReference)') && source.includes('providerReference || "Not scheduled"')],
   ["saved addresses do not masquerade as warehouse IDs", source.includes('source: "warehouse" as const') && source.includes('source: "address" as const') && source.includes('warehouse.source === "warehouse" ? warehouse.id : ""')],
   ["standalone pickups allow optional AWB references", source.includes("Delhivery AWB(s) (optional)") && source.includes("Leave blank for a location-only pickup") && source.includes("awb_number: manifested ? undefined : form.awbNumber.split") && !source.includes('required={form.provider === "delhivery"}')],
   ["retry/reschedule/cancel actions exist", source.includes("retryPickup") && source.includes("reschedulePickup") && source.includes("cancelPickup")],
