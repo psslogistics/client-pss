@@ -127,17 +127,25 @@ const imageDimensions = (dataUrl: string) => new Promise<{ width: number; height
 const downloadLabelPdf = async (name: string, base64s: string[], size: "sm" | "md" | "a4" | "std") => {
   const [width, height] = labelPageSize(size);
   const pdf = new jsPDF({ unit: "mm", format: [width, height], compress: false });
+  const a4Grid = size === "a4" ? { columns: 2, rows: 2, margin: 6, gap: 4 } : null;
+  const cellWidth = a4Grid ? (width - (a4Grid.margin * 2) - a4Grid.gap) / a4Grid.columns : width;
+  const cellHeight = a4Grid ? (height - (a4Grid.margin * 2) - a4Grid.gap) / a4Grid.rows : height;
   for (const [index, value] of base64s.entries()) {
-    if (index) pdf.addPage([width, height]);
+    const slot = a4Grid ? index % (a4Grid.columns * a4Grid.rows) : 0;
+    if (index && (!a4Grid || slot === 0)) pdf.addPage([width, height]);
     const normalized = value.includes(",") ? value.slice(value.indexOf(",") + 1) : value;
     const dataUrl = `data:image/png;base64,${normalized}`;
     const dimensions = await imageDimensions(dataUrl);
     const sourceWidth = dimensions.width * 25.4 / 96;
     const sourceHeight = dimensions.height * 25.4 / 96;
-    const scale = Math.min(1, width / sourceWidth, height / sourceHeight);
+    const scale = Math.min(1, cellWidth / sourceWidth, cellHeight / sourceHeight);
     const imageWidth = sourceWidth * scale;
     const imageHeight = sourceHeight * scale;
-    pdf.addImage(dataUrl, "PNG", (width - imageWidth) / 2, (height - imageHeight) / 2, imageWidth, imageHeight, undefined, "NONE");
+    const column = a4Grid ? slot % a4Grid.columns : 0;
+    const row = a4Grid ? Math.floor(slot / a4Grid.columns) : 0;
+    const cellX = a4Grid ? a4Grid.margin + column * (cellWidth + a4Grid.gap) : 0;
+    const cellY = a4Grid ? a4Grid.margin + row * (cellHeight + a4Grid.gap) : 0;
+    pdf.addImage(dataUrl, "PNG", cellX + (cellWidth - imageWidth) / 2, cellY + (cellHeight - imageHeight) / 2, imageWidth, imageHeight, undefined, "NONE");
   }
   pdf.save(name);
 };
