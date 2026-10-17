@@ -5,15 +5,15 @@ const bookingSource = await readFile(new URL("../components/block/shipmentBookin
 const checks = [
   ["canonical fields are mapped", ["row.requested_date", "row.requested_time_slot", "row.pickup_address", "row.contact_name", "row.contact_phone"].every((field) => source.includes(field))],
   ["provider account and saved pickup location are selectable", source.includes("Courier account") && source.includes("Saved pickup location")],
-  ["standalone Delhivery pickups collect AWB references", source.includes("Delhivery AWB(s)") && source.includes("awb_number: form.awbNumber.split")],
+  ["standalone Delhivery pickups collect AWB references", source.includes("Delhivery AWB(s)") && source.includes("awb_number: manifested ? undefined : form.awbNumber.split")],
   ["retry/reschedule/cancel actions exist", source.includes("retryPickup") && source.includes("reschedulePickup") && source.includes("cancelPickup")],
   ["refresh and calendar actions exist", source.includes("loadPickups(true)") && source.includes("Calendar View")],
-  ["provider status polling and stale-slot resets exist", source.includes("setInterval") && source.includes("setRescheduleSlotOptions([])") && bookingSource.includes("setPickupOptions([])")],
+  ["provider status polling and stale-slot resets exist", source.includes("setInterval") && source.includes("setRescheduleSlotOptions([])")],
   ["provider confirmation is not presented as scheduled by default", source.includes("Provider confirmation is pending") || source.includes("Provider Pending")],
-  ["notifications distinguish outcomes", source.includes("NoticeTone") && source.includes('"pending"') && source.includes('"error"') && source.includes("role=\"status\"")],
-  ["shipment retry does not duplicate a saved shipment", bookingSource.includes("pendingPickupRecovery") && bookingSource.includes("Retrying its pickup request without creating another shipment") && bookingSource.includes("pendingPickupRecovery.pickupId")],
-  ["failed pickup fallback reuses the pickup record", bookingSource.includes("const pickupResult") && bookingSource.includes("createdPickupId") && bookingSource.includes("pickup-retry-")],
-  ["Delhivery stale end-time failures advance to another window", bookingSource.includes("end\\s*time\\s*cannot\\s*be\\s*in\\s*past") && bookingSource.includes("time.*window.*past")],
+  ["notifications distinguish outcomes", source.includes("NoticeTone") && source.includes('"pending"') && source.includes('"error"') && source.includes("role={noticeTone")],
+  ["shipment booking does not create a duplicate pickup", !bookingSource.includes("pendingPickupRecovery") && bookingSource.includes("Pickup scheduling is handled separately")],
+  ["pickup scheduling is explicit on the Pickup page", !bookingSource.includes("pickupRequestInProgress") && source.includes("Schedule a pickup")],
+  ["manifested shipments are selected server-side", source.includes("selection_mode: manifested ? \"manifested\" : \"blind\"") && source.includes("shipment_ids: manifested ? selectedCandidateIds")],
   ["invoice validation does not leave booking stuck", bookingSource.includes("setSingleSubmitting(false)") && bookingSource.includes("The invoice could not be read")],
 ];
 
