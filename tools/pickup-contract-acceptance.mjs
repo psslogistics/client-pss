@@ -16,6 +16,7 @@ const checks = [
   ["pickup dates use India time and submit revalidates slots", source.includes('timeZone: "Asia/Kolkata"') && source.includes("latestAvailability") && source.includes("latestSlots.some")],
   ["provider confirmation is not presented as scheduled by default", source.includes("Provider confirmation is pending") || source.includes("Provider Pending")],
   ["notifications distinguish outcomes", source.includes("NoticeTone") && source.includes('"pending"') && source.includes('"error"') && source.includes("role={noticeTone")],
+  ["schedule submission shows confirmation and loading/error states", source.includes("scheduleConfirmation") && source.includes("PickupConfirmationModal") && source.includes("Scheduling…") && source.includes("Pickup scheduling failed")],
   ["shipment booking does not create a duplicate pickup", !bookingSource.includes("pendingPickupRecovery") && bookingSource.includes("Pickup scheduling is handled separately")],
   ["pickup scheduling is explicit on the Pickup page", !bookingSource.includes("pickupRequestInProgress") && source.includes("Schedule a pickup")],
   ["manifested shipments are selected server-side", source.includes("selection_mode: manifested ? \"manifested\" : \"blind\"") && source.includes("shipment_ids: manifested ? selectedCandidateIds")],
