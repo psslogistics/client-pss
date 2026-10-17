@@ -90,7 +90,16 @@ const todayIso = () => {
   return `${current.year}-${current.month}-${current.day}`;
 };
 type ProviderAccount = { id: string; provider: string; account_name: string; enabled?: boolean; status?: string };
-type SavedWarehouse = { id: string; source?: "warehouse" | "address"; name?: string; label?: string; address_kind?: string; address?: string; city?: string; state?: string; pincode?: string; contact_name?: string; phone?: string; contact?: string };
+type SavedWarehouse = { id: string; source?: "warehouse" | "address"; name?: string; label?: string; address_kind?: string; address?: string; city?: string; state?: string; pincode?: string; contact_name?: string; phone?: string; contact?: string; provider_account_id?: string };
+
+function savedWarehouseIdentity(row: SavedWarehouse) {
+  return [row.provider_account_id, row.name, row.address, row.city, row.state, row.pincode, row.contact, row.contact_name].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
+}
+
+function dedupeSavedWarehouses(rows: SavedWarehouse[]) {
+  const seen = new Set<string>();
+  return rows.filter((row) => { const key = savedWarehouseIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; });
+}
 
 const emptyForm: NewPickup = { customer: "", contact: "", email: "", address: "", city: "", state: "", pincode: "", country: "India", provider: "", providerAccountId: "", warehouseId: "", date: todayIso(), window: "", pieces: "1", weight: "", awbNumber: "", notes: "" };
 
@@ -225,7 +234,7 @@ export default function PickupRequests() {
       const addresses = addressResult.status === "fulfilled" ? (addressResult.value.data ?? []) : [];
       if (addressResult.status === "rejected") failures.push(`saved pickup locations: ${getPssErrorDetails(addressResult.reason, "temporarily unavailable").message}`);
       const savedAddresses = addresses.filter((address) => address.address_kind !== "consignee").map((address) => ({ ...address, source: "address" as const, name: address.label ?? address.contact_name ?? address.id }));
-      setWarehouses([...warehouses, ...savedAddresses]);
+      setWarehouses([...dedupeSavedWarehouses(warehouses), ...savedAddresses]);
       setConfigurationError(failures.join("; "));
       if (failures.length) notify(`Some pickup configuration could not be loaded — ${failures.join("; ")}`, "error");
     });
