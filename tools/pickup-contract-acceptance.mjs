@@ -6,6 +6,7 @@ const checks = [
   ["canonical fields are mapped", ["row.requested_date", "row.requested_time_slot", "row.pickup_address", "row.contact_name", "row.contact_phone"].every((field) => source.includes(field))],
   ["provider account and saved pickup location are selectable", source.includes("Courier account") && source.includes("Saved pickup location")],
   ["pickup reference uses Delhivery PUR with a muted unscheduled fallback", source.includes('reference: providerReference || "Not scheduled"') && source.includes('pickup.reference === "Not scheduled"') && source.includes('value={pickup.providerReference || "Not scheduled"}')],
+  ["saved addresses do not masquerade as warehouse IDs", source.includes('source: "warehouse" as const') && source.includes('source: "address" as const') && source.includes('warehouse.source === "warehouse" ? warehouse.id : ""')],
   ["standalone pickups allow optional AWB references", source.includes("Delhivery AWB(s) (optional)") && source.includes("Leave blank for a location-only pickup") && source.includes("awb_number: manifested ? undefined : form.awbNumber.split") && !source.includes('required={form.provider === "delhivery"}')],
   ["retry/reschedule/cancel actions exist", source.includes("retryPickup") && source.includes("reschedulePickup") && source.includes("cancelPickup")],
   ["refresh and calendar actions exist", source.includes("loadPickups(true)") && source.includes("Calendar View")],
