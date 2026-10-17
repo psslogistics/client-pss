@@ -63,7 +63,7 @@ const shipments: Shipment[] = companyData.deliveries.map((record) => {
 function mapApiShipment(row: Record<string, unknown>, trackingEvents: Array<Record<string, unknown>> = []): Shipment {
   const safeStatus = normalizeStatus(row.status);
   const id = String(row.id || "unknown");
-  const publicId = String(row.pss_reference || id);
+  const publicId = id;
   const date = String(row.created_at || new Date().toISOString()).slice(0, 10);
   const events: Event[] = trackingEvents.length ? trackingEvents.map((event) => { const normalizedEvent = normalizeStatus(event.status); return { title: normalizedEvent, description: String(event.description || "Tracking event received from production API"), location: String(event.location || "Not provided"), date: String(event.event_time || date).slice(0, 10), time: String(event.event_time || "").slice(11, 16) || "Not provided", status: normalizedEvent }; }) : [{ title: "Shipment booked", description: "Shipment persisted in the production operations API", location: String(row.origin || "Not provided"), date, time: "Not provided", status: "Booked" }];
   const lrn = String(row.lr_number ?? "").trim();
@@ -71,7 +71,7 @@ function mapApiShipment(row: Record<string, unknown>, trackingEvents: Array<Reco
   const pur = String(row.pickup_reference ?? "").trim();
   const legacyCandidate = String(row.tracking_number ?? row.provider_reference ?? "").trim();
   const isDelhivery = String(row.provider ?? "").trim().toLowerCase() === "delhivery";
-  const legacyProviderReference = !isDelhivery && legacyCandidate && legacyCandidate !== id && legacyCandidate !== publicId ? legacyCandidate : "";
+  const legacyProviderReference = !isDelhivery && legacyCandidate && legacyCandidate !== id ? legacyCandidate : "";
   const reference = lrn || masterAwb || legacyProviderReference || "";
   const referenceLabel = lrn ? "LRN" : masterAwb ? "Master AWB" : legacyProviderReference ? "Provider reference" : "Courier reference";
   const courier = publicCourierName(row.provider, row.account_name);

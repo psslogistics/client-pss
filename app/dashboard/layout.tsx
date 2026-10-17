@@ -100,7 +100,6 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
     const request = pssApi<{ data: Array<Record<string, unknown>> }>("/v1/shipments?limit=100").then((result) => {
       setShipmentSearchResults((result.data ?? []).map((row) => {
         const id = String(row.id ?? "");
-        const pssReference = String(row.pss_reference ?? id).trim();
         const trackingNumber = String(row.tracking_number ?? "").trim();
         const providerReference = String(row.provider_reference ?? "").trim();
         const lrReference = String(row.lr_number ?? "").trim();
@@ -114,10 +113,10 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
         return {
           id: `shipment-${id}`,
           type: "Shipment",
-          title: pssReference || "Shipment",
+          title: lrReference || "Shipment",
           detail: `${reference ? `Reference ${reference} · ` : ""}${String(row.origin ?? "Not provided")} → ${destination}`,
           href: `/dashboard/shipmentTracking?id=${encodeURIComponent(id)}`,
-          keywords: [id, pssReference, trackingNumber, providerReference, lrReference, awbReference, pickupReference, providerBookingId, providerPickupId, boxAwbs, String(row.description ?? ""), String(row.client_id ?? "")].join(" "),
+          keywords: [id, trackingNumber, providerReference, lrReference, awbReference, pickupReference, providerBookingId, providerPickupId, boxAwbs, String(row.description ?? ""), String(row.client_id ?? "")].join(" "),
         };
       }));
       shipmentSearchLoaded.current = true;
