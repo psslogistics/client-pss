@@ -13,6 +13,7 @@ const checks = [
   ["retry/reschedule/cancel actions exist", source.includes("retryPickup") && source.includes("reschedulePickup") && source.includes("cancelPickup")],
   ["refresh and calendar actions exist", source.includes("loadPickups(true)") && source.includes("Calendar View")],
   ["provider status polling and stale-slot resets exist", source.includes("setInterval") && source.includes("setRescheduleSlotOptions([])")],
+  ["pickup dates use India time and submit revalidates slots", source.includes('timeZone: "Asia/Kolkata"') && source.includes("latestAvailability") && source.includes("latestSlots.some")],
   ["provider confirmation is not presented as scheduled by default", source.includes("Provider confirmation is pending") || source.includes("Provider Pending")],
   ["notifications distinguish outcomes", source.includes("NoticeTone") && source.includes('"pending"') && source.includes('"error"') && source.includes("role={noticeTone")],
   ["shipment booking does not create a duplicate pickup", !bookingSource.includes("pendingPickupRecovery") && bookingSource.includes("Pickup scheduling is handled separately")],

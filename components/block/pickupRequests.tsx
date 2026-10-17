@@ -83,7 +83,11 @@ type NewPickup = {
 
 const initialPickups: Pickup[] = [];
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const current = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return `${current.year}-${current.month}-${current.day}`;
+};
 type ProviderAccount = { id: string; provider: string; account_name: string; enabled?: boolean; status?: string };
 type SavedWarehouse = { id: string; source?: "warehouse" | "address"; name?: string; label?: string; address_kind?: string; address?: string; city?: string; state?: string; pincode?: string; contact_name?: string; phone?: string; contact?: string };
 
@@ -290,6 +294,14 @@ export default function PickupRequests() {
       return;
     }
     try {
+      const availabilityQuery = new URLSearchParams({ provider: form.provider || "delhivery", provider_account_id: form.providerAccountId, pincode: form.pincode, ...(form.warehouseId ? { warehouse_id: form.warehouseId } : {}) });
+      const latestAvailability = await pssApi<{ data?: { dates?: PickupSlotOption[] } }>(`/v1/pickup-slots?${availabilityQuery.toString()}`);
+      const latestSlots = latestAvailability.data?.dates ?? [];
+      setPickupSlotOptions(latestSlots);
+      if (!latestSlots.some((option) => option.date === form.date && option.slots.includes(form.window))) {
+        notify("That pickup window is no longer available. Select the latest provider window and try again.", "error");
+        return;
+      }
       const location = `${form.address}, ${form.city}, ${form.state}, ${form.pincode}, ${form.country}`;
       const selectedCandidates = pickupCandidates.filter((candidate) => selectedCandidateIds.includes(candidate.id));
       const manifested = selectedCandidates.length > 0;
