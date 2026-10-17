@@ -93,7 +93,7 @@ type ProviderAccount = { id: string; provider: string; account_name: string; ena
 type SavedWarehouse = { id: string; source?: "warehouse" | "address"; name?: string; label?: string; address_kind?: string; address?: string; city?: string; state?: string; pincode?: string; contact_name?: string; phone?: string; contact?: string; provider_account_id?: string };
 
 function savedWarehouseIdentity(row: SavedWarehouse) {
-  return [row.provider_account_id, row.name, row.address, row.city, row.state, row.pincode, row.contact, row.contact_name].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
+  return [row.provider_account_id, row.address, row.city, row.state, row.pincode, row.contact, row.contact_name].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 }
 
 function dedupeSavedWarehouses(rows: SavedWarehouse[]) {

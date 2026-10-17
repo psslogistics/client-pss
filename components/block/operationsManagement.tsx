@@ -14,7 +14,7 @@ const button = "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg b
 const primary = "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90";
 
 function warehouseIdentity(row: Record<string, string>) {
-  return [row.client_id, row.provider_account_id, row.name, row.address, row.city, row.state, row.pincode, row.contact, row.contact_name].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
+  return [row.client_id, row.provider_account_id, row.address, row.city, row.state, row.pincode, row.contact, row.contact_name].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 }
 
 export default function OperationsManagement({ mode }: { mode: Mode }) {
