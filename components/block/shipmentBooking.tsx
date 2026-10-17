@@ -240,6 +240,7 @@ export default function ShipmentBooking() {
   const [documentMode, setDocumentMode] = useState<"invoice" | "dc">("invoice");
   const [invoices, setInvoices] = useState<File[]>([]);
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [orderId, setOrderId] = useState("");
   const [dcOpen, setDcOpen] = useState(false);
   const [savedPickups, setSavedPickups] = useState<SavedPickup[]>([]);
   const [selectedSavedPickupId, setSelectedSavedPickupId] = useState("");
@@ -765,9 +766,20 @@ export default function ShipmentBooking() {
     const volumetricWeight = dimensions.reduce((sum, item) => sum + (item.length * item.width * item.height * item.quantity) / 5000, 0);
     const originAddress = { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone };
     const destinationAddress = { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone };
-    const documentReference = documentMode === "dc"
-      ? dc.number.trim()
-      : invoiceNumber.trim() || `PSS-${idempotencyKey.slice(0, 12)}`;
+    const documentReference = documentMode === "dc" ? dc.number.trim() : invoiceNumber.trim();
+    const resolvedOrderId = orderId.trim() || documentReference;
+    if (!resolvedOrderId) {
+      setSingleAttemptId("");
+      setSingleSubmitting(false);
+      setBookingNotice("Enter an Order ID or invoice number before booking.");
+      return;
+    }
+    if (!documentReference) {
+      setSingleAttemptId("");
+      setSingleSubmitting(false);
+      setBookingNotice("An invoice number is required before booking this shipment.");
+      return;
+    }
     let invoiceDocuments: Array<{ name: string; content_type: string; body_base64: string; invoice_number: string }>;
     try {
       invoiceDocuments = await Promise.all(invoices.map(async (file) => {
@@ -802,6 +814,7 @@ export default function ShipmentBooking() {
           declared_value: declaredValue,
           invoice_reference: documentReference,
           invoice_number: documentReference,
+          order_id: resolvedOrderId,
           pieces: Number(shipmentDetails.pieces) || 1,
           origin: `${pickup.city}, ${pickup.state}`,
           destination: `${delivery.city}, ${delivery.state}`,
@@ -974,7 +987,7 @@ export default function ShipmentBooking() {
       setBulkSubmitting(false);
     }
   };
-  const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoices([]); setInvoiceNumber(""); setBoxDimensions([{ length: "", width: "", height: "", boxCount: "" }]); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setRiskType("owner"); setCodAmount(""); setSelectedCourier(null); setSelectedSlot(null); setSingleAttemptId(""); setSingleSubmitting(false); setShowReview(false); setSingleCompleted(false); setProviderBookingPending(false); setBookingAmount(null); setReviewQuote(null); setReviewQuoteError(""); setBookingNotice(""); setBookingDiagnostic(null); setNotice(""); setInvoicePromptOpen(false); };
+  const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoices([]); setInvoiceNumber(""); setOrderId(""); setBoxDimensions([{ length: "", width: "", height: "", boxCount: "" }]); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setRiskType("owner"); setCodAmount(""); setSelectedCourier(null); setSelectedSlot(null); setSingleAttemptId(""); setSingleSubmitting(false); setShowReview(false); setSingleCompleted(false); setProviderBookingPending(false); setBookingAmount(null); setReviewQuote(null); setReviewQuoteError(""); setBookingNotice(""); setBookingDiagnostic(null); setNotice(""); setInvoicePromptOpen(false); };
   const milestoneStep = showReview ? 4 : selectedCourier && selectedSlot ? 3 : invoices.length || documentMode === "dc" ? 2 : 1;
   const milestones = ["Shipment details", "Documentation", "PSS service & slot", "Review"];
 
@@ -1044,6 +1057,7 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
         <section className="rounded-xl border border-border bg-card p-4 shadow-xs">
           <div className="mb-4 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600"><FileText className="h-3.5 w-3.5" /></span><div><h2 className="text-sm font-semibold">Shipment documentation</h2><p className="text-xs text-muted-foreground">A Delhivery B2B invoice is required. A Delivery Challan may be added as supplementary documentation.</p></div></div>
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-muted/60 p-1"><button type="button" onClick={() => setDocumentMode("invoice")} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${documentMode === "invoice" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>Upload invoice</button><button type="button" onClick={() => { setDocumentMode("dc"); setDcOpen(true); }} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${documentMode === "dc" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>Add Delivery Challan</button></div>
+          <label className="mb-3 block space-y-1 text-xs font-semibold text-muted-foreground">Order ID <span className="font-normal">(optional)</span><input aria-label="Order ID" className={field} maxLength={80} placeholder="Enter customer order ID" value={orderId} onChange={(event) => setOrderId(event.target.value.slice(0, 80))} /><span className="block text-[11px] font-normal text-muted-foreground">If left blank, the invoice number will be used for the LR.</span></label>
           {documentMode === "invoice" ? <><button type="button" onClick={() => fileRef.current?.click()} className="flex w-full items-center justify-between rounded-xl border border-dashed border-primary/40 bg-primary/3 px-4 py-3 text-left hover:border-primary hover:bg-primary/5"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Upload className="h-4 w-4" /></span><span><span className="block text-sm font-medium">{invoices.length ? `Add invoice files (${invoices.length} attached)` : "Choose invoice files"}</span><span className="block text-xs text-muted-foreground">PDF, JPG or PNG · max 10 MB each</span></span></span><ArrowRight className="h-4 w-4 text-muted-foreground" /></button><label className="mt-3 block space-y-1 text-xs font-semibold text-muted-foreground">Invoice number<input required aria-label="Invoice number" className={field} placeholder="Enter invoice number" value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} /></label>{invoices.length > 0 && <div className="mt-2 space-y-1.5">{invoices.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs"><FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setInvoices((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="text-muted-foreground hover:text-destructive">Remove</button></div>)}</div>}</> : <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3"><span className="flex items-center gap-3"><Check className="h-5 w-5 text-emerald-600" /><span><span className="block text-sm font-medium">Delivery Challan added</span><span className="block text-xs text-muted-foreground">Supplementary document. An invoice is still required.</span></span></span><button type="button" onClick={() => setDcOpen(true)} className="text-xs font-semibold text-primary hover:underline">Edit DC</button></div>}
           <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); const invalid = files.find((file) => !isAllowedDocument(file)); if (invalid) { setNotice(`${invalid.name} must be a PDF, JPG, or PNG up to 10 MB`); return; } if (files.length) setInvoicePromptOpen(false); setInvoices((current) => [...current, ...files]); event.currentTarget.value = ""; }} />
         </section>
