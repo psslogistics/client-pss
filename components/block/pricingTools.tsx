@@ -49,9 +49,9 @@ export function PincodeServiceability() {
     if (!isValidPincode(pickup) || !isValidPincode(delivery)) return setRouteError("Enter valid six-digit pickup and delivery pincodes.");
     if (pickup === delivery) return setRouteError("Pickup and delivery pincodes must be different.");
     setRouteError(""); setStatus("loading");
-    void pssApi<{ data: { serviceable: boolean; providers: string[]; status: string; serviceability_rows?: Array<{ pincode: string; provider: string; status: string; oda: boolean | null; account_name?: string; confidence_score?: number; priority?: number; source?: string }> } }>("/v1/serviceability", { method: "POST", body: JSON.stringify({ origin_pincode: pickup, destination_pincode: delivery }) }).then((response) => {
+    void pssApi<{ data: { serviceable: boolean; providers: string[]; status: string; availability_status?: "dataset_verified" | "serviceable" | "not_serviceable" | "provider_error" | "provider_unavailable"; serviceability_rows?: Array<{ pincode: string; provider: string; status: string; oda: boolean | null; account_name?: string; confidence_score?: number; priority?: number; source?: string }> } }>("/v1/serviceability", { method: "POST", body: JSON.stringify({ origin_pincode: pickup, destination_pincode: delivery }) }).then((response) => {
       const available = response.data.serviceable;
-      const providerError = response.data.status === "provider_error" || !response.data.serviceable;
+      const providerError = ["provider_error", "provider_unavailable", "provider_contract_not_verified"].includes(response.data.availability_status ?? response.data.status);
       const rows = (response.data.serviceability_rows ?? []).flatMap((row) => {
         // Provider responses may include a private account label after the public courier name.
         // Keep that identifier in the API response for routing, but never render it to clients.
@@ -62,7 +62,7 @@ export function PincodeServiceability() {
         return [{ ...row, provider: approvedLabel ?? publicCourierName(row.provider, providerAccount) }];
       });
       const datasetBacked = rows.some((row) => row.source === "Delhivery pincode dataset");
-      setResult({ pickup: available, delivery: available, modes: response.data.providers.map((provider) => /delhivery/i.test(provider) ? "Express" : "Surface"), eta: available ? "Provider confirmation required" : "Not available", prepaid: available, cod: available, reverse: available, temporary: providerError && !datasetBacked, message: datasetBacked ? "The route is available in Delhivery's active B2B pincode dataset. Live provider confirmation was unavailable, so no shipment was created." : providerError ? "The courier provider did not return a verified response. Please retry shortly." : available ? "The route is eligible for configured courier providers." : "The route is not serviceable for the enabled courier providers.", rows });
+      setResult({ pickup: available, delivery: available, modes: response.data.providers.map((provider) => /delhivery/i.test(provider) ? "Express" : "Surface"), eta: available ? "Provider confirmation required" : "Not available", prepaid: available, cod: available, reverse: available, temporary: providerError && !datasetBacked, message: datasetBacked ? "The route is covered by the active Delhivery B2B pincode dataset. Provider confirmation is still required before booking." : providerError ? "Live courier confirmation is temporarily unavailable. The route was not marked unserviceable." : available ? "The route is eligible for configured courier providers." : "The route is not serviceable for the enabled courier providers.", rows });
       setStatus("done");
     }).catch((error) => { const details = getPssErrorDetails(error, "Serviceability could not be checked."); setRouteError(`Serviceability check failed: ${details.message}`); setStatus("idle"); });
   };
