@@ -1,0 +1,18 @@
+.provider {
+  background-color: #f8fafc;
+  background-image: linear-gradient(100deg, #f8fafc 0%, #eef2f7 45%, #f8fafc 65%, #f8fafc 100%);
+  background-size: 200% 100%;
+  animation: provider-shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes provider-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .provider {
+    animation: none;
+    background-image: none;
+  }
+}

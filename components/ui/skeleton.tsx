@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import styles from "./skeleton.module.css"
 
 function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -9,6 +10,10 @@ function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
       {...props}
     />
   )
+}
+
+function SkeletonProvider({ className, ...props }: React.ComponentProps<"div">) {
+  return <div aria-hidden="true" className={cn(styles.provider, "rounded-md", className)} {...props} />
 }
 
 function SkeletonText({ className, ...props }: React.ComponentProps<"div">) {
@@ -87,4 +92,4 @@ function SkeletonFormSection({ fields = 6, className, ...props }: React.Componen
   return <SkeletonCard className={cn("p-4", className)} {...props}><div className="flex items-center justify-between"><Skeleton className="h-5 w-32" /><SkeletonButton className="w-36" /></div><div className="mt-5 grid gap-3 sm:grid-cols-2">{Array.from({ length: fields }, (_, index) => <SkeletonInput key={index} className={index === 2 ? "sm:col-span-2" : ""} />)}</div></SkeletonCard>
 }
 
-export { Skeleton, SkeletonText, SkeletonHeading, SkeletonButton, SkeletonInput, SkeletonBadge, SkeletonCard, SkeletonKpi, SkeletonTable, SkeletonTimeline, SkeletonSplitPane, SkeletonChart, SkeletonFormSection }
+export { Skeleton, SkeletonProvider, SkeletonText, SkeletonHeading, SkeletonButton, SkeletonInput, SkeletonBadge, SkeletonCard, SkeletonKpi, SkeletonTable, SkeletonTimeline, SkeletonSplitPane, SkeletonChart, SkeletonFormSection }

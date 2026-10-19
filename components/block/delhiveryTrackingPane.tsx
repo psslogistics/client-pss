@@ -23,7 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { jsPDF } from "jspdf";
-import { Skeleton, SkeletonBadge, SkeletonCard, SkeletonHeading, SkeletonInput, SkeletonText, SkeletonTimeline } from "@/components/ui/skeleton";
+import { SkeletonProvider } from "@/components/ui/skeleton";
 
 type Status = "Booked" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type TrackingEvent = { title: string; description: string; location: string; eventTime: string; status: Status };
@@ -306,6 +306,24 @@ function Identifier({ label, value }: { label: string; value?: string }) {
   return <div className="min-w-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2"><p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 truncate text-xs font-semibold text-slate-800" title={value || "Not available"}>{value || "Not available"}</p></div>;
 }
 
+function DelhiveryTrackingSkeleton() {
+  const identifiers = Array.from({ length: 8 });
+  const stages = Array.from({ length: 4 });
+  return <div className="tracking-pane min-h-full w-full min-w-0 bg-background text-foreground" role="status" aria-label="Loading production tracking" aria-busy="true">
+    <main className="mx-auto w-full max-w-[1400px] space-y-4 p-4 sm:p-6">
+      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"><SkeletonProvider className="h-10 w-full rounded-lg" /></section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="px-4 pb-4 pt-5 sm:px-6">
+        <div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><SkeletonProvider className="size-11 shrink-0 rounded-md" /><div className="min-w-0 space-y-2"><SkeletonProvider className="h-6 w-64 max-w-[70vw] rounded-md" /><SkeletonProvider className="h-4 w-56 max-w-[60vw] rounded-md" /><SkeletonProvider className="h-4 w-40 rounded-md" /></div></div><SkeletonProvider className="h-9 w-20 shrink-0 rounded-md" /></div>
+        <div className="mt-4 border-t border-slate-200 pt-4"><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">{identifiers.map((_, index) => <div key={index} className="rounded-lg bg-slate-50 p-3"><SkeletonProvider className="h-3 w-24 rounded" /><SkeletonProvider className="mt-2 h-4 w-full max-w-36 rounded" /></div>)}</div><div className="mt-3 flex flex-wrap gap-2">{Array.from({ length: 4 }).map((_, index) => <SkeletonProvider key={index} className="h-6 w-20 rounded-full" />)}</div><SkeletonProvider className="mt-4 h-14 w-full rounded-md" /></div>
+      </div></section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center gap-2 border-b border-slate-200 px-4 py-4 sm:px-5"><SkeletonProvider className="size-7 rounded-md" /><SkeletonProvider className="h-5 w-40 rounded" /></div><div className="px-4 py-5 sm:px-6"><div className="space-y-0">{stages.map((_, index) => <div key={index} className="relative flex gap-3"><div className="flex w-4 shrink-0 flex-col items-center"><SkeletonProvider className="z-10 mt-0.5 size-4 rounded-full" />{index < stages.length - 1 && <SkeletonProvider className="w-0.5 flex-1 min-h-14 rounded-none" />}</div><div className="min-w-0 flex-1 pb-7"><SkeletonProvider className="h-4 w-28 rounded" />{index === 0 && <SkeletonProvider className="mt-2 h-3 w-32 rounded" />}</div></div>)}</div></div></section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center gap-2 border-b border-slate-200 px-4 py-4 sm:px-5"><SkeletonProvider className="size-7 rounded-md" /><SkeletonProvider className="h-5 w-32 rounded" /><SkeletonProvider className="ml-auto size-4 rounded" /></div><div className="px-4 pb-4 sm:px-5"><SkeletonProvider className="mt-4 h-24 w-full rounded-lg" /><div className="mt-4 space-y-3"><SkeletonProvider className="h-8 w-full rounded" /><SkeletonProvider className="h-8 w-full rounded" /></div><SkeletonProvider className="mt-4 h-36 w-full rounded-lg" /></div></section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center gap-2 border-b border-slate-200 px-4 py-4 sm:px-5"><SkeletonProvider className="size-7 rounded-md" /><SkeletonProvider className="h-5 w-24 rounded" /><SkeletonProvider className="ml-auto size-4 rounded" /></div><div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5"><SkeletonProvider className="h-20 w-full rounded-lg" /><SkeletonProvider className="h-20 w-full rounded-lg" /></div></section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-center gap-2"><SkeletonProvider className="size-7 rounded-md" /><SkeletonProvider className="h-5 w-32 rounded" /></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">{Array.from({ length: 5 }).map((_, index) => <SkeletonProvider key={index} className="h-9 rounded-md" />)}</div></section>
+    </main>
+  </div>;
+}
+
 export default function DelhiveryTrackingPane() {
   const router = useRouter();
   const [shipments, setShipments] = useState<Shipment[]>([]);
@@ -408,7 +426,7 @@ export default function DelhiveryTrackingPane() {
     void refreshTracking(selected);
   }, [routeShipmentLoaded, selected]);
 
-  if (loading && !shipments.length) return <div className="tracking-pane w-full min-w-0 bg-background p-4 text-foreground sm:p-6" role="status" aria-label="Loading production tracking" aria-busy="true"><div className="mx-auto grid w-full max-w-[1400px] gap-4"><div className="flex flex-wrap items-center gap-3"><SkeletonInput className="min-w-[240px] flex-1" /><Skeleton className="h-9 w-28 rounded-lg" /><Skeleton className="h-9 w-24 rounded-lg" /></div><div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]"><SkeletonCard className="min-h-[260px] p-5"><div className="flex items-start justify-between gap-3"><div><SkeletonHeading className="w-44" /><SkeletonText className="mt-2 w-64" /></div><SkeletonBadge /></div><div className="mt-6 grid grid-cols-2 gap-3"><SkeletonText /><SkeletonText /><SkeletonText /><SkeletonText /></div></SkeletonCard><SkeletonCard className="min-h-[260px] p-5"><SkeletonHeading className="w-36" /><SkeletonTimeline className="mt-6" items={4} /></SkeletonCard></div><SkeletonCard className="min-h-[360px] p-5"><div className="flex items-center justify-between"><SkeletonHeading className="w-40" /><SkeletonBadge /></div><SkeletonTimeline className="mt-6" items={5} /></SkeletonCard></div></div>;
+  if (loading && !shipments.length) return <DelhiveryTrackingSkeleton />;
   if (!selected) return <div className="tracking-pane grid min-h-[420px] w-full min-w-0 place-items-center rounded-xl border border-border bg-card p-8 text-center text-foreground"><div><Package className="mx-auto size-7 text-muted-foreground" /><h1 className="mt-3 text-base font-semibold">{loadError ? "Shipment data is unavailable" : selectedId ? "Shipment not found" : "No shipments yet"}</h1><p className="mt-1 text-sm text-muted-foreground">{loadError || (selectedId ? `The linked shipment ${selectedId} could not be loaded.` : "Shipment tracking will appear here once a shipment is available.")}</p><button type="button" onClick={() => void load(true)} className="mt-4 rounded-md border border-input px-3 py-2 text-xs font-semibold">Retry</button></div></div>;
 
   const tone = statusTone(selected.status);
