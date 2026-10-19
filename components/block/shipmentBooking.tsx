@@ -440,6 +440,7 @@ export default function ShipmentBooking() {
           provider: "delhivery",
           provider_managed: true,
           pieces: Number(shipmentDetails.pieces) || 1,
+          payment_mode: paymentMode.toLowerCase(),
           risk_type: riskType,
         }),
       });
@@ -466,7 +467,7 @@ export default function ShipmentBooking() {
       if (providerReadiness !== "idle") queueMicrotask(() => { setProviderReadiness("idle"); setProviderReadinessError(""); });
       return;
     }
-    const fingerprint = JSON.stringify({ accountId: courier.accountId, warehouseId: selectedSavedPickupId, pickup, pickupPerson: { name: pickupPerson.name, phone: pickupPerson.phone }, delivery, deliveryPerson: { name: deliveryPerson.name, phone: deliveryPerson.phone } });
+    const fingerprint = JSON.stringify({ accountId: courier.accountId, warehouseId: selectedSavedPickupId, paymentMode, pickup, pickupPerson: { name: pickupPerson.name, phone: pickupPerson.phone }, delivery, deliveryPerson: { name: deliveryPerson.name, phone: deliveryPerson.phone } });
     if (providerReadinessFingerprint.current === fingerprint && ["ready", "checking", "error"].includes(providerReadiness)) return;
     const requestToken = ++providerReadinessRequest.current;
     const timer = window.setTimeout(() => {
@@ -476,7 +477,7 @@ export default function ShipmentBooking() {
       void pssApi<{ data: { ready: boolean; warehouse_name?: string | null } }>("/v1/shipments/preflight", {
         method: "POST",
         headers: { "Idempotency-Key": `shipment-preflight-${crypto.randomUUID()}` },
-        body: JSON.stringify({ provider: "delhivery", provider_account_id: courier.accountId, warehouse_id: selectedSavedPickupId || undefined, origin_address: { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }, destination_address: { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }, origin: `${pickup.city}, ${pickup.state}` }),
+        body: JSON.stringify({ provider: "delhivery", provider_account_id: courier.accountId, warehouse_id: selectedSavedPickupId || undefined, origin_address: { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }, destination_address: { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }, origin: `${pickup.city}, ${pickup.state}`, payment_mode: paymentMode.toLowerCase() }),
       }).then((result) => {
         if (requestToken !== providerReadinessRequest.current) return;
         if (result.data.ready) setProviderReadiness("ready");
@@ -489,7 +490,7 @@ export default function ShipmentBooking() {
       });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [selectedCourier, couriers, selectedSavedPickupId, pickup, pickupPerson, delivery, deliveryPerson, providerReadiness]);
+  }, [selectedCourier, couriers, selectedSavedPickupId, paymentMode, pickup, pickupPerson, delivery, deliveryPerson, providerReadiness]);
 
   useEffect(() => {
     if (!showBulkReview || !bulkRows.length) {
@@ -856,6 +857,7 @@ export default function ShipmentBooking() {
             provider: "delhivery",
             provider_account_id: selectedCourier?.accountId || undefined,
             pricing_quote_id: bulkQuotes[row.id]?.quote_id,
+            payment_mode: row.paymentMode,
             invoice_documents: invoiceDocuments,
           }),
         });
