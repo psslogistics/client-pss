@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { jsPDF } from "jspdf";
+import { Skeleton, SkeletonBadge, SkeletonCard, SkeletonHeading, SkeletonInput, SkeletonText, SkeletonTimeline } from "@/components/ui/skeleton";
 
 type Status = "Booked" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type TrackingEvent = { title: string; description: string; location: string; eventTime: string; status: Status };
@@ -407,7 +408,7 @@ export default function DelhiveryTrackingPane() {
     void refreshTracking(selected);
   }, [routeShipmentLoaded, selected]);
 
-  if (loading && !shipments.length) return <div className="tracking-pane w-full min-w-0 bg-background p-4 text-foreground sm:p-6"><div className="mx-auto grid w-full max-w-[1400px] gap-4"><div className="h-44 animate-pulse rounded-xl border border-border bg-card" /><div className="h-64 animate-pulse rounded-xl border border-border bg-card" /><div className="h-52 animate-pulse rounded-xl border border-border bg-card" /><div className="flex items-center justify-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading production tracking…</div></div></div>;
+  if (loading && !shipments.length) return <div className="tracking-pane w-full min-w-0 bg-background p-4 text-foreground sm:p-6" role="status" aria-label="Loading production tracking" aria-busy="true"><div className="mx-auto grid w-full max-w-[1400px] gap-4"><div className="flex flex-wrap items-center gap-3"><SkeletonInput className="min-w-[240px] flex-1" /><Skeleton className="h-9 w-28 rounded-lg" /><Skeleton className="h-9 w-24 rounded-lg" /></div><div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]"><SkeletonCard className="min-h-[260px] p-5"><div className="flex items-start justify-between gap-3"><div><SkeletonHeading className="w-44" /><SkeletonText className="mt-2 w-64" /></div><SkeletonBadge /></div><div className="mt-6 grid grid-cols-2 gap-3"><SkeletonText /><SkeletonText /><SkeletonText /><SkeletonText /></div></SkeletonCard><SkeletonCard className="min-h-[260px] p-5"><SkeletonHeading className="w-36" /><SkeletonTimeline className="mt-6" items={4} /></SkeletonCard></div><SkeletonCard className="min-h-[360px] p-5"><div className="flex items-center justify-between"><SkeletonHeading className="w-40" /><SkeletonBadge /></div><SkeletonTimeline className="mt-6" items={5} /></SkeletonCard></div></div>;
   if (!selected) return <div className="tracking-pane grid min-h-[420px] w-full min-w-0 place-items-center rounded-xl border border-border bg-card p-8 text-center text-foreground"><div><Package className="mx-auto size-7 text-muted-foreground" /><h1 className="mt-3 text-base font-semibold">{loadError ? "Shipment data is unavailable" : selectedId ? "Shipment not found" : "No shipments yet"}</h1><p className="mt-1 text-sm text-muted-foreground">{loadError || (selectedId ? `The linked shipment ${selectedId} could not be loaded.` : "Shipment tracking will appear here once a shipment is available.")}</p><button type="button" onClick={() => void load(true)} className="mt-4 rounded-md border border-input px-3 py-2 text-xs font-semibold">Retry</button></div></div>;
 
   const tone = statusTone(selected.status);

@@ -1,7 +1,10 @@
+import { Skeleton, SkeletonChart, SkeletonHeading, SkeletonKpi, SkeletonText } from "@/components/ui/skeleton";
+
 export default function DashboardLoading() {
-  return <div className="space-y-5" role="status" aria-live="polite" aria-label="Loading client workspace">
-    <section><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Client workspace</p><h1 className="mt-1 text-2xl font-semibold tracking-tight">Loading workspace</h1><p className="mt-2 text-sm text-muted-foreground">Loading the selected workspace page…</p></section>
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-xl border border-border bg-card" />)}</section>
-    <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,0.6fr)]"><div className="h-72 animate-pulse rounded-xl border border-border bg-card" /><div className="h-72 animate-pulse rounded-xl border border-border bg-card" /></section>
+  return <div className="space-y-5" role="status" aria-live="polite" aria-label="Loading client workspace" aria-busy="true">
+    <section><SkeletonText className="w-32" /><SkeletonHeading className="mt-2" /><SkeletonText className="mt-2 w-72" /></section>
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{Array.from({ length: 5 }, (_, index) => <SkeletonKpi key={index} />)}</section>
+    <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,0.6fr)]"><SkeletonChart className="min-h-[320px]" /><SkeletonChart className="min-h-[320px]" /></section>
+    <section className="grid gap-5 lg:grid-cols-3"><SkeletonChart className="lg:col-span-2" /><Skeleton className="min-h-[288px] rounded-xl border border-border/70 bg-card/70" /></section>
   </div>;
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, FileText, LockKeyhole, Phone, ShieldCheck, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { SkeletonFormSection } from "@/components/ui/skeleton";
 
 type KycStatus = "not_started" | "draft" | "submitted" | "under_review" | "needs_changes" | "approved" | "rejected" | "suspended";
 type KycProfile = { client_id: string; status: KycStatus; gst_number: string | null; pan_number: string | null; aadhaar_last4: string | null; mobile_number: string | null; phone_verified_at: string | null; review_notes: string | null };
@@ -106,7 +107,7 @@ export default function ClientKycForm() {
   const complete = Boolean(profile?.gst_number && profile.pan_number && profile.aadhaar_last4 && profile.phone_verified_at && requiredDocuments.every(hasDocument));
   const status = profile?.status ?? "not_started";
 
-  if (loading) return <section className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">Loading KYC requirements…</section>;
+  if (loading) return <section className="rounded-xl border border-border bg-card p-5" role="status" aria-label="Loading KYC requirements" aria-busy="true"><SkeletonFormSection fields={4} /><SkeletonFormSection className="mt-5" fields={3} /></section>;
   return <section className="rounded-xl border border-border bg-card shadow-xs">
     <div className="border-b border-border/70 px-4 py-4 sm:px-5"><div className="flex items-start justify-between gap-3"><div><h2 className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-primary" />Mandatory KYC for shipment booking</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Aadhaar, GST, PAN, and an OTP-verified mobile number are required before you can start booking.</p></div><span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary">{status.replaceAll("_", " ")}</span></div></div>
     <div className="space-y-5 p-4 sm:p-5">

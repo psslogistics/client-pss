@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi, pssApiFile } from "@/lib/pss-api";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import { zipSync } from "fflate";
+import { Skeleton, SkeletonInput, SkeletonTable, SkeletonText } from "@/components/ui/skeleton";
 
 type ShipmentStatus = "All" | "Active" | "Booked" | "Picked Up" | "In Transit" | "Out for Delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type ShipmentSortKey = "courierReference" | "booked" | "consignor" | "consignee" | "pieces" | "weight" | "courier" | "eta" | "status";
@@ -229,6 +230,8 @@ export default function AllShipments() {
     setSelectedIds(new Set()); setNotice(`Deleted ${success} shipment${success === 1 ? "" : "s"}${failed ? `; ${failed} could not be deleted` : ""}${skipped ? `; ${skipped} selected shipment${skipped === 1 ? " was" : "s were"} kept because they are not eligible` : ""}.`); setReloadKey((value) => value + 1);
   };
   const openShipmentAction = (row: ShipmentRow, action: "label" | "lr") => { setOpenMenu(null); router.push(`/dashboard/shipmentTracking?id=${encodeURIComponent(row.pssTracking)}&action=${action}`); };
+
+  if (loading && !rows.length) return <div className="flex h-[calc(100dvh-6.5rem)] min-h-0 w-full flex-col gap-3" role="status" aria-label="Loading shipments" aria-busy="true"><SkeletonInput /><Skeleton className="h-11 w-full rounded-xl" /><SkeletonText className="w-96" /><SkeletonTable rows={8} columns={10} className="min-h-0 flex-1" /></div>;
 
   return <div className="flex h-[calc(100dvh-6.5rem)] min-h-0 w-full flex-col gap-3 overflow-hidden">
     <div className="relative flex min-w-0 items-center rounded-lg border border-input bg-background focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10"><Search className="ml-3 size-4 shrink-0 text-muted-foreground" /><input aria-label="Search all shipments" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search shipments, references, customers, or cities…" className="h-10 min-w-0 flex-1 bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground/70" />{query && <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="mr-2 rounded p-1 text-muted-foreground hover:bg-accent"><X className="size-3.5" /></button>}</div>

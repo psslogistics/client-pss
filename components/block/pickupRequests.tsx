@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import Dropdown from "@/components/ui/dropdown";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
+import { SkeletonTable } from "@/components/ui/skeleton";
 
 type PickupStatus = "Draft" | "Requested" | "Provider Pending" | "Scheduled" | "Driver Assigned" | "En Route" | "Picked Up" | "Completed" | "Failed" | "Cancelled";
 type NoticeTone = "info" | "success" | "pending" | "error";
@@ -375,7 +376,7 @@ export default function PickupRequests() {
             <thead className="bg-muted/30 text-[10px] uppercase tracking-wide text-muted-foreground"><tr className="border-y border-border/70"><th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Select all visible pickup requests" checked={allVisibleSelected} onChange={toggleAllVisible} className="accent-primary" /></th>{columns.filter((column) => visibleColumns.includes(column.key)).map((column) => <th key={column.key} className="px-3 py-3 font-semibold"><button type="button" onClick={() => toggleSort(column.key)} className="inline-flex items-center gap-1 hover:text-foreground">{column.label}{sort.key === column.key ? sort.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : <span className="text-muted-foreground/50">↕</span>}</button></th>)}<th className="px-3 py-3 font-semibold">Contact</th></tr></thead>
             <tbody className="divide-y divide-border/70">{filtered.map((pickup) => <PickupRow key={pickup.id} pickup={pickup} visibleColumns={visibleColumns} selected={selectedIds.includes(pickup.id)} toggleSelected={() => toggleSelected(pickup.id)} open={() => setSelectedPickup(pickup)} />)}</tbody>
           </table>
-          {!filtered.length && <div className="px-5 py-14 text-center text-sm text-muted-foreground"><Package className="mx-auto mb-2 h-6 w-6 opacity-50" />{loading ? "Loading production pickup requests…" : loadError ? <><p>Pickup data is unavailable.</p><button type="button" onClick={() => void loadPickups(true)} disabled={refreshing} className="mt-3 rounded-lg border border-input px-3 py-2 text-xs font-semibold hover:bg-accent disabled:opacity-50">{refreshing ? "Retrying…" : "Retry pickup data"}</button></> : "No pickup requests match these filters."}</div>}
+          {!filtered.length && <div className="px-5 py-14 text-center text-sm text-muted-foreground">{loading ? <div className="mx-auto max-w-4xl text-left" role="status" aria-label="Loading production pickup requests" aria-busy="true"><SkeletonTable rows={6} columns={8} /></div> : <><Package className="mx-auto mb-2 h-6 w-6 opacity-50" />{loadError ? <><p>Pickup data is unavailable.</p><button type="button" onClick={() => void loadPickups(true)} disabled={refreshing} className="mt-3 rounded-lg border border-input px-3 py-2 text-xs font-semibold hover:bg-accent disabled:opacity-50">{refreshing ? "Retrying…" : "Retry pickup data"}</button></> : "No pickup requests match these filters."}</>}</div>}
         </div>
       </div>
 
