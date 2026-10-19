@@ -40,9 +40,9 @@ export default function ClientDashboardModals({
   return (
     <>
       {isAlertsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+        <div className="pss-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div
-            className="relative w-full max-w-lg rounded-xl border border-destructive/30 bg-popover p-6 shadow-2xl text-popover-foreground space-y-5 animate-in fade-in zoom-in-95 duration-150"
+            className="pss-modal-panel relative w-full max-w-lg rounded-xl border border-destructive/30 bg-popover p-6 shadow-2xl text-popover-foreground space-y-5 animate-in fade-in zoom-in-95 duration-150 motion-reduce:animate-none"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-border pb-4">

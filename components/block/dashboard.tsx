@@ -24,6 +24,7 @@ import {
   KpiMetric,
 } from "./dashboard-data";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
+import { prefetchBookingDependencies } from "@/lib/booking-prefetch";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import { formatStatusLabel } from "@/lib/display";
 import type { ClientFinancialSnapshot } from "@/lib/client-dashboard-data";
@@ -115,6 +116,14 @@ export default function Dashboard() {
     const controller = new AbortController();
     void loadProduction(controller.signal);
     return () => controller.abort();
+  }, []);
+
+  // Warm the booking screen after the dashboard has mounted. This keeps the
+  // first booking interaction fast without delaying the dashboard's primary
+  // render or changing the synchronous LR confirmation path.
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void prefetchBookingDependencies(); }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Column 3 Segmented View Toggle ("summary" | "modes")
@@ -259,7 +268,7 @@ export default function Dashboard() {
     });
 
   return (
-    <div className="w-full space-y-4">
+    <div className="pss-page-enter w-full space-y-4">
       {productionError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"><span>{hasLastKnownProduction ? `Showing last successful dashboard data. Refresh failed: ${productionError}` : `${productionError} Metrics are unavailable until the connection succeeds.`}<details className="mt-1 w-full text-[11px] text-muted-foreground"><summary className="cursor-pointer font-semibold">Technical details</summary><p className="mt-1 break-words">{productionTechnicalError || "No additional diagnostic message."}{productionRequestId ? ` · Request ID: ${productionRequestId}` : ""}</p></details></span><button type="button" onClick={handleRefresh} disabled={isRefreshing} className="rounded-md border border-destructive/30 px-2.5 py-1.5 font-semibold hover:bg-destructive/10 disabled:opacity-50">{isRefreshing ? "Retrying…" : "Retry dashboard"}</button></div>}
       {/* Header Section */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -268,10 +277,8 @@ export default function Dashboard() {
           {/* URGENT POLICE EMERGENCY SIREN ALERTS BUTTON */}
           <button
             onClick={() => setIsAlertsModalOpen(true)}
-            className="relative overflow-hidden inline-flex items-center justify-center whitespace-nowrap text-sm font-bold transition-all h-9 rounded-md px-3.5 gap-2 cursor-pointer shadow-lg animate-police-siren"
+            className={`relative inline-flex items-center justify-center whitespace-nowrap text-sm font-bold transition-[background-color,border-color,box-shadow] duration-150 h-9 rounded-md px-3.5 gap-2 cursor-pointer shadow-sm ${alerts.length > 0 ? "border border-destructive/40 bg-destructive/10 text-destructive pss-alert-attention" : "border border-input bg-background text-foreground hover:bg-accent"}`}
           >
-            {/* 360-degree beacon sweep reflection overlay */}
-            <span className="absolute inset-0 bg-linear-to-r from-transparent via-white/40 to-transparent animate-siren-sweep pointer-events-none" />
             <Bell className="h-4 w-4 stroke-[2.5] relative z-10" />
             <span className="relative z-10">Alerts</span>
             {alerts.length > 0 && (
@@ -325,10 +332,11 @@ export default function Dashboard() {
 
       {/* Customizable KPI Cards Grid (5-Column Layout) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-        {activeKpis.map((kpi) => (
+        {activeKpis.map((kpi, index) => (
           <div
             key={kpi.id}
-            className="rounded-xl border border-border bg-card text-card-foreground shadow-xs relative overflow-hidden p-4 transition-all hover:shadow-md flex flex-col justify-between"
+            style={{ animationDelay: `${index * 40}ms` }}
+            className="pss-kpi-enter rounded-xl border border-border bg-card text-card-foreground shadow-xs relative overflow-hidden p-4 transition-[box-shadow,border-color] duration-150 hover:shadow-md flex flex-col justify-between motion-reduce:animate-none"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="space-y-1 min-w-0">
@@ -399,7 +407,7 @@ export default function Dashboard() {
                       offset += length;
                       const isActive = selectedStatus === null || selectedStatus === item.status;
                       const colors = ["var(--primary)", "#06b6d4", "#10b981", "#8b5cf6", "#f59e0b", "#f43f5e"];
-                      return <circle key={item.status} cx="50" cy="50" r="38" fill="none" stroke={colors[index % colors.length]} strokeWidth={selectedStatus === item.status ? 17 : 14} strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={dashOffset} className={`cursor-pointer transition-all duration-300 ${isActive ? "opacity-100" : "opacity-25"}`} tabIndex={0} role="button" aria-label={`${item.status}: ${item.count} shipments`} onMouseEnter={() => setSelectedStatus(item.status)} onMouseLeave={() => setSelectedStatus(null)} onFocus={() => setSelectedStatus(item.status)} onBlur={() => setSelectedStatus(null)} onClick={() => setSelectedStatus(selectedStatus === item.status ? null : item.status)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedStatus(selectedStatus === item.status ? null : item.status); } }} />;
+                      return <circle key={item.status} cx="50" cy="50" r="38" fill="none" stroke={colors[index % colors.length]} strokeWidth={selectedStatus === item.status ? 17 : 14} strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={dashOffset} className={`pss-chart-reveal cursor-pointer transition-all duration-300 ${isActive ? "opacity-100" : "opacity-25"}`} tabIndex={0} role="button" aria-label={`${item.status}: ${item.count} shipments`} onMouseEnter={() => setSelectedStatus(item.status)} onMouseLeave={() => setSelectedStatus(null)} onFocus={() => setSelectedStatus(item.status)} onBlur={() => setSelectedStatus(null)} onClick={() => setSelectedStatus(selectedStatus === item.status ? null : item.status)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedStatus(selectedStatus === item.status ? null : item.status); } }} />;
                     })}
                   </svg>
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">

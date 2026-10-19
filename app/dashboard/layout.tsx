@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { prefetchBookingDependencies } from "@/lib/booking-prefetch";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu,
@@ -60,7 +61,7 @@ function NavItems({ items, pathname }: { items: NavItem[]; pathname: string }) {
     <SidebarMenu>
       {items.map((r) => (
         <SidebarMenuItem key={r.title}>
-          <SidebarMenuButton isActive={pathname === r.href} render={<Link href={r.href} prefetch={false} onMouseEnter={() => router.prefetch(r.href)} />} tooltip={r.title}>
+                    <SidebarMenuButton isActive={pathname === r.href} render={<Link href={r.href} prefetch={false} onMouseEnter={() => { router.prefetch(r.href); if (r.href === "/dashboard/shipmentBooking") void prefetchBookingDependencies(); }} />} tooltip={r.title}>
             <PssIcon name={r.icon} size="lg" className="shrink-0 opacity-70" />
             <span>{r.title}</span>
             {pathname === r.href && <ChevronRight className="ml-auto size-3.5 opacity-40" />}

@@ -197,6 +197,74 @@
   }
 }
 
+:root {
+  --pss-motion-micro: 140ms;
+  --pss-motion-panel: 200ms;
+  --pss-motion-data: 360ms;
+  --pss-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pss-page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pss-kpi-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pss-chart-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pss-success-pop {
+  0% { opacity: 0; transform: scale(0.86); }
+  70% { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pss-alert-attention {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--destructive) 0%, transparent); }
+  35% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--destructive) 18%, transparent); }
+}
+
+.pss-page-enter { animation: pss-page-enter var(--pss-motion-panel) var(--pss-motion-ease) both; }
+.pss-kpi-enter { animation: pss-kpi-enter var(--pss-motion-panel) var(--pss-motion-ease) both; }
+.pss-alert-attention { animation: pss-alert-attention 2.8s var(--pss-motion-ease) 2; }
+.pss-chart-reveal { animation: pss-chart-reveal var(--pss-motion-data) var(--pss-motion-ease) both; }
+.pss-page-enter > span:first-child { animation: pss-success-pop var(--pss-motion-panel) var(--pss-motion-ease) both; }
+
+.pss-timeline-item {
+  animation: pss-page-enter var(--pss-motion-panel) var(--pss-motion-ease) both;
+}
+
+.pss-timeline-item:nth-child(2) { animation-delay: 40ms; }
+.pss-timeline-item:nth-child(3) { animation-delay: 80ms; }
+.pss-timeline-item:nth-child(4) { animation-delay: 120ms; }
+.pss-timeline-item:nth-child(5) { animation-delay: 160ms; }
+
+.pss-booking-form > section {
+  animation: pss-page-enter var(--pss-motion-panel) var(--pss-motion-ease) both;
+}
+
+.pss-booking-form > section:nth-child(3) { animation-delay: 40ms; }
+.pss-booking-form > section:nth-child(4) { animation-delay: 80ms; }
+
+.pss-page-enter > div:first-child > div:first-child span {
+  transition: background-color var(--pss-motion-micro) var(--pss-motion-ease), color var(--pss-motion-micro) var(--pss-motion-ease), transform var(--pss-motion-micro) var(--pss-motion-ease);
+}
+
+.pss-booking-form [role="alert"],
+.pss-booking-form [role="status"] {
+  animation: pss-page-enter var(--pss-motion-micro) var(--pss-motion-ease) both;
+}
+
+.pss-detail-crossfade {
+  animation: pss-page-enter var(--pss-motion-panel) var(--pss-motion-ease) both;
+}
+
 @keyframes pss-skeleton-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
@@ -216,7 +284,7 @@
 html.theme-transition,
 html.theme-transition * {
   transition-property: background-color, border-color, color, fill, stroke, box-shadow;
-  transition-duration: 420ms;
+  transition-duration: 260ms;
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -253,41 +321,23 @@ html.theme-transition * {
   scrollbar-color: rgba(156, 163, 175, 0.35) transparent;
 }
 
-/* Professional Executive Siren Ambient Morphing Animation */
-@keyframes police-siren-strobe {
-  0%, 100% {
-    /* Elegant Deep Crimson Red Glow */
-    background-color: rgb(185, 28, 28);
-    color: #ffffff;
-    border-color: rgba(239, 68, 68, 0.6);
-    box-shadow: 0 0 16px rgba(185, 28, 28, 0.45), 0 0 30px rgba(185, 28, 28, 0.2);
-    outline: 2px solid rgba(239, 68, 68, 0.4);
+@media (prefers-reduced-motion: reduce) {
+  .pss-page-enter,
+  .pss-kpi-enter,
+  .pss-alert-attention,
+  .pss-chart-reveal,
+  .pss-page-enter > span:first-child,
+  .pss-timeline-item,
+  .pss-booking-form > section,
+  .pss-page-enter > div:first-child > div:first-child span,
+  .pss-booking-form [role="alert"],
+  .pss-booking-form [role="status"],
+  .pss-detail-crossfade,
+  .animate-spin,
+  .animate-ping,
+  .animate-pulse {
+    animation: none !important;
   }
-  50% {
-    /* Elegant Deep Royal Blue Glow */
-    background-color: rgb(30, 64, 175);
-    color: #ffffff;
-    border-color: rgba(59, 130, 246, 0.6);
-    box-shadow: 0 0 16px rgba(30, 64, 175, 0.45), 0 0 30px rgba(30, 64, 175, 0.2);
-    outline: 2px solid rgba(59, 130, 246, 0.4);
-  }
-}
-
-@keyframes siren-beacon-sweep {
-  0% {
-    transform: translateX(-100%) rotate(25deg);
-  }
-  100% {
-    transform: translateX(200%) rotate(25deg);
-  }
-}
-
-.animate-police-siren {
-  animation: police-siren-strobe 3.6s ease-in-out infinite;
-}
-
-.animate-siren-sweep {
-  animation: siren-beacon-sweep 2.4s ease-in-out infinite;
 }
 
 main { min-width: 0; }
