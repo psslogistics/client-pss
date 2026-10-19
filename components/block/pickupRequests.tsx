@@ -118,7 +118,7 @@ const statusStyles: Record<PickupStatus, string> = {
 
 const columns: { key: SortKey; label: string }[] = [
   { key: "reference", label: "Reference" }, { key: "customer", label: "Customer" }, { key: "status", label: "Status" },
-  { key: "date", label: "Window" }, { key: "location", label: "Location" }, { key: "driver", label: "Driver" },
+  { key: "date", label: "Window" }, { key: "location", label: "Location" },
   { key: "pieces", label: "Pieces" }, { key: "weight", label: "Weight" },
 ];
 
