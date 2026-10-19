@@ -403,6 +403,8 @@ export default function ShipmentBooking() {
         origin_state: pickup.state,
         destination_city: delivery.city,
         destination_state: delivery.state,
+        payment_mode: paymentMode.toLowerCase(),
+        cod_amount: paymentMode === "COD" ? Number(codAmount) || 0 : 0,
         risk_type: riskType,
       }),
     }).then((result) => {
@@ -417,7 +419,7 @@ export default function ShipmentBooking() {
       if (!cancelled) setReviewQuoteLoading(false);
     });
     return () => { cancelled = true; window.clearTimeout(preparationTimer); };
-  }, [showReview, selectedCourier, accountPolicies, couriers, pickup.pincode, pickup.city, pickup.state, delivery.pincode, delivery.city, delivery.state, shipmentDetails.weight, shipmentDetails.value, boxDimensions, riskType]);
+  }, [showReview, selectedCourier, accountPolicies, couriers, pickup.pincode, pickup.city, pickup.state, delivery.pincode, delivery.city, delivery.state, shipmentDetails.weight, shipmentDetails.value, boxDimensions, riskType, paymentMode, codAmount]);
 
   useEffect(() => {
     if (!showReview || !couriers.length) return;
