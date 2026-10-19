@@ -19,7 +19,7 @@ const Dashboard = dynamic(() => import("@/components/block/dashboard"), {
   ),
 });
 
-const dashboardSummaryPath = "/v1/dashboard/summary?collections=shipments,pickups,billing,wallet,exceptions,ndr,activity";
+const dashboardSummaryPath = "/v1/dashboard/summary?collections=shipments,pickups,exceptions,ndr,activity";
 
 export default function DashboardLoader() {
   // Start the authenticated summary request from the small route loader while

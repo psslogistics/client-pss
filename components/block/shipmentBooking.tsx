@@ -8,7 +8,6 @@ import {
   ChevronDown,
   Download,
   FileText,
-  Info,
   Package,
   Ruler,
   ShieldCheck,
@@ -20,7 +19,7 @@ import {
 } from "lucide-react";
 import Dropdown from "@/components/ui/dropdown";
 import ConfirmationToast, { type ConfirmationToastTone } from "@/components/ui/confirmationToast";
-import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
+import { getPssErrorDetails, PssApiError, pssApi } from "@/lib/pss-api";
 import { isActiveDelhiveryB2BAccount } from "@/lib/client-pricing-data";
 import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 
@@ -67,6 +66,7 @@ type BulkShipment = {
 type ChallanData = { number: string; date: string; seller: string; buyer: string; value: string; reason: string; from?: string; to?: string; paymentMode?: PaymentMode; codAmount?: string; invoice?: string };
 type ShipmentDetails = { description: string; weight: string; pieces: string; value: string };
 type BoxDimension = { length: string; width: string; height: string; boxCount: string };
+type PreparedInvoice = { key: string; name: string; content_type: string; body_base64: string; object_key?: string };
 type PssQuote = { quote_id: string; total: number; subtotal: number; gst: number; chargeableWeightKg: number; lane: string; lines: Array<{ code: string; label: string; amount: number; marker?: "*" }> };
 const emptyAddress: Address = { line: "", city: "", state: "", pincode: "", country: "India" };
 const emptyContact: Contact = { name: "", phone: "", email: "" };
@@ -126,6 +126,7 @@ const downloadText = (name: string, content: string, type = "text/plain") => {
 };
 const documentContentType = (file: File) => { if (["application/pdf", "image/jpeg", "image/png"].includes(file.type)) return file.type; const name = file.name.toLowerCase(); if (name.endsWith(".pdf")) return "application/pdf"; if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg"; if (name.endsWith(".png")) return "image/png"; return null; };
 const isAllowedDocument = (file: File | undefined) => Boolean(file && file.size <= 10 * 1024 * 1024 && documentContentType(file));
+const invoiceFileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
 
 const loadLogo = () => new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = "/pss-logo.png"; });
 const pdfAscii = (value: string) => new TextEncoder().encode(value);
@@ -226,6 +227,7 @@ export default function ShipmentBooking() {
   const [deliveryPinStatus, setDeliveryPinStatus] = useState<{ state: PinStatus; message: string }>({ state: "idle", message: "" });
   const [documentMode, setDocumentMode] = useState<"invoice" | "dc">("invoice");
   const [invoices, setInvoices] = useState<File[]>([]);
+  const [preparedInvoices, setPreparedInvoices] = useState<PreparedInvoice[]>([]);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [orderId, setOrderId] = useState("");
   const [dcOpen, setDcOpen] = useState(false);
@@ -247,12 +249,16 @@ export default function ShipmentBooking() {
   const [selectedCourier, setSelectedCourier] = useState<string | null>(null);
   const [singleAttemptId, setSingleAttemptId] = useState("");
   const [singleSubmitting, setSingleSubmitting] = useState(false);
+  const [bookingPhase, setBookingPhase] = useState<"idle" | "validating" | "saving_documents" | "submitting" | "fetching_lr">("idle");
+  const [providerReadiness, setProviderReadiness] = useState<"idle" | "checking" | "ready" | "error">("idle");
+  const [providerReadinessError, setProviderReadinessError] = useState("");
+  const providerReadinessFingerprint = useRef("");
+  const providerReadinessRequest = useRef(0);
   const [providerHealth, setProviderHealth] = useState<Record<string, { health?: string; last_error_code?: string | null }>>({});
   const [accountPolicies, setAccountPolicies] = useState<Array<{ id: string; provider: string; account_name: string; enabled?: boolean; confidence_score?: number; priority?: number }>>([]);
   const enabledCouriers = useMemo(() => accountPolicies.filter((account) => account.provider.toLowerCase() === "delhivery" && account.enabled !== false && isActiveDelhiveryB2BAccount(account.account_name)).map((account) => ({ ...allCouriers[0], id: account.id, accountId: account.id, name: account.account_name, accountName: "", accountCode: "other", confidence: Number(account.confidence_score ?? 0), service: "PSS rate card applied at booking", health: providerHealth.delhivery?.health ?? "unknown", lastError: "" })), [accountPolicies, providerHealth.delhivery?.health]);
   const couriers = enabledCouriers;
   const [singleCompleted, setSingleCompleted] = useState(false);
-  const [providerBookingPending, setProviderBookingPending] = useState(false);
   const [bookingNotice, setBookingNotice] = useState("");
   const [bookingDiagnostic, setBookingDiagnostic] = useState<{ technicalMessage: string; requestId?: string } | null>(null);
   const [bookingAmount, setBookingAmount] = useState<number | null>(null);
@@ -320,9 +326,11 @@ export default function ShipmentBooking() {
       && saved.address.country === pickup.country;
     const sameContact = saved.contact.name === pickupPerson.name && saved.contact.phone === pickupPerson.phone;
     if (!sameAddress || !sameContact) {
-      setSelectedSavedPickupId("");
-      setSavedName("");
-      setIsRenamingSaved(false);
+      queueMicrotask(() => {
+        setSelectedSavedPickupId("");
+        setSavedName("");
+        setIsRenamingSaved(false);
+      });
     }
   }, [pickup, pickupPerson, savedPickups, selectedSavedPickupId]);
 
@@ -416,7 +424,9 @@ export default function ShipmentBooking() {
     const dimensions = boxDimensions.map((item) => ({ length: Number(item.length), width: Number(item.width), height: Number(item.height), quantity: Number(item.boxCount) || 1 }));
     const volumetricWeight = dimensions.reduce((sum, item) => sum + (item.length * item.width * item.height * item.quantity) / 5000, 0);
     let cancelled = false;
-    void Promise.allSettled(couriers.map(async (courier) => {
+    const quoteCouriers = couriers.filter((courier) => courier.id !== selectedCourier || !reviewQuote);
+    const selectedQuote = selectedCourier && reviewQuote ? { [selectedCourier]: reviewQuote } : {};
+    void Promise.allSettled(quoteCouriers.map(async (courier) => {
       const result = await pssApi<{ data: PssQuote }>("/v1/pricing/quotes", {
         method: "POST",
         body: JSON.stringify({
@@ -439,15 +449,47 @@ export default function ShipmentBooking() {
        const next: Record<string, PssQuote> = {};
        const errors: Record<string, string> = {};
        results.forEach((result, index) => {
-         const courier = couriers[index];
+          const courier = quoteCouriers[index];
          if (result.status === "fulfilled") next[result.value[0]] = result.value[1];
          else if (courier) errors[courier.id] = getPssErrorDetails(result.reason, "PSS rate unavailable for this courier.").message;
        });
-      setCourierQuotes(next);
+       setCourierQuotes({ ...selectedQuote, ...next });
        setCourierQuoteErrors(errors);
     });
     return () => { cancelled = true; };
-  }, [showReview, accountPolicies, providerHealth, couriers, pickup.pincode, delivery.pincode, shipmentDetails.weight, shipmentDetails.value, shipmentDetails.pieces, boxDimensions, riskType]);
+  }, [showReview, accountPolicies, providerHealth, couriers, selectedCourier, reviewQuote, pickup.pincode, delivery.pincode, shipmentDetails.weight, shipmentDetails.value, shipmentDetails.pieces, boxDimensions, riskType]);
+
+  useEffect(() => {
+    const courier = couriers.find((item) => item.id === selectedCourier) || (couriers.length === 1 ? couriers[0] : undefined);
+    if (!courier?.accountId || !pickup.line || !pickup.city || !pickup.state || !/^\d{6}$/.test(pickup.pincode) || !validPhone(pickupPerson.phone) || !delivery.line || !delivery.city || !delivery.state || !/^\d{6}$/.test(delivery.pincode) || !validPhone(deliveryPerson.phone)) {
+      providerReadinessRequest.current += 1;
+      if (providerReadiness !== "idle") queueMicrotask(() => { setProviderReadiness("idle"); setProviderReadinessError(""); });
+      return;
+    }
+    const fingerprint = JSON.stringify({ accountId: courier.accountId, warehouseId: selectedSavedPickupId, pickup, pickupPerson: { name: pickupPerson.name, phone: pickupPerson.phone }, delivery, deliveryPerson: { name: deliveryPerson.name, phone: deliveryPerson.phone } });
+    if (providerReadinessFingerprint.current === fingerprint && ["ready", "checking", "error"].includes(providerReadiness)) return;
+    const requestToken = ++providerReadinessRequest.current;
+    const timer = window.setTimeout(() => {
+      providerReadinessFingerprint.current = fingerprint;
+      setProviderReadiness("checking");
+      setProviderReadinessError("");
+      void pssApi<{ data: { ready: boolean; warehouse_name?: string | null } }>("/v1/shipments/preflight", {
+        method: "POST",
+        headers: { "Idempotency-Key": `shipment-preflight-${crypto.randomUUID()}` },
+        body: JSON.stringify({ provider: "delhivery", provider_account_id: courier.accountId, warehouse_id: selectedSavedPickupId || undefined, origin_address: { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }, destination_address: { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }, origin: `${pickup.city}, ${pickup.state}` }),
+      }).then((result) => {
+        if (requestToken !== providerReadinessRequest.current) return;
+        if (result.data.ready) setProviderReadiness("ready");
+        else { setProviderReadiness("error"); setProviderReadinessError("The pickup location is not ready with Delhivery yet."); }
+      }).catch((error) => {
+        if (requestToken !== providerReadinessRequest.current) return;
+        const details = getPssErrorDetails(error, "The pickup location could not be prepared with Delhivery.");
+        setProviderReadiness("error");
+        setProviderReadinessError(details.message);
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [selectedCourier, couriers, selectedSavedPickupId, pickup, pickupPerson, delivery, deliveryPerson, providerReadiness]);
 
   useEffect(() => {
     if (!showBulkReview || !bulkRows.length) {
@@ -690,22 +732,24 @@ export default function ShipmentBooking() {
       setBookingNotice("An invoice number is required before booking this shipment.");
       return;
     }
-    let invoiceDocuments: Array<{ name: string; content_type: string; body_base64: string; invoice_number: string }>;
+    let invoiceDocumentRefs: Array<{ object_key: string; name: string; content_type: string }>;
     try {
-      invoiceDocuments = await Promise.all(invoices.map(async (file) => {
-        const contentType = documentContentType(file);
-        if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`);
-        return { name: file.name, content_type: contentType, body_base64: await fileAsBase64(file), invoice_number: documentReference };
-      }));
+      const preparedByKey = new Map(preparedInvoices.map((item) => [item.key, item]));
+      if (invoices.some((file) => !preparedByKey.get(invoiceFileKey(file))?.object_key)) throw new Error("Invoice upload is still in progress. Please wait a moment and try again.");
+      invoiceDocumentRefs = invoices.map((file) => { const prepared = preparedByKey.get(invoiceFileKey(file))!; return { object_key: prepared.object_key!, name: prepared.name, content_type: prepared.content_type }; });
     } catch (error) {
       setSingleAttemptId("");
       setSingleSubmitting(false);
       setBookingNotice(`Invoice processing failed: ${getPssErrorDetails(error, "The invoice could not be read. Please upload it again.").message}`);
       return;
     }
-    setBookingNotice("Calculating the PSS charge and saving booking securely…");
+    setBookingPhase("validating");
+    setBookingNotice("Validating booking details and the PSS price…");
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    setBookingPhase("submitting");
+    setBookingNotice("Submitting the booking to Delhivery…");
     try {
-      const result = await pssApi<{ queued?: boolean; data: { id: string; status: string; pricing_amount?: number; provider_status?: string; provider_sync_status?: string } }>("/v1/shipments", {
+      const result = await pssApi<{ data: { id: string; status: string; pricing_amount?: number; provider_status?: string; provider_sync_status?: string; tracking_number?: string | null; lr_number?: string | null; master_awb?: string | null; provider_reference?: string | null } }>("/v1/shipments", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
@@ -739,37 +783,47 @@ export default function ShipmentBooking() {
           // EDD is a provider-supplied delivery date, not a confirmation
           // status. Delhivery may return no EDD at booking time.
           edd: null,
-          invoice_documents: invoiceDocuments,
+          invoice_document_refs: invoiceDocumentRefs,
+          ...(ewayBill ? {
+            eway_document: {
+              name: `eway-bill-${ewayBill.name}`,
+              content_type: documentContentType(ewayBill),
+              body_base64: await fileAsBase64(ewayBill),
+            },
+          } : {}),
         }),
       });
-      const serverId = result.data.id;
+      setBookingPhase("fetching_lr");
       setBookingAmount(Number(result.data.pricing_amount ?? 0));
-      if (ewayBill) {
-        const contentType = documentContentType(ewayBill);
-        if (!contentType) throw new Error(`Unsupported E-Way Bill format: ${ewayBill.name}`);
-        await pssApi("/v1/documents", {
-          method: "POST",
-          headers: { "Idempotency-Key": `${idempotencyKey}-eway-bill-${ewayBill.name}` },
-          body: JSON.stringify({ shipment_id: serverId, name: `eway-bill-${ewayBill.name}`, content_type: contentType, body_base64: await fileAsBase64(ewayBill) }),
-        });
-      }
-      // A Delhivery warehouse may be registered successfully but still be
-      // awaiting provider activation. The Worker queues that booking and
-      // retries it automatically. Pickup scheduling is handled separately.
-      if (result.queued || result.data.provider_status === "pending" || result.data.provider_sync_status === "pending") {
-        setProviderBookingPending(true);
-        setSingleCompleted(true);
-        setBookingNotice("Shipment saved. Delhivery pickup-location activation is pending; courier booking and pickup will be retried automatically. This is not yet a Delhivery booking and no LR is available yet.");
-        return;
-      }
+      const lrOrAwb = result.data.lr_number || result.data.master_awb || result.data.provider_reference || result.data.tracking_number;
+      if (!lrOrAwb || result.data.provider_status !== "accepted") throw new Error("Delhivery did not return an LR/AWB, so the booking was not confirmed or billed.");
       setSingleCompleted(true);
-      setProviderBookingPending(false);
-      setBookingNotice(result.data.provider_status === "accepted" ? "Booking saved and submitted for courier processing." : "Booking saved. Courier processing is pending.");
+      setBookingPhase("idle");
+      setBookingNotice(`Booking confirmed with LR/AWB ${lrOrAwb}.`);
     } catch (error) {
       const details = getPssErrorDetails(error, "Unable to save booking.");
-      setSingleAttemptId("");
+      setBookingPhase("idle");
       setBookingNotice(`Booking failed: ${details.message}`);
       setBookingDiagnostic({ technicalMessage: details.technicalMessage, requestId: details.requestId });
+      const payload = error instanceof PssApiError && error.payload && typeof error.payload === "object" ? error.payload as { data?: { id?: string }; error?: { code?: string } } : null;
+      const timeoutShipmentId = payload?.error?.code === "PROVIDER_LR_TIMEOUT" ? payload.data?.id : undefined;
+      if (timeoutShipmentId) {
+        setBookingPhase("fetching_lr");
+        setBookingNotice("Fetching the latest LR from Delhivery…");
+        try {
+          const refreshed = await pssApi<{ data: { lr_number?: string | null; master_awb?: string | null; provider_reference?: string | null; tracking_number?: string | null } }>(`/v1/shipments/${encodeURIComponent(timeoutShipmentId)}?refresh_provider=1`);
+          const refreshedReference = refreshed.data.lr_number || refreshed.data.master_awb || refreshed.data.provider_reference || refreshed.data.tracking_number;
+          if (refreshedReference) {
+            setBookingPhase("idle");
+            setSingleCompleted(true);
+            setBookingNotice(`Booking confirmed with LR/AWB ${refreshedReference}.`);
+            return;
+          }
+        } catch { /* Keep the retryable LR timeout visible when the provider is still processing. */ }
+        setBookingPhase("idle");
+      } else if (details.category !== "network") {
+        setSingleAttemptId("");
+      }
     } finally {
       setSingleSubmitting(false);
     }
@@ -816,12 +870,46 @@ export default function ShipmentBooking() {
       setBulkSubmitting(false);
     }
   };
-  const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoices([]); setInvoiceNumber(""); setOrderId(""); setBoxDimensions([{ length: "", width: "", height: "", boxCount: "" }]); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setRiskType("owner"); setCodAmount(""); setSelectedCourier(null); setSingleAttemptId(""); setSingleSubmitting(false); setShowReview(false); setSingleCompleted(false); setProviderBookingPending(false); setBookingAmount(null); setReviewQuote(null); setReviewQuoteError(""); setBookingNotice(""); setBookingDiagnostic(null); setNotice(""); setInvoicePromptOpen(false); };
+  const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoices([]); setPreparedInvoices([]); setInvoiceNumber(""); setOrderId(""); setBoxDimensions([{ length: "", width: "", height: "", boxCount: "" }]); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setRiskType("owner"); setCodAmount(""); setSelectedCourier(null); setSingleAttemptId(""); setSingleSubmitting(false); setBookingPhase("idle"); setShowReview(false); setSingleCompleted(false); setProviderReadiness("idle"); setProviderReadinessError(""); providerReadinessFingerprint.current = ""; providerReadinessRequest.current += 1; setBookingAmount(null); setReviewQuote(null); setReviewQuoteError(""); setBookingNotice(""); setBookingDiagnostic(null); setNotice(""); setInvoicePromptOpen(false); };
+  const addInvoiceFiles = async (files: File[]) => {
+    const invalid = files.find((file) => !isAllowedDocument(file));
+    if (invalid) { setNotice(`${invalid.name} must be a PDF, JPG, or PNG up to 10 MB`); return; }
+    if (!files.length) return;
+    setInvoicePromptOpen(false);
+    setBookingPhase("saving_documents");
+    setNotice("Saving invoice documents securely…");
+    try {
+      const prepared = await Promise.all(files.map(async (file) => {
+        const contentType = documentContentType(file);
+        if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`);
+        return { key: invoiceFileKey(file), name: file.name, content_type: contentType, body_base64: await fileAsBase64(file) };
+      }));
+      const staged = await pssApi<{ data: { documents: Array<{ object_key: string; name: string; content_type: string }> } }>("/v1/shipments/documents/stage", {
+        method: "POST",
+        headers: { "Idempotency-Key": `shipment-document-stage-${crypto.randomUUID()}` },
+        body: JSON.stringify({ documents: prepared.map(({ name, content_type, body_base64 }) => ({ name, content_type, body_base64 })) }),
+      });
+      const preparedWithReferences = prepared.map((document, index) => ({ ...document, body_base64: "", object_key: staged.data.documents[index]?.object_key }));
+      if (preparedWithReferences.some((document) => !document.object_key)) throw new Error("The invoice upload did not return a secure document reference.");
+      setInvoices((current) => [...current, ...files]);
+      setPreparedInvoices((current) => [...current, ...preparedWithReferences]);
+      setBookingPhase("idle");
+      setNotice("");
+    } catch (error) {
+      setBookingPhase("idle");
+      setNotice(`Invoice processing failed: ${getPssErrorDetails(error, "The invoice could not be prepared. Please upload it again.").message}`);
+    }
+  };
+  const removeInvoice = (index: number) => {
+    const file = invoices[index];
+    setInvoices((current) => current.filter((_, fileIndex) => fileIndex !== index));
+    if (file) setPreparedInvoices((current) => current.filter((item) => item.key !== invoiceFileKey(file)));
+  };
   const milestoneStep = showReview ? 4 : selectedCourier ? 3 : invoices.length || documentMode === "dc" ? 2 : 1;
   const milestones = ["Shipment details", "Documentation", "PSS service", "Review"];
 
   if (singleCompleted) {
-    return <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center space-y-5 py-20 text-center"><span className={`flex h-14 w-14 items-center justify-center rounded-full ${providerBookingPending ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"}`}>{providerBookingPending ? <TriangleAlert className="h-7 w-7" /> : <Check className="h-7 w-7" />}</span><div><h1 className="text-2xl font-semibold tracking-tight">{providerBookingPending ? "Shipment saved — Delhivery confirmation pending" : "Booking confirmed"}</h1><p className="mt-2 text-sm text-muted-foreground">{providerBookingPending ? "The shipment and PSS invoice were saved, but Delhivery has not accepted the booking yet." : "The shipment was saved and invoiced using your PSS Delhivery B2B rate card."}</p></div><div className="w-full rounded-xl border border-border bg-card p-4 text-left shadow-xs"><div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Service</span><span className="font-semibold">Delhivery B2B</span></div><div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted-foreground">Pickup scheduling</span><span className="font-semibold">Handled separately</span></div><div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted-foreground">PSS billed amount</span><span className="font-semibold">{bookingAmount !== null ? `₹${bookingAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "Shown on invoice"}</span></div></div><p role="status" className={`text-xs ${providerBookingPending ? "text-amber-700 dark:text-amber-300" : "text-primary"}`}>{bookingNotice}</p><button type="button" onClick={resetBooking} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"><Package className="h-4 w-4" /> Book another shipment</button></div>;
+    return <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center space-y-5 py-20 text-center"><span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600"><Check className="h-7 w-7" /></span><div><h1 className="text-2xl font-semibold tracking-tight">Booking confirmed</h1><p className="mt-2 text-sm text-muted-foreground">The shipment was saved and invoiced using your PSS Delhivery B2B rate card.</p></div><div className="w-full rounded-xl border border-border bg-card p-4 text-left shadow-xs"><div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Service</span><span className="font-semibold">Delhivery B2B</span></div><div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted-foreground">Pickup scheduling</span><span className="font-semibold">Handled separately</span></div><div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted-foreground">PSS billed amount</span><span className="font-semibold">{bookingAmount !== null ? `₹${bookingAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "Shown on invoice"}</span></div></div><p role="status" className="text-xs text-primary">{bookingNotice}</p><button type="button" onClick={resetBooking} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"><Package className="h-4 w-4" /> Book another shipment</button></div>;
   }
 
 if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center space-y-5 py-20 text-center"><span className={`flex h-14 w-14 items-center justify-center rounded-full ${bulkResult.failed ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"}`}>{bulkResult.failed ? <TriangleAlert className="h-7 w-7" /> : <Check className="h-7 w-7" />}</span><div><h1 className="text-2xl font-semibold tracking-tight">{bulkResult.failed ? "Bulk booking needs attention" : "Bulk bookings confirmed"}</h1><p className="mt-2 text-sm text-muted-foreground">{bulkResult.created} booking{bulkResult.created === 1 ? "" : "s"} persisted through the production API; {bulkResult.failed} failed row{bulkResult.failed === 1 ? "" : "s"} can be retried safely.</p></div><p role="status" className="text-xs text-primary">{bookingNotice}</p><button type="button" onClick={() => { setBulkCompleted(false); setBulkSubmitting(false); setShowBulkReview(false); setBulkRows([]); setBulkFile(null); setBulkBatchId(""); setBulkResult({ created: 0, failed: 0 }); setBulkNotice(""); setBookingNotice(""); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"><Upload className="h-4 w-4" /> Upload another file</button></div>;
@@ -863,8 +951,8 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
           })}
         </div>
         <div className="rounded-xl border border-border bg-card p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">Risk responsibility</p><p className="mt-1 text-xs text-muted-foreground">Owner Risk: higher of ₹50 or 0.1%. Carrier Risk: higher of ₹80 or 0.3% of invoice value.</p></div><div className="flex gap-2"><button type="button" onClick={() => setRiskType("owner")} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${riskType === "owner" ? "border-primary bg-primary/5 text-primary" : "border-input text-muted-foreground"}`}>Owner Risk · ₹50 min / 0.1%</button><button type="button" onClick={() => setRiskType("carrier")} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${riskType === "carrier" ? "border-primary bg-primary/5 text-primary" : "border-input text-muted-foreground"}`}>Carrier Risk · ₹80 min / 0.3%</button></div></div></div>
-        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">PSS wallet debit before confirmation</p><p className="mt-1 text-xs text-muted-foreground">This is the client-facing PSS amount. Courier cost is never displayed.</p></div>{reviewQuoteLoading ? <span className="text-xs font-semibold text-muted-foreground">Calculating…</span> : reviewQuote ? <span className="text-xl font-semibold">₹{reviewQuote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span> : <span className="text-xs font-semibold text-destructive">{reviewQuoteError || "Unavailable"}</span>}</div>{reviewQuote && <div className="mt-3 grid gap-2 border-t border-primary/10 pt-3 sm:grid-cols-2"><p className="text-xs text-muted-foreground">Chargeable weight <span className="font-semibold text-foreground">{reviewQuote.chargeableWeightKg} kg</span></p><p className="text-xs text-muted-foreground">Lane <span className="font-semibold text-foreground">{reviewQuote.lane}</span></p>{reviewQuote.lines.map((line) => <p key={line.code} className="text-xs text-muted-foreground">{line.label}{line.marker ?? ""} <span className="font-semibold text-foreground">₹{line.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></p>)}</div>}</div>
-        {selectedCourier && <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"><div className="space-y-1"><p className="text-xs text-muted-foreground">Pickup scheduling is handled separately after booking.</p>{bookingNotice && !singleCompleted && <div role="alert" className="text-xs font-medium text-destructive"><p>{bookingNotice}</p>{bookingDiagnostic && <details className="mt-1 font-normal text-muted-foreground"><summary className="cursor-pointer font-semibold">Technical details</summary><p className="mt-1 break-words">{bookingDiagnostic.technicalMessage}{bookingDiagnostic.requestId ? ` · Request ID: ${bookingDiagnostic.requestId}` : ""}</p></details>}</div>}</div><button type="button" onClick={() => void confirmSingle()} disabled={singleSubmitting || reviewQuoteLoading || !reviewQuote} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" /> {singleSubmitting ? "Saving booking…" : "Confirm production booking"}</button></div>}
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">PSS booking amount</p><p className="mt-1 text-xs text-muted-foreground">This client-facing amount is charged only after Delhivery returns the LR/AWB. Courier cost is never displayed.</p></div>{reviewQuoteLoading ? <span className="text-xs font-semibold text-muted-foreground">Calculating…</span> : reviewQuote ? <span className="text-xl font-semibold">₹{reviewQuote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span> : <span className="text-xs font-semibold text-destructive">{reviewQuoteError || "Unavailable"}</span>}</div>{reviewQuote && <div className="mt-3 grid gap-2 border-t border-primary/10 pt-3 sm:grid-cols-2"><p className="text-xs text-muted-foreground">Chargeable weight <span className="font-semibold text-foreground">{reviewQuote.chargeableWeightKg} kg</span></p><p className="text-xs text-muted-foreground">Lane <span className="font-semibold text-foreground">{reviewQuote.lane}</span></p>{reviewQuote.lines.map((line) => <p key={line.code} className="text-xs text-muted-foreground">{line.label}{line.marker ?? ""} <span className="font-semibold text-foreground">₹{line.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></p>)}</div>}</div>
+         {selectedCourier && <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between"><div className="space-y-1"><p className="text-xs text-muted-foreground">Pickup scheduling is handled separately after booking.</p>{providerReadiness === "checking" && <p role="status" className="text-xs font-medium text-sky-700 dark:text-sky-300">Preparing the Delhivery pickup location before confirmation…</p>}{providerReadiness === "error" && <p role="alert" className="text-xs font-medium text-destructive">{providerReadinessError} Correct the pickup details or retry before confirming.</p>}{bookingPhase !== "idle" && <p role="status" className="text-xs font-medium text-sky-700 dark:text-sky-300">{bookingPhase === "validating" ? "Validating booking and PSS pricing…" : bookingPhase === "saving_documents" ? "Saving invoice documents…" : bookingPhase === "submitting" ? "Submitting to Delhivery…" : "Fetching LR from Delhivery…"}</p>}{bookingNotice && !singleCompleted && <div role="alert" className="text-xs font-medium text-destructive"><p>{bookingNotice}</p>{bookingDiagnostic && <details className="mt-1 font-normal text-muted-foreground"><summary className="cursor-pointer font-semibold">Technical details</summary><p className="mt-1 break-words">{bookingDiagnostic.technicalMessage}{bookingDiagnostic.requestId ? ` · Request ID: ${bookingDiagnostic.requestId}` : ""}</p></details>}</div>}</div><button type="button" onClick={() => void confirmSingle()} disabled={singleSubmitting || reviewQuoteLoading || !reviewQuote || providerReadiness !== "ready"} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" /> {singleSubmitting ? (bookingPhase === "fetching_lr" ? "Fetching LR…" : "Submitting booking…") : providerReadiness === "checking" ? "Preparing pickup location…" : "Confirm production booking"}</button></div>}
 
 
       </div>
@@ -887,8 +975,8 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
           <div className="mb-4 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600"><FileText className="h-3.5 w-3.5" /></span><div><h2 className="text-sm font-semibold">Shipment documentation</h2><p className="text-xs text-muted-foreground">A Delhivery B2B invoice is required. A Delivery Challan may be added as supplementary documentation.</p></div></div>
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-muted/60 p-1"><button type="button" onClick={() => setDocumentMode("invoice")} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${documentMode === "invoice" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>Upload invoice</button><button type="button" onClick={() => { setDocumentMode("dc"); setDcOpen(true); }} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${documentMode === "dc" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>Add Delivery Challan</button></div>
           <label className="mb-3 block space-y-1 text-xs font-semibold text-muted-foreground">Order ID <span className="font-normal">(optional)</span><input aria-label="Order ID" className={field} maxLength={80} placeholder="Enter customer order ID" value={orderId} onChange={(event) => setOrderId(event.target.value.slice(0, 80))} /><span className="block text-[11px] font-normal text-muted-foreground">If left blank, the invoice number will be used for the LR.</span></label>
-          {documentMode === "invoice" ? <><button type="button" onClick={() => fileRef.current?.click()} className="flex w-full items-center justify-between rounded-xl border border-dashed border-primary/40 bg-primary/3 px-4 py-3 text-left hover:border-primary hover:bg-primary/5"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Upload className="h-4 w-4" /></span><span><span className="block text-sm font-medium">{invoices.length ? `Add invoice files (${invoices.length} attached)` : "Choose invoice files"}</span><span className="block text-xs text-muted-foreground">PDF, JPG or PNG · max 10 MB each</span></span></span><ArrowRight className="h-4 w-4 text-muted-foreground" /></button><label className="mt-3 block space-y-1 text-xs font-semibold text-muted-foreground">Invoice number<input required aria-label="Invoice number" className={field} placeholder="Enter invoice number" value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} /></label>{invoices.length > 0 && <div className="mt-2 space-y-1.5">{invoices.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs"><FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => setInvoices((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="text-muted-foreground hover:text-destructive">Remove</button></div>)}</div>}</> : <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3"><span className="flex items-center gap-3"><Check className="h-5 w-5 text-emerald-600" /><span><span className="block text-sm font-medium">Delivery Challan added</span><span className="block text-xs text-muted-foreground">Supplementary document. An invoice is still required.</span></span></span><button type="button" onClick={() => setDcOpen(true)} className="text-xs font-semibold text-primary hover:underline">Edit DC</button></div>}
-          <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); const invalid = files.find((file) => !isAllowedDocument(file)); if (invalid) { setNotice(`${invalid.name} must be a PDF, JPG, or PNG up to 10 MB`); return; } if (files.length) setInvoicePromptOpen(false); setInvoices((current) => [...current, ...files]); event.currentTarget.value = ""; }} />
+           {documentMode === "invoice" ? <><button type="button" onClick={() => fileRef.current?.click()} className="flex w-full items-center justify-between rounded-xl border border-dashed border-primary/40 bg-primary/3 px-4 py-3 text-left hover:border-primary hover:bg-primary/5"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Upload className="h-4 w-4" /></span><span><span className="block text-sm font-medium">{invoices.length ? `Add invoice files (${invoices.length} attached)` : "Choose invoice files"}</span><span className="block text-xs text-muted-foreground">PDF, JPG or PNG · max 10 MB each</span></span></span><ArrowRight className="h-4 w-4 text-muted-foreground" /></button><label className="mt-3 block space-y-1 text-xs font-semibold text-muted-foreground">Invoice number<input required aria-label="Invoice number" className={field} placeholder="Enter invoice number" value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} /></label>{invoices.length > 0 && <div className="mt-2 space-y-1.5">{invoices.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs"><FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeInvoice(index)} className="text-muted-foreground hover:text-destructive">Remove</button></div>)}</div>}</> : <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3"><span className="flex items-center gap-3"><Check className="h-5 w-5 text-emerald-600" /><span><span className="block text-sm font-medium">Delivery Challan added</span><span className="block text-xs text-muted-foreground">Supplementary document. An invoice is still required.</span></span></span><button type="button" onClick={() => setDcOpen(true)} className="text-xs font-semibold text-primary hover:underline">Edit DC</button></div>}
+           <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(event) => { void addInvoiceFiles(Array.from(event.target.files || [])); event.currentTarget.value = ""; }} />
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4 shadow-xs"><div className="mb-3 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600"><Package className="h-3.5 w-3.5" /></span><h2 className="text-sm font-semibold">Shipment details</h2></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><label className="space-y-1 text-xs font-semibold text-muted-foreground">Product description<input required aria-label="Product description" className={field} placeholder="Product description" value={shipmentDetails.description} onChange={(event) => update(setShipmentDetails, "description", event.target.value)} /></label><label className="space-y-1 text-xs font-semibold text-muted-foreground">Weight (kg)<input required aria-label="Weight in kilograms" className={field} placeholder="Weight (kg)" type="number" min="0.1" step="0.1" value={shipmentDetails.weight} onChange={(event) => update(setShipmentDetails, "weight", event.target.value)} /></label><label className="space-y-1 text-xs font-semibold text-muted-foreground">Pieces / boxes<input required aria-label="Pieces or boxes" className={field} placeholder="Pieces / boxes" type="number" min="1" step="1" value={shipmentDetails.pieces} onChange={(event) => update(setShipmentDetails, "pieces", event.target.value)} /></label><label className="space-y-1 text-xs font-semibold text-muted-foreground">Shipment value (₹)<input required aria-label="Shipment value in rupees" className={field} placeholder="Shipment value (₹)" type="number" min="1" value={shipmentDetails.value} onChange={(event) => update(setShipmentDetails, "value", event.target.value)} /></label></div><div className="mt-4 rounded-lg border border-border/70 p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-semibold">Shipment dimensions</p><p className="mt-1 text-[11px] text-muted-foreground">Add each matching box group. The box-count total must equal Pieces / boxes.</p></div><Ruler className="h-4 w-4 text-primary" /></div><div className="mt-3 grid grid-cols-4 gap-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><span>Length (cm)</span><span>Width (cm)</span><span>Height (cm)</span><span>Boxes</span></div><div className="mt-1 space-y-2">{boxDimensions.map((dimension, index) => <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px] gap-2"><input required type="number" min="0.1" step="0.1" aria-label={`Box ${index + 1} length in centimetres`} placeholder="Length" value={dimension.length} onChange={(event) => setBoxDimensions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, length: event.target.value } : item))} className={field} /><input required type="number" min="0.1" step="0.1" aria-label={`Box ${index + 1} width in centimetres`} placeholder="Width" value={dimension.width} onChange={(event) => setBoxDimensions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, width: event.target.value } : item))} className={field} /><input required type="number" min="0.1" step="0.1" aria-label={`Box ${index + 1} height in centimetres`} placeholder="Height" value={dimension.height} onChange={(event) => setBoxDimensions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, height: event.target.value } : item))} className={field} /><input required type="number" min="1" step="1" aria-label={`Box ${index + 1} count`} placeholder="Count" value={dimension.boxCount} onChange={(event) => setBoxDimensions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, boxCount: event.target.value } : item))} className={field} /><button type="button" aria-label="Remove dimension row" disabled={boxDimensions.length === 1} onClick={() => setBoxDimensions((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg border border-input text-muted-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40">×</button></div>)}</div><div className="mt-3 flex items-center justify-between"><button type="button" onClick={() => setBoxDimensions((current) => [...current, { length: "", width: "", height: "", boxCount: "" }])} className="rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-accent">Add dimension group</button><span className="text-[11px] text-muted-foreground">{boxDimensions.reduce((sum, item) => sum + (Number(item.boxCount) || 0), 0)} of {shipmentDetails.pieces || 0} boxes</span></div></div>{Number(shipmentDetails.value) >= EWAY_THRESHOLD && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3"><div><p className="text-xs font-semibold text-amber-800 dark:text-amber-200">E-Way bill required</p><p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">Required for shipment values at or above ₹50,000, regardless of invoice or DC.</p></div><label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-amber-500/30 bg-background px-3 py-2 text-xs font-semibold text-foreground hover:bg-accent"><Upload className="h-3.5 w-3.5 text-primary" />{ewayBill ? ewayBill.name : "Upload E-Way bill"}<input type="file" required accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file && isAllowedDocument(file)) setEwayBill(file); else if (file) setNotice("E-Way bill must be a PDF, JPG, or PNG up to 10 MB"); }} /></label></div>}{Number(shipmentDetails.value) >= EWAY_THRESHOLD && <label htmlFor="eway-bill-number" className="mt-3 block space-y-1 text-xs font-semibold text-muted-foreground">E-Way bill number<input id="eway-bill-number" required aria-label="E-Way bill number, 12 digits" className={field} inputMode="numeric" maxLength={12} pattern="\d{12}" placeholder="12 digits" value={ewayBillNumber} onChange={(event) => setEwayBillNumber(event.target.value.replace(/\D/g, "").slice(0, 12))} /></label>}{Number(shipmentDetails.value) > 0 && Number(shipmentDetails.value) < EWAY_THRESHOLD && <p className="mt-2 text-[11px] text-muted-foreground">E-Way bill is not required below ₹50,000.</p>}<div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-xs font-semibold text-muted-foreground">Payment</span><button type="button" onClick={() => { setPaymentMode("Prepaid"); setCodAmount(""); }} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${paymentMode === "Prepaid" ? "border-primary bg-primary/5 text-primary" : "border-input text-muted-foreground"}`}>Prepaid</button><button type="button" onClick={() => setPaymentMode("COD")} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${paymentMode === "COD" ? "border-primary bg-primary/5 text-primary" : "border-input text-muted-foreground"}`}>COD</button>{paymentMode === "COD" && <label className="ml-0 w-44 space-y-1 text-xs font-semibold text-muted-foreground">COD amount (₹)<input required aria-label="Cash on delivery amount in rupees" className={`${field} ml-0`} placeholder="Amount to collect (₹)" type="number" min="1" value={codAmount} onChange={(event) => setCodAmount(event.target.value)} /></label>}</div></section>

@@ -169,7 +169,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   // this advances the first request without adding a second network call.
   useEffect(() => {
     if (pathname !== "/dashboard") return;
-    void pssApi("/v1/dashboard/summary?collections=shipments,pickups,billing,wallet,exceptions,ndr,activity").catch(() => undefined);
+    void pssApi("/v1/dashboard/summary?collections=shipments,pickups,exceptions,ndr,activity").catch(() => undefined);
   }, [pathname]);
 
   useEffect(() => {

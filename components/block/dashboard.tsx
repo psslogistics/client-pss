@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowUpRight,
@@ -10,11 +9,8 @@ import {
   RefreshCw,
   FileText,
   TriangleAlert,
-  Clock,
-  ArrowRight,
   Bell,
   Truck,
-  MapPin,
   Package,
   RotateCcw,
   Settings,
@@ -85,27 +81,39 @@ export default function Dashboard() {
   const [production, setProduction] = useState<{ shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; shipmentStats: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } }>({ shipments: [], pickups: [], billing: [], wallet: [], exceptions: [], ndr: [], shipmentStats: { total: 0, delayed: 0, statuses: {}, providers: {} } });
 
   const loadProduction = (signal?: AbortSignal, forceRefresh = false) => {
-    return pssApi<{ stale_data?: boolean; data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>>; shipment_stats?: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } } }>("/v1/dashboard/summary?collections=shipments,pickups,billing,wallet,exceptions,ndr,activity", { signal, ...(forceRefresh ? { cache: "no-store" as RequestCache } : {}) }).then((response) => {
+    const requestOptions = { signal, ...(forceRefresh ? { cache: "no-store" as RequestCache } : {}) };
+    const primary = pssApi<{ stale_data?: boolean; data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>>; shipment_stats?: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } } }>("/v1/dashboard/summary?collections=shipments,pickups,exceptions,ndr,activity", requestOptions).then((response) => {
       const { data } = response;
       if (signal?.aborted) return;
       setProductionError(response.stale_data ? "Live dashboard refresh is unavailable. Showing the last successful dashboard data." : "");
       setProductionTechnicalError("");
       setProductionRequestId("");
-      setProduction({ shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, exceptions: data.exceptions, ndr: data.ndr, shipmentStats: data.shipment_stats ?? { total: data.shipments.length, delayed: 0, statuses: {}, providers: {} } });
+       setProduction((current) => ({ ...current, shipments: data.shipments, pickups: data.pickups, exceptions: data.exceptions, ndr: data.ndr, shipmentStats: data.shipment_stats ?? { total: data.shipments.length, delayed: 0, statuses: {}, providers: {} } }));
       setActivities(data.activity.slice(0, 12).map((row) => ({ id: String(row.id), title: String(row.action ?? "Activity"), description: `${String(row.entity_type ?? "Record")}${row.entity_id ? ` · ${String(row.entity_id)}` : ""}`, timeAgo: relativeTime(String(row.created_at ?? "")), iconType: activityIconType(String(row.action ?? "")), iconName: activityIconName(String(row.action ?? "")) })));
       setAlerts([...data.exceptions, ...data.ndr].filter((row) => !["resolved", "closed", "delivered", "cancelled"].includes(String(row.status ?? "").toLowerCase())).slice(0, 8).map((row) => ({ id: String(row.id), title: String(row.title ?? row.reason ?? "Operational exception"), description: String(row.details ?? row.notes ?? "Requires operational review"), timeAgo: relativeTime(String(row.created_at ?? "")), refId: String(row.shipment_id ?? row.id), type: "warning", dotColor: "bg-amber-500" })));
-    }).catch((error) => {
+     }).catch((error) => {
       if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
       const details = getPssErrorDetails(error, "Dashboard data is temporarily unavailable. Your existing records are unchanged.");
       setProductionError(details.message);
       setProductionTechnicalError(details.technicalMessage);
       setProductionRequestId(details.requestId ?? "");
-    });
+     });
+    void primary.finally(() => { if (!signal?.aborted) setProductionLoading(false); }).catch(() => undefined);
+    const loadSecondary = () => {
+      if (signal?.aborted) return;
+      void pssApi<{ stale_data?: boolean; data: { billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>> } }>("/v1/dashboard/summary?collections=billing,wallet", requestOptions).then((response) => {
+        if (signal?.aborted) return;
+        setProduction((current) => ({ ...current, billing: response.data.billing, wallet: response.data.wallet }));
+      }).catch(() => undefined);
+    };
+    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(loadSecondary, { timeout: 1000 });
+    else window.setTimeout(loadSecondary, 250);
+    return primary;
   };
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadProduction(controller.signal).finally(() => { if (!controller.signal.aborted) setProductionLoading(false); });
+    void loadProduction(controller.signal);
     return () => controller.abort();
   }, []);
 
