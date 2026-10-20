@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ComponentProps } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
@@ -38,6 +38,31 @@ const ClientReportPreview = dynamic(() => import("./client-report-preview"), {
 const ClientDashboardModals = dynamic(() => import("./client-dashboard-modals"), {
   ssr: false,
 });
+
+function DeferredDashboardOperations(props: ComponentProps<typeof ClientDashboardOperations>) {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    let activated = false;
+    const activate = () => {
+      if (activated) return;
+      activated = true;
+      setEnabled(true);
+    };
+    const fallbackTimer = window.setTimeout(activate, 500);
+    const idleHandle = typeof window.requestIdleCallback === "function"
+      ? window.requestIdleCallback(activate, { timeout: 1200 })
+      : undefined;
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      if (idleHandle !== undefined) window.cancelIdleCallback(idleHandle);
+    };
+  }, []);
+
+  return enabled
+    ? <ClientDashboardOperations {...props} />
+    : <div className="grid min-h-[20rem] grid-cols-1 gap-6 lg:h-[32rem] lg:grid-cols-3" aria-label="Loading operations" role="status"><div className="rounded-xl border border-border bg-card/70 animate-pulse" /><div className="rounded-xl border border-border bg-card/70 animate-pulse" /><div className="rounded-xl border border-border bg-card/70 animate-pulse" /></div>;
+}
 
 function relativeTime(value: string) {
   const time = Date.parse(value);
@@ -78,6 +103,7 @@ export default function Dashboard() {
   const [productionTechnicalError, setProductionTechnicalError] = useState("");
   const [productionRequestId, setProductionRequestId] = useState("");
   const [productionLoading, setProductionLoading] = useState(true);
+  const [showDashboardModals, setShowDashboardModals] = useState(false);
   const [production, setProduction] = useState<{ shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; shipmentStats: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } }>({ shipments: [], pickups: [], billing: [], wallet: [], exceptions: [], ndr: [], shipmentStats: { total: 0, delayed: 0, statuses: {}, providers: {} } });
 
   const loadProduction = (signal?: AbortSignal, forceRefresh = false) => {
@@ -106,6 +132,12 @@ export default function Dashboard() {
     const controller = new AbortController();
     void loadProduction(controller.signal);
     return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const activate = () => setShowDashboardModals(true);
+    const timer = window.setTimeout(activate, 1200);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Column 3 Segmented View Toggle ("summary" | "modes")
@@ -528,9 +560,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <ClientDashboardOperations delayedRows={delayedRows} todayPickupRows={todayPickupRows} financialSnapshot={financialSnapshot} />
+      <DeferredDashboardOperations delayedRows={delayedRows} todayPickupRows={todayPickupRows} financialSnapshot={financialSnapshot} />
 
-      <ClientDashboardModals alerts={alerts} isAlertsModalOpen={isAlertsModalOpen} onCloseAlerts={() => setIsAlertsModalOpen(false)} onDismissAlerts={handleDismissAlerts} onDismissAlert={handleDismissSingleAlert} isCustomizeOpen={isCustomizeOpen} onCloseCustomize={() => setIsCustomizeOpen(false)} liveKpiMetrics={liveKpiMetrics} tempSelectedIds={tempSelectedIds} onToggleKpi={handleToggleKpi} onResetKpis={handleResetKpis} onSaveKpis={handleSaveKpis} />
+      {(showDashboardModals || isAlertsModalOpen || isCustomizeOpen) && <ClientDashboardModals alerts={alerts} isAlertsModalOpen={isAlertsModalOpen} onCloseAlerts={() => setIsAlertsModalOpen(false)} onDismissAlerts={handleDismissAlerts} onDismissAlert={handleDismissSingleAlert} isCustomizeOpen={isCustomizeOpen} onCloseCustomize={() => setIsCustomizeOpen(false)} liveKpiMetrics={liveKpiMetrics} tempSelectedIds={tempSelectedIds} onToggleKpi={handleToggleKpi} onResetKpis={handleResetKpis} onSaveKpis={handleSaveKpis} />}
       {isReportOpen && <ClientReportPreview onClose={() => setIsReportOpen(false)} />}
     </div>
   );
