@@ -98,7 +98,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
     if (shipmentSearchLoaded.current) return Promise.resolve();
     if (shipmentSearchRequest.current) return shipmentSearchRequest.current;
     setShipmentSearchLoading(true);
-    const request = pssApi<{ data: Array<Record<string, unknown>> }>("/v1/shipments?limit=100").then((result) => {
+    const request = pssApi<{ data: Array<Record<string, unknown>> }>("/v1/shipments?limit=20").then((result) => {
       setShipmentSearchResults((result.data ?? []).map((row) => {
         const id = String(row.id ?? "");
         const trackingNumber = String(row.tracking_number ?? "").trim();
@@ -133,7 +133,14 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    const syncUnreadCount = () => void pssApi<{ data: Array<Record<string, unknown>> }>("/v1/notifications").then((result) => { if (!cancelled) setUnreadCount(result.data.filter((item) => !Boolean(item.is_read)).length); }).catch(() => undefined);
+    const syncUnreadCount = () => {
+      const path = pathname === "/dashboard" ? "/v1/dashboard/summary?view=overview" : "/v1/notifications";
+      void pssApi<{ data: Array<Record<string, unknown>> } | { data: { unread_notification_count?: number } }>(path).then((result) => {
+        if (cancelled) return;
+        const overviewCount = !Array.isArray(result.data) ? Number(result.data?.unread_notification_count ?? 0) : result.data.filter((item) => !Boolean(item.is_read)).length;
+        setUnreadCount(overviewCount);
+      }).catch(() => undefined);
+    };
     const initialTimer = window.setTimeout(syncUnreadCount, 700);
     const timer = window.setInterval(syncUnreadCount, 60000);
     window.addEventListener("pss-notifications-updated", syncUnreadCount);
@@ -143,7 +150,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
       window.clearInterval(timer);
       window.removeEventListener("pss-notifications-updated", syncUnreadCount);
     };
-  }, []);
+  }, [pathname]);
 
   useEffect(() => {
     const handleAuthExpired = () => {
@@ -153,11 +160,6 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
     window.addEventListener("pss-auth-expired", handleAuthExpired);
     return () => window.removeEventListener("pss-auth-expired", handleAuthExpired);
   }, [router]);
-
-  useEffect(() => {
-    const initialTimer = window.setTimeout(() => { void loadShipmentSearchResults(); }, 700);
-    return () => window.clearTimeout(initialTimer);
-  }, [loadShipmentSearchResults]);
 
   useEffect(() => {
     if (!searchQuery.trim() || shipmentSearchLoaded.current) return;
@@ -170,7 +172,7 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
   // this advances the first request without adding a second network call.
   useEffect(() => {
     if (pathname !== "/dashboard") return;
-    void pssApi("/v1/dashboard/summary?collections=shipments,pickups,exceptions,ndr,activity").catch(() => undefined);
+    void pssApi("/v1/dashboard/summary?view=overview").catch(() => undefined);
   }, [pathname]);
 
   useEffect(() => {

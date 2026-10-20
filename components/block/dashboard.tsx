@@ -24,7 +24,6 @@ import {
   KpiMetric,
 } from "./dashboard-data";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
-import { prefetchBookingDependencies } from "@/lib/booking-prefetch";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import { formatStatusLabel } from "@/lib/display";
 import type { ClientFinancialSnapshot } from "@/lib/client-dashboard-data";
@@ -83,13 +82,13 @@ export default function Dashboard() {
 
   const loadProduction = (signal?: AbortSignal, forceRefresh = false) => {
     const requestOptions = { signal, ...(forceRefresh ? { cache: "no-store" as RequestCache } : {}) };
-    const primary = pssApi<{ stale_data?: boolean; data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>>; shipment_stats?: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } } }>("/v1/dashboard/summary?collections=shipments,pickups,exceptions,ndr,activity", requestOptions).then((response) => {
+    const primary = pssApi<{ stale_data?: boolean; data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>>; shipment_stats?: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } } }>("/v1/dashboard/summary?view=overview", requestOptions).then((response) => {
       const { data } = response;
       if (signal?.aborted) return;
       setProductionError(response.stale_data ? "Live dashboard refresh is unavailable. Showing the last successful dashboard data." : "");
       setProductionTechnicalError("");
       setProductionRequestId("");
-       setProduction((current) => ({ ...current, shipments: data.shipments, pickups: data.pickups, exceptions: data.exceptions, ndr: data.ndr, shipmentStats: data.shipment_stats ?? { total: data.shipments.length, delayed: 0, statuses: {}, providers: {} } }));
+       setProduction((current) => ({ ...current, shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, exceptions: data.exceptions, ndr: data.ndr, shipmentStats: data.shipment_stats ?? { total: data.shipments.length, delayed: 0, statuses: {}, providers: {} } }));
       setActivities(data.activity.slice(0, 12).map((row) => ({ id: String(row.id), title: String(row.action ?? "Activity"), description: `${String(row.entity_type ?? "Record")}${row.entity_id ? ` · ${String(row.entity_id)}` : ""}`, timeAgo: relativeTime(String(row.created_at ?? "")), iconType: activityIconType(String(row.action ?? "")), iconName: activityIconName(String(row.action ?? "")) })));
       setAlerts([...data.exceptions, ...data.ndr].filter((row) => !["resolved", "closed", "delivered", "cancelled"].includes(String(row.status ?? "").toLowerCase())).slice(0, 8).map((row) => ({ id: String(row.id), title: String(row.title ?? row.reason ?? "Operational exception"), description: String(row.details ?? row.notes ?? "Requires operational review"), timeAgo: relativeTime(String(row.created_at ?? "")), refId: String(row.shipment_id ?? row.id), type: "warning", dotColor: "bg-amber-500" })));
      }).catch((error) => {
@@ -100,15 +99,6 @@ export default function Dashboard() {
       setProductionRequestId(details.requestId ?? "");
      });
     void primary.finally(() => { if (!signal?.aborted) setProductionLoading(false); }).catch(() => undefined);
-    const loadSecondary = () => {
-      if (signal?.aborted) return;
-      void pssApi<{ stale_data?: boolean; data: { billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>> } }>("/v1/dashboard/summary?collections=billing,wallet", requestOptions).then((response) => {
-        if (signal?.aborted) return;
-        setProduction((current) => ({ ...current, billing: response.data.billing, wallet: response.data.wallet }));
-      }).catch(() => undefined);
-    };
-    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(loadSecondary, { timeout: 1000 });
-    else window.setTimeout(loadSecondary, 250);
     return primary;
   };
 
@@ -116,14 +106,6 @@ export default function Dashboard() {
     const controller = new AbortController();
     void loadProduction(controller.signal);
     return () => controller.abort();
-  }, []);
-
-  // Warm the booking screen after the dashboard has mounted. This keeps the
-  // first booking interaction fast without delaying the dashboard's primary
-  // render or changing the synchronous LR confirmation path.
-  useEffect(() => {
-    const timer = window.setTimeout(() => { void prefetchBookingDependencies(); }, 0);
-    return () => window.clearTimeout(timer);
   }, []);
 
   // Column 3 Segmented View Toggle ("summary" | "modes")
@@ -207,7 +189,7 @@ export default function Dashboard() {
   };
 
   const productionReady = !productionError && !productionLoading;
-  const hasLastKnownProduction = [production.shipments, production.pickups, production.billing, production.wallet, production.exceptions, production.ndr].some((collection) => collection.length > 0);
+  const hasLastKnownProduction = production.shipmentStats.total > 0 || [production.shipments, production.pickups, production.billing, production.wallet, production.exceptions, production.ndr].some((collection) => collection.length > 0);
   const metricValue = (value: number) => productionReady || hasLastKnownProduction ? String(value) : "—";
   const metricState = productionReady ? "Live" : hasLastKnownProduction ? "Stale" : "Unavailable";
   const liveKpiMetrics: KpiMetric[] = [
