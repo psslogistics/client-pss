@@ -15,6 +15,7 @@ const ACTIVE_DELHIVERY_B2B_ACCOUNT_LABELS: Record<string, string> = {
   PSSLOGISTICS10B2BC: "Delhivery Heavy",
   PSSCHANDIGARHCARGO6B2BC: "Delhivery Light",
   PSSBOOKCFT10B2BC: "Delhivery Standard",
+  PSSLOGISTICS04B2BC: "Delhivery Account 04",
 };
 
 /**
