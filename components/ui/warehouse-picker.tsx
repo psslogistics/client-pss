@@ -27,7 +27,8 @@ type WarehousePickerProps = {
 
 const warehouseLabel = (warehouse: WarehousePickerRecord) => warehouse.name ?? warehouse.label ?? warehouse.address ?? warehouse.id;
 
-const warehouseSearchText = (warehouse: WarehousePickerRecord) => [warehouseLabel(warehouse), warehouse.address, warehouse.city, warehouse.state, warehouse.pincode, warehouse.contact_name, warehouse.phone, warehouse.contact].filter(Boolean).join(" ").toLowerCase();
+const normalizeSearch = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+const warehouseSearchText = (warehouse: WarehousePickerRecord) => normalizeSearch([warehouseLabel(warehouse), warehouse.address, warehouse.city, warehouse.state, warehouse.pincode, warehouse.contact_name, warehouse.phone, warehouse.contact].filter(Boolean).join(" "));
 
 export default function WarehousePicker({ warehouses, value, inputClassName, onSelect, onClear }: WarehousePickerProps) {
   const [open, setOpen] = useState(false);
@@ -36,7 +37,7 @@ export default function WarehousePicker({ warehouses, value, inputClassName, onS
   const selected = warehouses.find((warehouse) => warehouse.id === value);
   const selectedLabel = selected ? warehouseLabel(selected) : "";
   const filtered = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = normalizeSearch(query);
     if (!normalized) return warehouses;
     return warehouses.filter((warehouse) => warehouseSearchText(warehouse).includes(normalized));
   }, [query, warehouses]);
