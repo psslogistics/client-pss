@@ -161,6 +161,7 @@ export default function PickupRequests() {
   const [loading, setLoading] = useState(true);
   const [providerAccounts, setProviderAccounts] = useState<ProviderAccount[]>([]);
   const [warehouses, setWarehouses] = useState<SavedWarehouse[]>([]);
+  const [prefillLocationId, setPrefillLocationId] = useState("");
   const [pickupSlotOptions, setPickupSlotOptions] = useState<PickupSlotOption[]>([]);
   const [rescheduleSlotOptions, setRescheduleSlotOptions] = useState<PickupSlotOption[]>([]);
   const [pickupSlotError, setPickupSlotError] = useState("");
@@ -255,6 +256,30 @@ export default function PickupRequests() {
     });
     return () => { cancelled = true; };
   }, [configurationRetry]);
+
+  useEffect(() => {
+    const locationId = new URLSearchParams(window.location.search).get("pickup_location_id") ?? "";
+    if (locationId) setPrefillLocationId(locationId);
+  }, []);
+
+  useEffect(() => {
+    if (!prefillLocationId || !warehouses.length || scheduleOpen) return;
+    const location = warehouses.find((warehouse) => warehouse.id === prefillLocationId);
+    if (!location) return;
+    setForm((current) => ({
+      ...current,
+      warehouseId: location.source === "warehouse" ? location.id : "",
+      customer: location.contact_name ?? location.name ?? current.customer,
+      contact: location.phone ?? location.contact ?? current.contact,
+      address: location.address ?? current.address,
+      city: location.city ?? current.city,
+      state: location.state ?? current.state,
+      pincode: location.pincode ?? current.pincode,
+    }));
+    setPrefillLocationId("");
+    setScheduleOpen(true);
+    window.history.replaceState({}, "", "/dashboard/pickupRequests");
+  }, [prefillLocationId, warehouses, scheduleOpen]);
 
   useEffect(() => {
     if (!rescheduleTarget?.providerAccountId || !/^\d{6}$/.test(rescheduleTarget.pincode)) return;
