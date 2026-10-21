@@ -1,3 +1,5 @@
+"use client";
+
 import ShipmentBooking from "@/components/block/shipmentBooking";
 import { DelhiverySurface, DelhiveryTabs } from "@/components/ui/delhivery-surface";
 

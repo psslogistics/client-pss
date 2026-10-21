@@ -1,3 +1,5 @@
+"use client";
+
 import SupportTicketCreation from "@/components/block/supportTicketCreation";
 import { DelhiverySurface, DelhiveryTabs } from "@/components/ui/delhivery-surface";
 
