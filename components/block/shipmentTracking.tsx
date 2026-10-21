@@ -9,7 +9,7 @@ import {
   RefreshCw, Search, Truck, X, AlertTriangle, Copy, Printer, LifeBuoy,
 } from "lucide-react";
 import Dropdown from "@/components/ui/dropdown";
-import { getPssErrorDetails, pssApi, pssApiFile } from "@/lib/pss-api";
+import { getPssErrorDetails, pssApi, pssApiFile, subscribePssDataSync } from "@/lib/pss-api";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import { jsPDF } from "jspdf";
 import { mergeProviderPdfs } from "@/lib/merge-pdf";
@@ -183,6 +183,16 @@ export default function ShipmentTracking() {
   // Load the authenticated production shipment collection on mount.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadShipments(); }, []);
+  const loadShipmentsRef = useRef(loadShipments);
+  loadShipmentsRef.current = loadShipments;
+  useEffect(() => {
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") void loadShipmentsRef.current(); };
+    const unsubscribe = subscribePssDataSync(refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    const interval = window.setInterval(refreshWhenVisible, 30_000);
+    return () => { unsubscribe(); window.removeEventListener("focus", refreshWhenVisible); document.removeEventListener("visibilitychange", refreshWhenVisible); window.clearInterval(interval); };
+  }, []);
   useEffect(() => { const timer = window.setTimeout(() => { const id = requestedId; if (!id) { setSelectedId(""); setMobileDetail(false); return; } const found = allShipments.find((s) => [s.id, s.pssTracking, s.courierTracking].includes(id)); if (found) { setSelectedId(found.id); setMobileDetail(true); setNotice(""); return; } if (!allShipments.length) return; void pssApi<{ data?: Record<string, unknown> }>(`/v1/shipments/${encodeURIComponent(id)}`).then((result) => { if (!result.data?.id) throw new Error(`No shipment matched reference ${id}`); const shipment = mapApiShipment(result.data, []); setAllShipments((current) => [shipment, ...current.filter((item) => item.id !== shipment.id)]); setSelectedId(shipment.id); setMobileDetail(true); setNotice(""); }).catch((error) => setNotice(getPssErrorDetails(error, `No shipment matched reference ${id}.`).message)); }, 0); return () => window.clearTimeout(timer); }, [allShipments, requestedId]);
   const filtered = useMemo(() => allShipments.filter((s) => matchesShipment(s, query) && (!filters.status || s.status === filters.status) && (!filters.courier || s.courier === filters.courier) && (!filters.mode || s.mode === filters.mode) && (!filters.origin || s.origin === filters.origin) && (!filters.destination || s.destination === filters.destination) && (!filters.delayed || s.status === "Delayed") && (!filters.exceptions || s.status === "Exception")), [allShipments, query, filters]);
   const selected = allShipments.find((s) => s.id === selectedId) || filtered[0] || allShipments[0];

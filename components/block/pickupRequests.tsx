@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Dropdown from "@/components/ui/dropdown";
-import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
+import { getPssErrorDetails, pssApi, subscribePssDataSync } from "@/lib/pss-api";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import WarehousePicker from "@/components/ui/warehouse-picker";
 
@@ -199,6 +199,13 @@ export default function PickupRequests() {
   useEffect(() => {
     const interval = window.setInterval(() => { void loadPickups(); }, 30000);
     return () => window.clearInterval(interval);
+  }, [loadPickups]);
+  useEffect(() => {
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") void loadPickups(); };
+    const unsubscribe = subscribePssDataSync(refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => { unsubscribe(); window.removeEventListener("focus", refreshWhenVisible); document.removeEventListener("visibilitychange", refreshWhenVisible); };
   }, [loadPickups]);
 
   useEffect(() => {

@@ -10,11 +10,68 @@ const MAX_SESSION_CACHE_BYTES = 1_500_000;
 const getCache = new Map<string, { expiresAt: number; value: unknown }>();
 const getInFlight = new Map<string, Promise<unknown>>();
 let authExpiryInFlight: Promise<void> | null = null;
+const DATA_SYNC_EVENT = "pss-data-invalidated";
+const DATA_SYNC_STORAGE_KEY = "pss-data-invalidated-at";
+let dataSyncChannel: BroadcastChannel | null = null;
+let dataSyncInitialized = false;
+
+const clearReadCaches = () => {
+  getCache.clear();
+  getInFlight.clear();
+  if (typeof window !== "undefined") {
+    try {
+      for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+        const key = window.sessionStorage.key(index);
+        if (key?.startsWith("pss-api:")) window.sessionStorage.removeItem(key);
+      }
+    } catch { /* session storage may be unavailable */ }
+  }
+};
+
+const initializeDataSync = () => {
+  if (dataSyncInitialized || typeof window === "undefined") return;
+  dataSyncInitialized = true;
+  if (typeof BroadcastChannel !== "undefined") {
+    dataSyncChannel = new BroadcastChannel("pss-data-sync");
+    dataSyncChannel.addEventListener("message", (event) => {
+      if (event.data?.type !== "invalidate") return;
+      clearReadCaches();
+      window.dispatchEvent(new CustomEvent(DATA_SYNC_EVENT));
+    });
+  }
+  window.addEventListener("storage", (event) => {
+    if (event.key !== DATA_SYNC_STORAGE_KEY || !event.newValue) return;
+    clearReadCaches();
+    window.dispatchEvent(new CustomEvent(DATA_SYNC_EVENT));
+  });
+};
+
+const broadcastDataInvalidation = () => {
+  if (typeof window === "undefined") return;
+  initializeDataSync();
+  clearReadCaches();
+  window.dispatchEvent(new CustomEvent(DATA_SYNC_EVENT));
+  dataSyncChannel?.postMessage({ type: "invalidate", at: Date.now() });
+  try { window.localStorage.setItem(DATA_SYNC_STORAGE_KEY, String(Date.now())); } catch { /* storage may be unavailable */ }
+};
+
+export function subscribePssDataSync(listener: () => void) {
+  if (typeof window === "undefined") return () => undefined;
+  initializeDataSync();
+  window.addEventListener(DATA_SYNC_EVENT, listener);
+  return () => window.removeEventListener(DATA_SYNC_EVENT, listener);
+}
+
+export function clearPssReadCaches() {
+  clearReadCaches();
+}
+
+if (typeof window !== "undefined") initializeDataSync();
+
 const expireAuthSession = () => {
   if (authExpiryInFlight) return authExpiryInFlight;
   authExpiryInFlight = (async () => {
-    getCache.clear();
-    getInFlight.clear();
+    clearReadCaches();
     try { await createClient().auth.signOut({ scope: "local" }); } catch { /* the local session may already be invalid */ }
     if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("pss-auth-expired"));
   })().finally(() => { authExpiryInFlight = null; });
@@ -76,6 +133,7 @@ export function getPssErrorDetails(error: unknown, fallback = "The production re
 }
 
 export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T> {
+  initializeDataSync();
   if (!sessionInFlight) {
     sessionInFlight = createClient().auth.getSession().finally(() => { sessionInFlight = null; });
   }
@@ -129,7 +187,9 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
       if (isSessionCachedRead(path)) {
         try { const serialized = JSON.stringify({ expiresAt: Date.now() + SESSION_CACHE_TTL_MS, value: payload }); if (serialized.length <= MAX_SESSION_CACHE_BYTES) sessionStorage.setItem(sessionKey(session.user.id, path), serialized); } catch { /* ignore quota or privacy-mode failures */ }
       }
-    } else { getCache.clear(); }
+    } else {
+      broadcastDataInvalidation();
+    }
     return payload;
   } catch (caught) {
     if (caught instanceof DOMException && caught.name === "AbortError") throw new Error("The production API timed out. Check the Worker deployment and try again.");
