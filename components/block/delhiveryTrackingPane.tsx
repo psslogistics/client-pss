@@ -26,7 +26,7 @@ import { jsPDF } from "jspdf";
 import { SkeletonProvider } from "@/components/ui/skeleton";
 
 type Status = "Booked" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
-type TrackingEvent = { title: string; description: string; location: string; eventTime: string; status: Status };
+type TrackingEvent = { title: string; description: string; location: string; eventTime: string; status: Status; source?: string };
 type Shipment = {
   id: string;
   pssReference: string;
@@ -227,13 +227,16 @@ function mapShipment(row: Record<string, unknown>): Shipment {
   const reference = lrNumber || masterAwb || pickupReference || legacyReference || "Courier reference unavailable";
   const referenceLabel = lrNumber ? "LRN" : masterAwb ? "Master AWB" : pickupReference ? "PUR" : legacyReference ? "Provider reference" : "Courier reference";
   const createdAt = String(row.created_at ?? "");
-  const events = Array.isArray(row.tracking_events) ? (row.tracking_events as Array<Record<string, unknown>>).map((event) => ({
+  const rawEvents = Array.isArray(row.tracking_events) ? row.tracking_events as Array<Record<string, unknown>> : [];
+  const providerEvents = rawEvents.filter((event) => /^(provider|webhook):delhivery$/i.test(String(event.source ?? event.created_by_user_id ?? "").trim()));
+  const events = (providerEvents.length ? providerEvents : rawEvents).map((event) => ({
     title: normalizeStatus(event.status),
     description: String(event.description ?? "Tracking event received from production API"),
     location: String(event.location ?? "Not provided"),
     eventTime: String(event.event_time ?? event.created_at ?? createdAt),
     status: normalizeStatus(event.status),
-  })) : [];
+    source: String(event.source ?? event.created_by_user_id ?? "").trim() || undefined,
+  }));
   return {
     id,
     pssReference,
