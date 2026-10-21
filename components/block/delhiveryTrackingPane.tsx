@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDate as formatClientDate, formatDateTime as formatClientDateTime } from "@/lib/date-format";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { jsPDF } from "jspdf";
 import { mergeProviderPdfs } from "@/lib/merge-pdf";
@@ -103,17 +104,8 @@ const formatDimensions = (value: unknown) => {
   return groups.join(" · ") || "Not provided";
 };
 
-const formatDate = (value: string) => {
-  if (!value || value === "Not provided") return "Not provided";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(date);
-};
-
-const formatDateTime = (value: string) => {
-  if (!value) return "Not provided";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date);
-};
+const formatDate = (value: string) => formatClientDate(value);
+const formatDateTime = (value: string) => formatClientDateTime(value);
 
 const podBase64 = (value: unknown): string[] => {
   if (!value) return [];

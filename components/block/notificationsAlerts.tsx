@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCheck, CheckCircle2, CircleAlert, Info, Search, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
+import { formatDateTime } from "@/lib/date-format";
 import type { NotificationCategory, NotificationItem, NotificationTone } from "@/components/block/notifications-data";
 import { SkeletonTable } from "@/components/ui/skeleton";
 
@@ -47,7 +48,7 @@ export default function NotificationsAlerts() {
       setAllNotifications(result.data.map((row) => ({
         id: String(row.id), category: (String(row.category ?? "System").replace(/^\w/, (value) => value.toUpperCase()) as NotificationCategory),
         tone: (row.type === "warning" ? "warning" : row.type === "critical" ? "critical" : row.type === "success" ? "success" : "info") as NotificationTone,
-        title: String(row.title ?? "Notification"), message: String(row.message ?? ""), time: row.created_at ? new Date(String(row.created_at)).toLocaleString() : "", unread: !Boolean(row.is_read),
+        title: String(row.title ?? "Notification"), message: String(row.message ?? ""), time: row.created_at ? formatDateTime(row.created_at) : "", unread: !Boolean(row.is_read),
         actionLabel: "Open", actionHref: String(row.action_href ?? "/dashboard")
       })));
       setHydrated(true);

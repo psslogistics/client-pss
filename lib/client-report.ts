@@ -9,5 +9,6 @@ export type ClientReportData = {
   exceptions: ExceptionCase[];
 };
 
-export const formatReportDate = (value: string) => { const parsed = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`); return Number.isNaN(parsed.getTime()) ? "Not provided" : parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }); };
+import { formatDate } from "@/lib/date-format";
+export const formatReportDate = (value: string) => formatDate(value);
 export const formatReportCurrency = (value: number) => formatINR(value);

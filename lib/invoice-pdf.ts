@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { formatDate } from "@/lib/date-format";
 
 export type InvoicePdfRecord = {
   id: string;
@@ -90,7 +91,7 @@ function money(value: number) {
 }
 function date(value: string | undefined) {
   const parsed = value ? new Date(value) : new Date();
-  return Number.isNaN(parsed.getTime()) ? "Not provided" : parsed.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return Number.isNaN(parsed.getTime()) ? "Not provided" : formatDate(parsed.toISOString());
 }
 function line(doc: jsPDF, x1: number, y1: number, x2: number, y2: number, width = 0.6) {
   doc.setLineWidth(width); doc.setDrawColor(...INK); doc.line(x1, y1, x2, y2);

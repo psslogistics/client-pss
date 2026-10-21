@@ -1,6 +1,7 @@
 import { zipSync } from "fflate";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { formatDate } from "@/lib/date-format";
 
 export type BillingExportRecord = {
   id: string;
@@ -73,7 +74,7 @@ function download(bytes: Uint8Array, filename: string, type: string) {
 }
 
 function makeSummaryPdf(records: BillingExportRecord[], days: number) {
-  const pdf = new jsPDF({ unit: "pt", format: "a4" }); const total = records.filter((record) => !["void", "cancelled"].includes(record.status)).reduce((sum, record) => sum + Number(record.amount || 0), 0); const generated = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const pdf = new jsPDF({ unit: "pt", format: "a4" }); const total = records.filter((record) => !["void", "cancelled"].includes(record.status)).reduce((sum, record) => sum + Number(record.amount || 0), 0); const generated = formatDate(new Date().toISOString());
   pdf.setFontSize(18); pdf.text("PSS Logistics Billing Summary", 40, 44); pdf.setFontSize(9); pdf.text(`Last ${days} days · Generated ${generated}`, 40, 61); pdf.setFontSize(11); pdf.text(`Shipments: ${records.length}`, 40, 88); pdf.text(`Final billed total: ₹${money(total)}`, 40, 106);
   autoTable(pdf, { startY: 126, head: [["Invoice", "LR / LRN", "From → To", "Weight", "Status", "Total"]], body: records.map((record) => [text(record.invoice_number ?? record.id), text(record.lr_number ?? "Not available"), `${text(record.shipment_origin)} → ${text(record.shipment_destination)}`, `${text(record.total_weight_kg)} kg`, text(record.status), `₹${money(record.amount)}`]), margin: { left: 40, right: 40 }, styles: { font: "helvetica", fontSize: 7, cellPadding: 4, overflow: "linebreak" }, headStyles: { fillColor: [37, 99, 235], textColor: 255 }, alternateRowStyles: { fillColor: [245, 248, 252] } });
   return pdf.output("arraybuffer");
