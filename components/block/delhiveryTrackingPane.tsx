@@ -472,7 +472,7 @@ export default function DelhiveryTrackingPane() {
   const downloadLr = async () => {
     setNotice("Requesting LR from Delhivery…");
     try {
-      const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(selected.id)}/lr-copy?lr_copy_type=SHIPPER%20COPY`);
+      const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(selected.id)}/lr-copy`);
       const artifact = result.data?.artifact;
       const base64 = podBase64(artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).find((value) => value.length > 100);
       const directUrl = podUrl(artifact);

@@ -192,7 +192,9 @@ export default function AllShipments() {
     } catch (error) { setNotice(`POD download failed: ${getPssErrorDetails(error, "The POD could not be downloaded.").message}`); }
   };
   const fetchProviderArtifact = async (row: ShipmentRow, kind: "lr-copy" | "document") => {
-    const query = kind === "lr-copy" ? "?lr_copy_type=SHIPPER%20COPY" : "?doc_type=LM_POD";
+    // Do not restrict LR copies to SHIPPER COPY. Delhivery's LR response is
+    // the complete multi-page document (Shipper Copy, LM POD, Recipient Copy).
+    const query = kind === "lr-copy" ? "" : "?doc_type=LM_POD";
     const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(row.id)}/${kind}${query}`);
     const artifact = result.data?.artifact;
     const base64 = artifactBase64s(artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).find((value) => /^[A-Za-z0-9+/=\r\n]+$/.test(value) && value.length > 100);
