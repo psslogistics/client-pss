@@ -25,7 +25,7 @@ import { getPssErrorDetails, pssApi, subscribePssDataSync } from "@/lib/pss-api"
 import { SkeletonTable } from "@/components/ui/skeleton";
 import WarehousePicker from "@/components/ui/warehouse-picker";
 
-type PickupStatus = "Draft" | "Requested" | "Provider Pending" | "Scheduled" | "Rescheduled" | "Not Picked" | "Driver Assigned" | "En Route" | "Picked Up" | "Completed" | "Failed" | "Cancelled";
+type PickupStatus = "Draft" | "Requested" | "Provider Pending" | "Scheduled" | "Rescheduled" | "Not Picked" | "Driver Assigned" | "Out for Pickup" | "Picked Up" | "Completed" | "Failed" | "Cancelled";
 type NoticeTone = "info" | "success" | "pending" | "error";
 type SortKey = "reference" | "customer" | "status" | "date" | "location" | "driver" | "pieces" | "weight" | "createdAt";
 type PickupSlotOption = { date: string; slots: string[]; reason?: string };
@@ -114,7 +114,7 @@ const statusStyles: Record<PickupStatus, string> = {
   Rescheduled: "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   "Not Picked": "border-orange-500/20 bg-orange-500/10 text-orange-700 dark:text-orange-300",
   "Driver Assigned": "border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-  "En Route": "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  "Out for Pickup": "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300",
   Completed: "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   Failed: "border-destructive/20 bg-destructive/10 text-destructive",
   Cancelled: "border-border bg-muted text-muted-foreground",
@@ -132,7 +132,7 @@ const columns: { key: SortKey; label: string }[] = [
 
 function normalizePickupStatus(value: unknown): PickupStatus {
   const normalized = String(value ?? "requested").trim().toLowerCase();
-  const labels: Record<string, PickupStatus> = { draft: "Draft", requested: "Requested", provider_pending: "Provider Pending", scheduled: "Scheduled", rescheduled: "Rescheduled", not_picked: "Not Picked", assigned: "Driver Assigned", driver_assigned: "Driver Assigned", in_transit: "En Route", en_route: "En Route", picked_up: "Picked Up", completed: "Completed", failed: "Failed", cancelled: "Cancelled" };
+  const labels: Record<string, PickupStatus> = { draft: "Draft", requested: "Requested", provider_pending: "Provider Pending", scheduled: "Scheduled", rescheduled: "Rescheduled", not_picked: "Not Picked", assigned: "Driver Assigned", driver_assigned: "Driver Assigned", in_transit: "Out for Pickup", en_route: "Out for Pickup", picked_up: "Picked Up", completed: "Completed", failed: "Failed", cancelled: "Cancelled" };
   return labels[normalized] ?? "Requested";
 }
 
@@ -288,7 +288,7 @@ export default function PickupRequests() {
 
   const metrics = useMemo(() => ({
     today: pickups.filter((pickup) => pickup.date === todayIso() && pickup.status !== "Cancelled").length,
-    scheduled: pickups.filter((pickup) => pickup.status === "Scheduled" || pickup.status === "Driver Assigned").length,
+    scheduled: pickups.filter((pickup) => pickup.status === "Scheduled" || pickup.status === "Driver Assigned" || pickup.status === "Out for Pickup").length,
     completed: pickups.filter((pickup) => pickup.status === "Completed").length,
     failed: pickups.filter((pickup) => pickup.status === "Failed").length,
   }), [pickups]);
