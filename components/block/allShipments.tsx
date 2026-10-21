@@ -202,6 +202,22 @@ export default function AllShipments() {
     if (directUrl) { const response = await fetch(directUrl); if (!response.ok) throw new Error(`Unable to fetch ${label} document`); const blob = await response.blob(); if (!blob.size) throw new Error(`Delhivery returned an empty ${label} document`); return { name: `${label}-${row.pssTracking}.pdf`, blob }; }
     throw new Error(`Delhivery returned no ${label} document`);
   };
+  const downloadLr = async (row: ShipmentRow) => {
+    setOpenMenu(null);
+    setNotice("Downloading LR from Delhivery…");
+    try {
+      const { blob, name } = await fetchProviderArtifact(row, "lr-copy");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 500);
+      setNotice("LR downloaded from Delhivery.");
+    } catch (error) {
+      setNotice(`LR download failed: ${getPssErrorDetails(error, "The LR could not be downloaded from Delhivery.").message}`);
+    }
+  };
   const runBulkDocumentDownload = async (kind: "lr-copy" | "document") => {
     const label = kind === "lr-copy" ? "LR" : "POD";
     if (!selectedRows.length) return;
@@ -229,7 +245,14 @@ export default function AllShipments() {
     for (const row of deletableRows) { try { await pssApi(`/v1/shipments/${encodeURIComponent(row.id)}`, { method: "DELETE" }); success += 1; } catch { failed += 1; } }
     setSelectedIds(new Set()); setNotice(`Deleted ${success} shipment${success === 1 ? "" : "s"}${failed ? `; ${failed} could not be deleted` : ""}${skipped ? `; ${skipped} selected shipment${skipped === 1 ? " was" : "s were"} kept because they are not eligible` : ""}.`); setReloadKey((value) => value + 1);
   };
-  const openShipmentAction = (row: ShipmentRow, action: "label" | "lr") => { setOpenMenu(null); router.push(`/dashboard/shipmentTracking?id=${encodeURIComponent(row.pssTracking)}&action=${action}`); };
+  const openShipmentAction = (row: ShipmentRow, action: "label" | "lr") => {
+    if (action === "lr") {
+      void downloadLr(row);
+      return;
+    }
+    setOpenMenu(null);
+    router.push(`/dashboard/shipmentTracking?id=${encodeURIComponent(row.pssTracking)}&action=${action}`);
+  };
 
   if (loading && !rows.length) return <div className="flex h-[calc(100dvh-6.5rem)] min-h-0 w-full flex-col gap-3" role="status" aria-label="Loading shipments" aria-busy="true"><SkeletonInput /><Skeleton className="h-11 w-full rounded-xl" /><SkeletonText className="w-96" /><SkeletonTable rows={8} columns={10} className="min-h-0 flex-1" /></div>;
 
