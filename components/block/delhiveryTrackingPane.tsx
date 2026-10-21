@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { jsPDF } from "jspdf";
+import { mergeProviderPdfs } from "@/lib/merge-pdf";
 import { SkeletonProvider } from "@/components/ui/skeleton";
 
 type Status = "Booked" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
@@ -143,6 +144,16 @@ const savePod = (name: string, value: string, contentType: string) => {
   link.download = name;
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 500);
+};
+
+const saveMergedPdf = async (name: string, values: string[]) => {
+  const bytes = await mergeProviderPdfs(values);
+  const url = URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
 type LabelOption = { size: string; contentType: string; artifact: unknown; copies: number };
@@ -452,6 +463,12 @@ export default function DelhiveryTrackingPane() {
       const artifact = result.data?.artifact;
       const base64 = podBase64(artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).find((value) => value.length > 100);
       const directUrl = podUrl(artifact);
+      const pdfCopies = podBase64(artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).filter((value) => value.length > 100);
+      if (pdfCopies.length > 1) {
+        await saveMergedPdf(`lr-${selected.reference}.pdf`, pdfCopies);
+        setNotice(`LR downloaded from Delhivery (${pdfCopies.length} copies).`);
+        return;
+      }
       if (base64) {
         const type = typeof (artifact as Record<string, unknown> | undefined)?.content_type === "string" ? String((artifact as Record<string, unknown>).content_type) : "image/jpeg";
         savePod(`delhivery-pod-${selected.reference}.${type.includes("pdf") ? "pdf" : "jpg"}`, base64, type);

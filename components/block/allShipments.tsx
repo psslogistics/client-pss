@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi, pssApiFile } from "@/lib/pss-api";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import { zipSync } from "fflate";
+import { mergeProviderPdfs } from "@/lib/merge-pdf";
 import { Skeleton, SkeletonInput, SkeletonTable, SkeletonText } from "@/components/ui/skeleton";
 
 type ShipmentStatus = "All" | "Active" | "Booked" | "Picked Up" | "In Transit" | "Out for Delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
@@ -200,7 +201,7 @@ export default function AllShipments() {
     const base64 = artifactBase64s(artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).find((value) => /^[A-Za-z0-9+/=\r\n]+$/.test(value) && value.length > 100);
     const directUrl = artifactUrl(artifact);
     const label = kind === "lr-copy" ? "LR" : "POD";
-    if (base64) { const blob = new Blob([base64Bytes(base64)], { type: artifactField(artifact, ["content_type", "contentType", "mime_type", "mimeType"]) ?? "application/pdf" }); if (!blob.size) throw new Error(`Delhivery returned an empty ${label} document`); return { name: `${label}-${row.pssTracking}.pdf`, blob }; }
+    if (base64) { const pdfValues = kind === "lr-copy" ? artifactBase64s(artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).filter((value) => /^[A-Za-z0-9+/=\r\n]+$/.test(value) && value.length > 100) : [base64]; const bytes = kind === "lr-copy" && pdfValues.length > 1 ? await mergeProviderPdfs(pdfValues) : base64Bytes(base64); const blob = new Blob([bytes.buffer as ArrayBuffer], { type: artifactField(artifact, ["content_type", "contentType", "mime_type", "mimeType"]) ?? "application/pdf" }); if (!blob.size) throw new Error(`Delhivery returned an empty ${label} document`); return { name: `${label}-${row.pssTracking}.pdf`, blob }; }
     if (directUrl) { const response = await fetch(directUrl); if (!response.ok) throw new Error(`Unable to fetch ${label} document`); const blob = await response.blob(); if (!blob.size) throw new Error(`Delhivery returned an empty ${label} document`); return { name: `${label}-${row.pssTracking}.pdf`, blob }; }
     throw new Error(`Delhivery returned no ${label} document`);
   };
