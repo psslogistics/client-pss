@@ -26,7 +26,7 @@ function useSavedAddresses() {
 }
 
 function PageHeader({ title, description }: { title: string; description: string }) {
-  return <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Information Center</div><h1 className="text-xl font-semibold tracking-tight">{title}</h1><p className="mt-1 text-sm text-muted-foreground">{description}</p></div><span className="rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">Production API</span></div>;
+  return <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border/70 pb-4"><div><div className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Information Center</div><h1 className="text-xl font-semibold tracking-tight">{title}</h1><p className="mt-1 text-xs text-muted-foreground">{description}</p></div><div className="flex items-center gap-2"><span className="hidden items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-2 text-[11px] font-medium text-muted-foreground sm:inline-flex"><span className="size-1.5 rounded-full bg-emerald-500" /> Live API</span><button type="button" className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold hover:bg-accent">How it works</button></div></div>;
 }
 
 function AddressSelect({ label, records, value, onChange, loadError }: { label: string; records: SavedAddressRecord[]; value: string; onChange: (value: string) => void; loadError?: string }) {
