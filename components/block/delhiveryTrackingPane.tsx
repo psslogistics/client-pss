@@ -189,26 +189,21 @@ const labelImage = (base64: string, contentType: string) => new Promise<{ dataUr
   image.src = `data:${contentType};base64,${base64}`;
 });
 
-const downloadLabelPdf = async (name: string, base64s: string[], contentType: string, size: string) => {
+const downloadLabelPdf = async (name: string, base64s: string[], contentType: string) => {
   const images = await Promise.all(base64s.map((value) => labelImage(value, contentType)));
   const pdf = new jsPDF({ unit: "mm", format: "a4", compress: false });
-  const pageWidth = 210; const pageHeight = 297; const margin = 6; const gap = 4;
-  const grid = size === "sm" ? { columns: 2, rows: 3 } : size === "md" || size === "a4" ? { columns: 2, rows: 2 } : size === "std" ? { columns: 1, rows: 2 } : { columns: 1, rows: 1 };
-  const perPage = grid.columns * grid.rows;
+  const pageWidth = 210; const pageHeight = 297; const margin = 8;
+  const availableWidth = pageWidth - margin * 2;
+  const availableHeight = pageHeight - margin * 2;
   images.forEach((image, index) => {
-    if (index > 0 && index % perPage === 0) pdf.addPage("a4", "portrait");
-    const pageIndex = index % perPage;
-    const cellWidth = (pageWidth - margin * 2 - gap * (grid.columns - 1)) / grid.columns;
-    const cellHeight = (pageHeight - margin * 2 - gap * (grid.rows - 1)) / grid.rows;
-    const column = pageIndex % grid.columns; const row = Math.floor(pageIndex / grid.columns);
-    // Treat provider pixels at their native 96-DPI physical size. Never
-    // enlarge a Delhivery image; upscaling is what made small labels blur.
-    const nativeWidth = image.width * 25.4 / 96;
-    const nativeHeight = image.height * 25.4 / 96;
-    const scale = Math.min(1, cellWidth / nativeWidth, cellHeight / nativeHeight);
-    const width = nativeWidth * scale; const height = nativeHeight * scale;
-    const x = margin + column * (cellWidth + gap) + (cellWidth - width) / 2;
-    const y = margin + row * (cellHeight + gap) + (cellHeight - height) / 2;
+    // Image labels are a raster fallback. Give each provider asset its own
+    // page so the barcode and small text are not shrunk into a multi-up grid.
+    // Delhivery PDFs bypass this function and remain byte-for-byte unchanged.
+    if (index > 0) pdf.addPage("a4", "portrait");
+    const scale = Math.min(availableWidth / image.width, availableHeight / image.height);
+    const width = image.width * scale; const height = image.height * scale;
+    const x = (pageWidth - width) / 2;
+    const y = (pageHeight - height) / 2;
     pdf.addImage(image.dataUrl, image.format, x, y, width, height, undefined, "NONE");
   });
   pdf.save(name);
@@ -522,7 +517,7 @@ export default function DelhiveryTrackingPane() {
     if (base64s.length) {
       const returnedStickerCount = Math.max(1, option.copies);
       const stickers = base64s.slice(0, returnedStickerCount);
-      void downloadLabelPdf(`delhivery-label-${selected.reference}-${option.size}.pdf`, stickers, contentType, option.size)
+      void downloadLabelPdf(`delhivery-label-${selected.reference}-${option.size}.pdf`, stickers, contentType)
         .then(() => setNotice(`Delhivery ${option.size} PDF downloaded${option.copies > 1 ? ` (${option.copies} assets)` : ""}.`))
         .catch((error) => setNotice(`Label PDF generation failed: ${error instanceof Error ? error.message : "Unable to generate the label PDF."}`));
       return;
