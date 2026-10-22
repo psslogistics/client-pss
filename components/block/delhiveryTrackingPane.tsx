@@ -13,7 +13,6 @@ import {
   LifeBuoy,
   MapPin,
   Package,
-  Printer,
   ReceiptText,
   RefreshCw,
   Search,
@@ -23,9 +22,9 @@ import {
 import { cn } from "@/lib/utils";
 import { formatDate as formatClientDate, formatDateTime as formatClientDateTime } from "@/lib/date-format";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
-import { jsPDF } from "jspdf";
 import { mergeProviderPdfs } from "@/lib/merge-pdf";
 import { SkeletonProvider } from "@/components/ui/skeleton";
+import { DelhiveryLabelMenu } from "@/components/block/delhiveryLabelMenu";
 
 type Status = "Booked" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type TrackingEvent = { title: string; description: string; location: string; eventTime: string; status: Status; source?: string };
@@ -148,67 +147,6 @@ const saveMergedPdf = async (name: string, values: string[]) => {
   setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
-type LabelOption = { size: string; contentType: string; artifact: unknown; copies: number };
-
-const artifactContentType = (value: unknown): string => {
-  if (!value || typeof value !== "object") return "application/octet-stream";
-  const record = value as Record<string, unknown>;
-  for (const key of ["content_type", "contentType", "mime_type", "mimeType"]) {
-    if (typeof record[key] === "string" && record[key]) return String(record[key]);
-  }
-  for (const child of Object.values(record)) {
-    const found = artifactContentType(child);
-    if (found !== "application/octet-stream") return found;
-  }
-  return "application/octet-stream";
-};
-
-const artifactCopies = (value: unknown) => {
-  if (!value || typeof value !== "object") return 1;
-  const record = value as Record<string, unknown>;
-  const copies = Number(record.copies);
-  return Number.isFinite(copies) && copies > 0 ? copies : Array.isArray(record.artifacts) ? record.artifacts.length : 1;
-};
-
-const labelImage = (base64: string, contentType: string) => new Promise<{ dataUrl: string; width: number; height: number; format: "PNG" | "JPEG" }>((resolve, reject) => {
-  const image = new Image();
-  image.onload = () => {
-    const normalizedType = contentType.toLowerCase();
-    if (normalizedType.includes("png") || normalizedType.includes("jpeg") || normalizedType.includes("jpg")) {
-      resolve({ dataUrl: `data:${contentType};base64,${base64}`, width: image.naturalWidth, height: image.naturalHeight, format: normalizedType.includes("jpeg") || normalizedType.includes("jpg") ? "JPEG" : "PNG" });
-      return;
-    }
-    const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
-    const context = canvas.getContext("2d");
-    if (!context) { reject(new Error("Unable to prepare the Delhivery label image.")); return; }
-    context.drawImage(image, 0, 0);
-    resolve({ dataUrl: canvas.toDataURL("image/png"), width: image.naturalWidth, height: image.naturalHeight, format: "PNG" });
-  };
-  image.onerror = () => reject(new Error("Unable to read the Delhivery label image."));
-  image.src = `data:${contentType};base64,${base64}`;
-});
-
-const downloadLabelPdf = async (name: string, base64s: string[], contentType: string) => {
-  const images = await Promise.all(base64s.map((value) => labelImage(value, contentType)));
-  const pdf = new jsPDF({ unit: "mm", format: "a4", compress: false });
-  const pageWidth = 210; const pageHeight = 297; const margin = 8;
-  const availableWidth = pageWidth - margin * 2;
-  const availableHeight = pageHeight - margin * 2;
-  images.forEach((image, index) => {
-    // Image labels are a raster fallback. Give each provider asset its own
-    // page so the barcode and small text are not shrunk into a multi-up grid.
-    // Delhivery PDFs bypass this function and remain byte-for-byte unchanged.
-    if (index > 0) pdf.addPage("a4", "portrait");
-    const scale = Math.min(availableWidth / image.width, availableHeight / image.height);
-    const width = image.width * scale; const height = image.height * scale;
-    const x = (pageWidth - width) / 2;
-    const y = (pageHeight - height) / 2;
-    pdf.addImage(image.dataUrl, image.format, x, y, width, height, undefined, "NONE");
-  });
-  pdf.save(name);
-};
-
 function mapShipment(row: Record<string, unknown>): Shipment {
   const status = normalizeStatus(row.status);
   const id = String(row.id ?? "unknown");
@@ -287,9 +225,9 @@ function SectionHeader({ icon, title, open, onClick }: { icon: React.ReactNode; 
   return <button type="button" onClick={onClick} aria-expanded={open} className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition hover:bg-slate-50 sm:px-5"><span className="flex items-center gap-2 text-sm font-semibold text-slate-900">{icon}{title}</span>{open ? <ChevronUp className="size-4 text-slate-500" /> : <ChevronDown className="size-4 text-slate-500" />}</button>;
 }
 
-function ShipmentActions({ onNotice, onInvoice, onPod, onLr, onLabel }: { onNotice: (message: string) => void; onInvoice: () => void; onPod: () => void; onLr: () => void; onLabel: () => void }) {
+function ShipmentActions({ onNotice, onInvoice, onPod, onLr, labelMenu }: { onNotice: (message: string) => void; onInvoice: () => void; onPod: () => void; onLr: () => void; labelMenu: React.ReactNode }) {
   const actionClass = "inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50";
-  return <div className="grid grid-cols-6 gap-2 sm:grid-cols-5"><button type="button" onClick={() => onNotice("Raise ticket is available through the PSS support workflow.")} className={cn(actionClass, "col-span-2 sm:col-span-1")}><LifeBuoy className="size-3.5" />Raise ticket</button><button type="button" onClick={onLr} className={cn(actionClass, "col-span-2 sm:col-span-1")}><Download className="size-3.5" />Download WayBill</button><button type="button" onClick={onPod} className={cn(actionClass, "col-span-2 sm:col-span-1")}><FileCheck2 className="size-3.5" />POD</button><button type="button" onClick={onInvoice} className={cn(actionClass, "col-span-2 col-start-2 sm:col-start-auto sm:col-span-1")}><ReceiptText className="size-3.5" />Invoice</button><button type="button" onClick={onLabel} className={cn(actionClass, "col-span-2 col-start-4 sm:col-start-auto sm:col-span-1")}><Printer className="size-3.5" />Print label</button></div>;
+  return <div className="grid grid-cols-6 gap-2 sm:grid-cols-5"><button type="button" onClick={() => onNotice("Raise ticket is available through the PSS support workflow.")} className={cn(actionClass, "col-span-2 sm:col-span-1")}><LifeBuoy className="size-3.5" />Raise ticket</button><button type="button" onClick={onLr} className={cn(actionClass, "col-span-2 sm:col-span-1")}><Download className="size-3.5" />Download WayBill</button><button type="button" onClick={onPod} className={cn(actionClass, "col-span-2 sm:col-span-1")}><FileCheck2 className="size-3.5" />POD</button><button type="button" onClick={onInvoice} className={cn(actionClass, "col-span-2 col-start-2 sm:col-start-auto sm:col-span-1")}><ReceiptText className="size-3.5" />Invoice</button><div className="col-span-2 col-start-4 sm:col-start-auto sm:col-span-1">{labelMenu}</div></div>;
 }
 
 function TrackingTimeline({ shipment, scanOpen, setScanOpen }: { shipment: Shipment; scanOpen: boolean; setScanOpen: (value: boolean) => void }) {
@@ -343,8 +281,6 @@ export default function DelhiveryTrackingPane() {
   const [searchResults, setSearchResults] = useState<Shipment[]>([]);
   const [searching, setSearching] = useState(false);
   const [routeShipmentLoaded, setRouteShipmentLoaded] = useState(false);
-  const [labelOptions, setLabelOptions] = useState<LabelOption[]>([]);
-  const [labelLoading, setLabelLoading] = useState(false);
   const routeRefreshId = useRef<string | null>(null);
 
   const load = async (showNotice = false) => {
@@ -497,63 +433,6 @@ export default function DelhiveryTrackingPane() {
     }
   };
 
-  const downloadLabel = (option: LabelOption) => {
-    const base64s = podBase64(option.artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).filter((value) => value.length > 100);
-    const directUrl = podUrl(option.artifact);
-    const contentType = option.contentType || artifactContentType(option.artifact);
-    if (base64s.length && contentType.includes("pdf")) {
-      if (option.size === "a4") {
-        // Delhivery's A4 PDF already contains its authoritative four-up box
-        // layout and the separate MPS document page. Preserve it byte-for-byte
-        // so the MPS document and provider box numbering are not flattened.
-        savePod(`delhivery-label-${selected.reference}-${option.size}.pdf`, base64s[0], contentType);
-        setNotice(`Delhivery ${option.size} PDF downloaded.`);
-        return;
-      }
-      savePod(`delhivery-label-${selected.reference}-${option.size}.pdf`, base64s[0], contentType);
-      setNotice(`Delhivery ${option.size} label downloaded${option.copies > 1 ? ` (${option.copies} copies returned)` : ""}.`);
-      return;
-    }
-    if (base64s.length) {
-      const returnedStickerCount = Math.max(1, option.copies);
-      const stickers = base64s.slice(0, returnedStickerCount);
-      void downloadLabelPdf(`delhivery-label-${selected.reference}-${option.size}.pdf`, stickers, contentType)
-        .then(() => setNotice(`Delhivery ${option.size} PDF downloaded${option.copies > 1 ? ` (${option.copies} assets)` : ""}.`))
-        .catch((error) => setNotice(`Label PDF generation failed: ${error instanceof Error ? error.message : "Unable to generate the label PDF."}`));
-      return;
-    }
-    if (directUrl) {
-      const link = document.createElement("a"); link.href = directUrl; link.download = `delhivery-label-${selected.reference}-${option.size}`; link.target = "_blank"; link.rel = "noopener noreferrer"; link.click();
-      setNotice(`Delhivery ${option.size} label download started.`);
-      return;
-    }
-    setNotice(`Delhivery returned no downloadable content for ${option.size}.`);
-  };
-
-  const loadLabelOptions = async () => {
-    if (labelLoading) return;
-    setLabelLoading(true); setNotice("Checking label formats with Delhivery…");
-    const sizes = ["sm", "md", "a4", "std"];
-    try {
-      const results = await Promise.all(sizes.map(async (size) => {
-        try {
-          const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(selected.id)}/label?size=${size}`);
-          const artifact = result.data?.artifact;
-          if (!artifact || (!podBase64(artifact).length && !podUrl(artifact))) return undefined;
-          const option: LabelOption = { size, contentType: artifactContentType(artifact), artifact, copies: artifactCopies(artifact) };
-          return option;
-        } catch {
-          return undefined;
-        }
-      }));
-      const available = results.filter((option: LabelOption | undefined): option is LabelOption => Boolean(option));
-      setLabelOptions(available);
-      setNotice(available.length ? "Delhivery label formats are ready to download." : "Delhivery has not published a label for this shipment yet.");
-    } finally {
-      setLabelLoading(false);
-    }
-  };
-
   return <div className="tracking-pane relative min-h-full w-full min-w-0 bg-background text-foreground">
     <main className="mx-auto w-full max-w-[1400px] space-y-4 p-4 sm:p-6">
       <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"><label className="relative block"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><input aria-label="Search shipments in tracking" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search shipments, LR / LRN, AWB, PUR, or PSS reference…" className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-9 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />{query && <button type="button" aria-label="Clear shipment search" onClick={() => setQuery("")} className="absolute right-2 top-1/2 rounded p-1 text-slate-500 hover:bg-slate-100"><X className="size-4" /></button>}</label>{query.trim() && <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-slate-200">{searching ? <p className="p-3 text-xs text-slate-500">Searching production shipments…</p> : visibleSearchResults.length ? visibleSearchResults.map((shipment) => <button type="button" key={shipment.id} onClick={() => { setShipments((current) => [shipment, ...current.filter((item) => item.id !== shipment.id)]); setSelectedId(shipment.pssReference); router.replace(`/dashboard/shipmentTracking?id=${encodeURIComponent(shipment.pssReference)}`); setQuery(""); }} className="flex w-full items-start justify-between gap-3 border-b border-slate-100 px-3 py-2.5 text-left last:border-0 hover:bg-slate-50"><span className="min-w-0"><span className="block truncate text-xs font-semibold text-slate-900">{shipment.referenceLabel} {shipment.reference}</span><span className="mt-0.5 block truncate text-[11px] text-slate-500">{shipment.origin} → {shipment.destination}</span></span><StatusChip tone="blue">{shipment.status}</StatusChip></button>) : <p className="p-3 text-xs text-slate-500">No shipment matched that PSS reference, LR/LRN, AWB, or PUR.</p>}</div>}</section>
@@ -561,7 +440,7 @@ export default function DelhiveryTrackingPane() {
       <TrackingTimeline shipment={selected} scanOpen={scanOpen} setScanOpen={setScanOpen} />
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<ReceiptText className="size-4 text-rose-600" />} title="Order summary" open={summaryOpen} onClick={() => setSummaryOpen(!summaryOpen)} />{summaryOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Box details</h3><div className="grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Box count</p><p className="mt-1 text-xs font-semibold">{selected.pieces}</p></div><div><p className="text-xs text-slate-500">Dimensions</p><p className="mt-1 text-xs font-semibold">{selected.dimensions}</p></div></div></div><div className="mt-4 space-y-1"><DetailRow label="Chargeable weight" value={selected.weight} /><DetailRow label="Actual weight" value={selected.weight} /></div><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Invoice details</h3><DetailRow label="Payment mode" value={selected.paymentMode === "Not provided" ? "Prepaid" : selected.paymentMode} /><DetailRow label="Product description" value={selected.productDescription} /><DetailRow label="PO number" value="NIL" action={<button type="button" onClick={() => setNotice("PO editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="PO expiry date" value="NIL" action={<button type="button" onClick={() => setNotice("PO expiry editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="Invoices" value="1" /><DetailRow label="Total invoice value" value={selected.invoiceValue} /><DetailRow label="E-way bills" value={selected.ewayBills} /></div></div>}</section>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<MapPin className="size-4 text-rose-600" />} title="Addresses" open={addressesOpen} onClick={() => setAddressesOpen(!addressesOpen)} />{addressesOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><p className="text-xs text-slate-500">Pickup Address</p><p className="mt-1 text-sm font-semibold">{selected.consignor}</p><p className="text-xs text-slate-600">{selected.origin}</p></div><div><p className="text-xs text-slate-500">Delivery Address</p><p className="mt-1 text-sm font-semibold">{selected.consignee}</p><p className="text-xs text-slate-600">{fullAddress ? fullDeliveryAddress : fullDeliveryAddress.length > 44 ? `${fullDeliveryAddress.slice(0, 44)}…` : fullDeliveryAddress}</p>{fullDeliveryAddress.length > 44 && <button type="button" onClick={() => setFullAddress(!fullAddress)} className="mt-1 text-xs font-medium text-blue-600">{fullAddress ? "Show less" : "View Address"}</button>}</div></div></div>}</section>
-      <section aria-label="Shipment actions" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><div className="grid size-7 place-items-center rounded-md bg-rose-50 text-rose-600"><ReceiptText className="size-4" /></div><div><h2 className="text-sm font-semibold text-slate-900">Shipment actions</h2><p className="text-xs text-slate-500">Documents and support for this shipment</p></div></div><ShipmentActions onNotice={setNotice} onInvoice={showInvoice} onPod={() => void downloadPod()} onLr={() => void downloadLr()} onLabel={() => void loadLabelOptions()} />{labelLoading && <p className="mt-3 text-xs text-slate-500">Fetching available label formats from Delhivery…</p>}{labelOptions.length > 0 && <div className="mt-3 rounded-md border border-blue-100 bg-blue-50/50 p-3"><p className="text-xs font-semibold text-slate-800">Delhivery label formats</p><div className="mt-2 flex flex-wrap gap-2">{labelOptions.map((option) => <button key={option.size} type="button" onClick={() => downloadLabel(option)} className="rounded-md border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">Download {option.size}{option.copies > 1 ? ` · ${option.copies} copies` : ""}</button>)}</div></div>}</section>
+      <section aria-label="Shipment actions" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><div className="grid size-7 place-items-center rounded-md bg-rose-50 text-rose-600"><ReceiptText className="size-4" /></div><div><h2 className="text-sm font-semibold text-slate-900">Shipment actions</h2><p className="text-xs text-slate-500">Documents and support for this shipment</p></div></div><ShipmentActions onNotice={setNotice} onInvoice={showInvoice} onPod={() => void downloadPod()} onLr={() => void downloadLr()} labelMenu={<DelhiveryLabelMenu shipmentId={selected.id} reference={selected.reference} onNotice={setNotice} compact={false} />} /></section>
     </main>
     {notice && <div role="status" className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 shadow-lg"><CheckCircle2 className="size-3.5 text-emerald-600" />{notice}<button type="button" aria-label="Dismiss notice" onClick={() => setNotice("")}><X className="size-3.5" /></button></div>}
     {copied && <div role="status" className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2 text-xs font-medium text-white">Copied</div>}
