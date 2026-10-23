@@ -11,7 +11,6 @@ import {
 import Dropdown from "@/components/ui/dropdown";
 import { getPssErrorDetails, pssApi, pssApiFile, subscribePssDataSync } from "@/lib/pss-api";
 import { publicCourierName } from "@/lib/client-pricing-data";
-import { jsPDF } from "jspdf";
 import { mergeProviderPdfs } from "@/lib/merge-pdf";
 import { formatStatusLabel } from "@/lib/display";
 import { Skeleton, SkeletonBadge, SkeletonCard, SkeletonHeading, SkeletonInput, SkeletonTimeline, SkeletonText } from "@/components/ui/skeleton";
@@ -124,32 +123,12 @@ const downloadBinary = (name: string, bytes: Uint8Array, type: string) => { cons
 const downloadBase64Artifact = (name: string, base64: string, type: string) => { const normalized = base64.includes(",") ? base64.slice(base64.indexOf(",") + 1) : base64; const bytes = Uint8Array.from(atob(normalized), (character) => character.charCodeAt(0)); downloadBinary(name, bytes, type); };
 const artifactExtension = (kind: string, contentType: string) => { const type = contentType.toLowerCase().split(";", 1)[0]; if (type.includes("pdf")) return "pdf"; if (type.includes("jpeg") || type.includes("jpg")) return "jpg"; if (type.includes("webp")) return "webp"; if (type.includes("svg")) return "svg"; return kind === "lr-copy" ? "pdf" : "png"; };
 const artifactBase64s = (value: unknown): string[] => { if (!value) return []; if (Array.isArray(value)) return value.flatMap((item) => artifactBase64s(item)); if (typeof value !== "object") return []; const record = value as Record<string, unknown>; const direct = ["content_base64", "base64", "data"].flatMap((key) => typeof record[key] === "string" ? [record[key] as string] : []); return direct.length ? direct : Object.values(record).flatMap((child) => artifactBase64s(child)); };
-const labelPageSize = (size: "sm" | "md" | "a4" | "std") => size === "sm" ? [105, 148] as [number, number] : size === "md" ? [148, 210] as [number, number] : [210, 297] as [number, number];
-const imageDimensions = (dataUrl: string) => new Promise<{ width: number; height: number }>((resolve, reject) => { const image = new Image(); image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight }); image.onerror = () => reject(new Error("Unable to read Delhivery label dimensions.")); image.src = dataUrl; });
-const downloadLabelPdf = async (name: string, base64s: string[], size: "sm" | "md" | "a4" | "std") => {
-  const [width, height] = labelPageSize(size);
-  const pdf = new jsPDF({ unit: "mm", format: [width, height], compress: false });
-  const a4Grid = size === "a4" ? { columns: 2, rows: 2, margin: 6, gap: 4 } : null;
-  const cellWidth = a4Grid ? (width - (a4Grid.margin * 2) - a4Grid.gap) / a4Grid.columns : width;
-  const cellHeight = a4Grid ? (height - (a4Grid.margin * 2) - a4Grid.gap) / a4Grid.rows : height;
-  for (const [index, value] of base64s.entries()) {
-    const slot = a4Grid ? index % (a4Grid.columns * a4Grid.rows) : 0;
-    if (index && (!a4Grid || slot === 0)) pdf.addPage([width, height]);
-    const normalized = value.includes(",") ? value.slice(value.indexOf(",") + 1) : value;
-    const dataUrl = `data:image/png;base64,${normalized}`;
-    const dimensions = await imageDimensions(dataUrl);
-    const sourceWidth = dimensions.width * 25.4 / 96;
-    const sourceHeight = dimensions.height * 25.4 / 96;
-    const scale = Math.min(1, cellWidth / sourceWidth, cellHeight / sourceHeight);
-    const imageWidth = sourceWidth * scale;
-    const imageHeight = sourceHeight * scale;
-    const column = a4Grid ? slot % a4Grid.columns : 0;
-    const row = a4Grid ? Math.floor(slot / a4Grid.columns) : 0;
-    const cellX = a4Grid ? a4Grid.margin + column * (cellWidth + a4Grid.gap) : 0;
-    const cellY = a4Grid ? a4Grid.margin + row * (cellHeight + a4Grid.gap) : 0;
-    pdf.addImage(dataUrl, "PNG", cellX + (cellWidth - imageWidth) / 2, cellY + (cellHeight - imageHeight) / 2, imageWidth, imageHeight, undefined, "NONE");
-  }
-  pdf.save(name);
+const downloadLabelPdf = async (name: string, base64s: string[], _size?: "sm" | "md" | "a4" | "std") => {
+  const value = base64s[0];
+  if (!value) throw new Error("Delhivery returned no label content.");
+  const normalized = value.replace(/^data:[^;]+;base64,/, "");
+  const isPdf = normalized.startsWith("JVBERi0");
+  downloadBase64Artifact(name.replace(/\.pdf$/i, isPdf ? ".pdf" : ".png"), normalized, isPdf ? "application/pdf" : "image/png");
 };
 const findArtifactField = (value: unknown, keys: string[]): string | undefined => { if (!value || typeof value !== "object") return undefined; if (Array.isArray(value)) { for (const item of value) { const found = findArtifactField(item, keys); if (found) return found; } return undefined; } const record = value as Record<string, unknown>; for (const key of keys) if (typeof record[key] === "string" && record[key]) return record[key] as string; for (const child of Object.values(record)) { const found = findArtifactField(child, keys); if (found) return found; } return undefined; };
 const findArtifactUrl = (value: unknown): string | undefined => { if (typeof value === "string") return /^https?:\/\//i.test(value) ? value : undefined; if (Array.isArray(value)) { for (const item of value) { const found = findArtifactUrl(item); if (found) return found; } return undefined; } if (!value || typeof value !== "object") return undefined; const record = value as Record<string, unknown>; for (const key of ["download_url", "downloadUrl", "file_url", "fileUrl", "url", "link"]) { const found = findArtifactUrl(record[key]); if (found) return found; } for (const child of Object.values(record)) { const found = findArtifactUrl(child); if (found) return found; } return undefined; };

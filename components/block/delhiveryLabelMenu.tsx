@@ -2,7 +2,6 @@
 
 import { Download, Loader2, Tag } from "lucide-react";
 import { useState } from "react";
-import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 
@@ -55,32 +54,13 @@ const saveBase64 = (name: string, value: string, contentType: string) => {
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
-const imageToPdf = async (name: string, values: string[], contentType: string) => {
-  const images = await Promise.all(values.map((value) => new Promise<{ dataUrl: string; width: number; height: number; format: "PNG" | "JPEG" }>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => {
-      const type = contentType.toLowerCase();
-      if (type.includes("png") || type.includes("jpeg") || type.includes("jpg")) {
-        resolve({ dataUrl: `data:${contentType};base64,${value}`, width: image.naturalWidth, height: image.naturalHeight, format: type.includes("jpeg") || type.includes("jpg") ? "JPEG" : "PNG" });
-        return;
-      }
-      const canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
-      const context = canvas.getContext("2d");
-      if (!context) { reject(new Error("Unable to prepare the Delhivery label image.")); return; }
-      context.drawImage(image, 0, 0); resolve({ dataUrl: canvas.toDataURL("image/png"), width: image.naturalWidth, height: image.naturalHeight, format: "PNG" });
-    };
-    image.onerror = () => reject(new Error("Unable to read the Delhivery label image."));
-    image.src = `data:${contentType};base64,${value}`;
-  })));
-  const pdf = new jsPDF({ unit: "mm", format: "a4", compress: false });
-  const margin = 8; const availableWidth = 210 - margin * 2; const availableHeight = 297 - margin * 2;
-  images.forEach((image, index) => {
-    if (index > 0) pdf.addPage("a4", "portrait");
-    const scale = Math.min(availableWidth / image.width, availableHeight / image.height);
-    const width = image.width * scale; const height = image.height * scale;
-    pdf.addImage(image.dataUrl, image.format, (210 - width) / 2, (297 - height) / 2, width, height, undefined, "NONE");
-  });
-  pdf.save(name);
+const artifactExtension = (contentType: string) => {
+  const type = contentType.toLowerCase().split(";", 1)[0];
+  if (type.includes("pdf")) return "pdf";
+  if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
+  if (type.includes("webp")) return "webp";
+  if (type.includes("svg")) return "svg";
+  return "png";
 };
 
 export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = true }: { shipmentId: string; reference: string; onNotice?: (message: string) => void; compact?: boolean }) {
@@ -110,12 +90,13 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
     const values = artifactBase64s(option.artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).filter((value) => value.length > 100);
     const type = option.contentType || artifactContentType(option.artifact);
     try {
-      // Provider PDFs are authoritative. Keep Delhivery's original page layout,
-      // sticker division, barcodes, and compression byte-for-byte.
-      if (values.length && type.toLowerCase().includes("pdf")) {
-        saveBase64(`delhivery-label-${reference}-${option.size}.pdf`, values[0], type);
-      } else if (values.length) {
-        await imageToPdf(`delhivery-label-${reference}-${option.size}.pdf`, values.slice(0, Math.max(1, option.copies)), type);
+      // Delhivery's artifact is authoritative. Keep its original PDF bytes,
+      // page size, sticker division, barcodes, and compression. If the provider
+      // truly returns an image, download that image unchanged instead of
+      // re-rendering it onto an invented A4 page.
+      if (values.length) {
+        const extension = artifactExtension(type);
+        saveBase64(`delhivery-label-${reference}-${option.size}.${extension}`, values[0], type);
       } else if (artifactUrl(option.artifact)) {
         const link = document.createElement("a"); link.href = artifactUrl(option.artifact)!; link.download = `delhivery-label-${reference}-${option.size}`; link.target = "_blank"; link.rel = "noopener noreferrer"; link.click();
       } else throw new Error("Delhivery returned no downloadable label content.");
