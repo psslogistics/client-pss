@@ -10,6 +10,17 @@ type LabelSize = (typeof sizes)[number];
 type LabelOption = { size: LabelSize; contentType: string; artifact: unknown; copies: number };
 const sizeLabels: Record<LabelSize, string> = { a4: "A4", "4x2": "4 × 2 in", "4x2.5": "4 × 2.5 in", "3x2": "3 × 2 in" };
 
+const isPdfBase64 = (value: string) => {
+  const normalized = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+  return normalized.startsWith("JVBERi0"); // %PDF-
+};
+
+const isPdfArtifact = (value: unknown) => {
+  const contentType = artifactContentType(value).toLowerCase().split(";", 1)[0].trim();
+  const values = artifactBase64s(value);
+  return contentType === "application/pdf" && values.length > 0 && values.every(isPdfBase64);
+};
+
 const artifactBase64s = (value: unknown): string[] => {
   if (!value) return [];
   if (Array.isArray(value)) return value.flatMap(artifactBase64s);
@@ -17,18 +28,6 @@ const artifactBase64s = (value: unknown): string[] => {
   const record = value as Record<string, unknown>;
   const direct = ["content_base64", "base64", "data"].flatMap((key) => typeof record[key] === "string" ? [record[key]] : []);
   return direct.length ? direct : Object.values(record).flatMap(artifactBase64s);
-};
-
-const artifactUrl = (value: unknown): string | undefined => {
-  if (typeof value === "string") return /^https?:\/\//i.test(value) ? value : undefined;
-  if (Array.isArray(value)) return value.map(artifactUrl).find(Boolean);
-  if (!value || typeof value !== "object") return undefined;
-  const record = value as Record<string, unknown>;
-  for (const key of ["download_url", "downloadUrl", "file_url", "fileUrl", "url", "link"]) {
-    const found = artifactUrl(record[key]);
-    if (found) return found;
-  }
-  return Object.values(record).map(artifactUrl).find(Boolean);
 };
 
 const artifactContentType = (value: unknown): string => {
@@ -55,15 +54,6 @@ const saveBase64 = (name: string, value: string, contentType: string) => {
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
-const artifactExtension = (contentType: string) => {
-  const type = contentType.toLowerCase().split(";", 1)[0];
-  if (type.includes("pdf")) return "pdf";
-  if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
-  if (type.includes("webp")) return "webp";
-  if (type.includes("svg")) return "svg";
-  return "png";
-};
-
 export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = true }: { shipmentId: string; reference: string; onNotice?: (message: string) => void; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -77,7 +67,9 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
         try {
           const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(shipmentId)}/label?size=${size}`);
           const artifact = result.data?.artifact;
-          if (!artifact || (!artifactBase64s(artifact).length && !artifactUrl(artifact))) return undefined;
+          // Labels must remain Delhivery PDFs. Do not expose an image fallback:
+          // converting it would degrade quality and could change provider layout.
+          if (!artifact || !isPdfArtifact(artifact)) return undefined;
           const option: LabelOption = { size, contentType: artifactContentType(artifact), artifact: artifact as unknown, copies: artifactCopies(artifact) };
           return option;
         } catch { return undefined; }
@@ -88,19 +80,13 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
   };
 
   const download = async (option: LabelOption) => {
-    const values = artifactBase64s(option.artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).filter((value) => value.length > 100);
+    const values = artifactBase64s(option.artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).filter((value) => value.length > 100 && isPdfBase64(value));
     const type = option.contentType || artifactContentType(option.artifact);
     try {
-      // Delhivery's artifact is authoritative. Keep its original PDF bytes,
-      // page size, sticker division, barcodes, and compression. If the provider
-      // truly returns an image, download that image unchanged instead of
-      // re-rendering it onto an invented A4 page.
-      if (values.length) {
-        const extension = artifactExtension(type);
-        saveBase64(`delhivery-label-${reference}-${option.size}.${extension}`, values[0], type);
-      } else if (artifactUrl(option.artifact)) {
-        const link = document.createElement("a"); link.href = artifactUrl(option.artifact)!; link.download = `delhivery-label-${reference}-${option.size}`; link.target = "_blank"; link.rel = "noopener noreferrer"; link.click();
-      } else throw new Error("Delhivery returned no downloadable label content.");
+      // Delhivery's PDF is authoritative. Keep its original bytes, page size,
+      // sticker division, barcodes, and compression; never re-render or crop it.
+      if (!values.length || type.toLowerCase().split(";", 1)[0].trim() !== "application/pdf") throw new Error("Delhivery did not return a PDF label for this size.");
+      saveBase64(`delhivery-label-${reference}-${option.size}.pdf`, values[0], "application/pdf");
       setOpen(false); onNotice?.(`Delhivery ${option.size} label downloaded.`);
     } catch (error) { onNotice?.(`Label download failed: ${getPssErrorDetails(error, "The Delhivery label could not be downloaded.").message}`); }
   };
