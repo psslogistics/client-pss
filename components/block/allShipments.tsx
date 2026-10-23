@@ -13,7 +13,7 @@ import { Skeleton, SkeletonInput, SkeletonTable, SkeletonText } from "@/componen
 import { formatDate } from "@/lib/date-format";
 import { DelhiveryLabelMenu } from "@/components/block/delhiveryLabelMenu";
 
-type ShipmentStatus = "All" | "Active" | "Booked" | "Picked Up" | "In Transit" | "Out for Delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
+type ShipmentStatus = "All" | "Active" | "Booked" | "In Transit" | "Out for Delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type ShipmentSortKey = "courierReference" | "booked" | "consignor" | "consignee" | "pieces" | "weight" | "courier" | "eta" | "status";
 
 const shipmentColumns: { key: ShipmentSortKey; label: string }[] = [
@@ -29,10 +29,13 @@ const shipmentColumns: { key: ShipmentSortKey; label: string }[] = [
 ];
 type ShipmentRow = { id: string; pssTracking: string; courierTracking: string; courierReferenceLabel: string; pur?: string; lr?: string; masterAwb?: string; boxAwbs: string[]; providerBookingId?: string; providerPickupId?: string; providerSyncStatus?: string; providerFailureReason?: string; consignor: string; consignorAddress?: string; consignee: string; consigneeAddress?: string; courier: string; status: Exclude<ShipmentStatus, "All" | "Active">; nextAction: string; pieces: number; weight: string; eta: string; booked: string; podDocumentId?: string; invoiceDocumentId?: string };
 
-const statuses: ShipmentStatus[] = ["All", "Active", "Booked", "Picked Up", "In Transit", "Out for Delivery", "Delivered", "Delayed", "Exception", "Returned", "Cancelled"];
-const activeStatuses = new Set(["Booked", "Picked Up", "In Transit", "Out for Delivery", "Delayed", "Exception"]);
+const statuses: ShipmentStatus[] = ["All", "Active", "Booked", "In Transit", "Out for Delivery", "Delivered", "Delayed", "Exception", "Returned", "Cancelled"];
+const activeStatuses = new Set(["Booked", "In Transit", "Out for Delivery", "Delayed", "Exception"]);
 const searchable = (row: ShipmentRow) => [row.pssTracking, row.courierTracking, row.pur, row.lr, row.masterAwb, ...row.boxAwbs, row.providerBookingId, row.providerPickupId, row.consignor, row.consignee, row.courier].filter(Boolean).join(" ").toLowerCase();
-const mapStatus = (value: unknown): ShipmentRow["status"] => { const status = String(value ?? "booked").toLowerCase().replaceAll("_", " "); if (status === "picked up") return "Picked Up"; if (status === "in transit") return "In Transit"; if (status === "out for delivery") return "Out for Delivery"; if (status === "delivered") return "Delivered"; if (status === "exception") return "Exception"; if (status === "rto" || status === "returned") return "Returned"; if (status === "cancelled" || status === "canceled") return "Cancelled"; return "Booked"; };
+// In the client-facing All Shipments view, a provider-confirmed pickup is already
+// moving through the network. Keep pickup scheduling semantics in Pickup Requests,
+// but present picked_up shipments as In Transit here.
+const mapStatus = (value: unknown): ShipmentRow["status"] => { const status = String(value ?? "booked").toLowerCase().replaceAll("_", " "); if (status === "picked up" || status === "in transit") return "In Transit"; if (status === "out for delivery") return "Out for Delivery"; if (status === "delivered") return "Delivered"; if (status === "exception") return "Exception"; if (status === "rto" || status === "returned") return "Returned"; if (status === "cancelled" || status === "canceled") return "Cancelled"; return "Booked"; };
 const textValue = (value: unknown) => String(value ?? "").trim();
 const artifactBase64s = (value: unknown): string[] => { if (!value) return []; if (Array.isArray(value)) return value.flatMap(artifactBase64s); if (typeof value !== "object") return []; const record = value as Record<string, unknown>; const direct = ["content_base64", "base64", "data"].flatMap((key) => typeof record[key] === "string" ? [record[key] as string] : []); return direct.length ? direct : Object.values(record).flatMap(artifactBase64s); };
 const artifactField = (value: unknown, keys: string[]): string | undefined => { if (!value || typeof value !== "object") return undefined; if (Array.isArray(value)) { for (const item of value) { const found = artifactField(item, keys); if (found) return found; } return undefined; } const record = value as Record<string, unknown>; for (const key of keys) if (typeof record[key] === "string" && record[key]) return record[key] as string; for (const child of Object.values(record)) { const found = artifactField(child, keys); if (found) return found; } return undefined; };
@@ -75,7 +78,6 @@ const nextActionFor = (status: ShipmentRow["status"], providerSyncStatus: string
   if (status === "Delayed") return "Review delivery delay";
   if (status === "Booked" && !hasProviderReference) return "Awaiting provider reference";
   if (status === "Booked") return "Schedule pickup";
-  if (status === "Picked Up") return "Monitor transit";
   if (status === "In Transit" || status === "Out for Delivery") return "Monitor tracking";
   if (status === "Returned") return "Review return movement";
   return status === "Delivered" ? "No action required" : "Review shipment";
@@ -85,7 +87,7 @@ const canDeleteShipment = (row: ShipmentRow) => (row.status === "Cancelled" || r
 const canCancelShipment = (row: ShipmentRow) => row.status === "Booked" || row.status === "Exception";
 
 const statusStyles: Record<ShipmentRow["status"], string> = {
-  Booked: "bg-blue-500/10 text-blue-700 dark:text-blue-300", "Picked Up": "bg-sky-500/10 text-sky-700 dark:text-sky-300", "In Transit": "bg-sky-500/10 text-sky-700 dark:text-sky-300", "Out for Delivery": "bg-amber-500/10 text-amber-700 dark:text-amber-300", Delivered: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300", Delayed: "bg-amber-500/10 text-amber-700 dark:text-amber-300", Exception: "bg-destructive/10 text-destructive", Returned: "bg-violet-500/10 text-violet-700 dark:text-violet-300", Cancelled: "bg-muted text-muted-foreground",
+  Booked: "bg-blue-500/10 text-blue-700 dark:text-blue-300", "In Transit": "bg-sky-500/10 text-sky-700 dark:text-sky-300", "Out for Delivery": "bg-amber-500/10 text-amber-700 dark:text-amber-300", Delivered: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300", Delayed: "bg-amber-500/10 text-amber-700 dark:text-amber-300", Exception: "bg-destructive/10 text-destructive", Returned: "bg-violet-500/10 text-violet-700 dark:text-violet-300", Cancelled: "bg-muted text-muted-foreground",
 };
 const mapShipmentRow = (row: Record<string, unknown>): ShipmentRow => { const reference = shipmentReferences(row); const status = mapStatus(row.status); const providerSyncStatus = textValue(row.provider_sync_status) || undefined; const origin = String(row.origin ?? "Not provided"); const destination = String(row.destination ?? row.consignee ?? "Not provided"); const consignor = addressDetails(row.origin_address_json, origin); const consignee = addressDetails(row.destination_address_json, destination); return { id: String(row.id), pssTracking: String(row.pss_reference ?? row.id), courierTracking: reference.value, courierReferenceLabel: reference.label, pur: reference.pur || undefined, lr: reference.lr || undefined, masterAwb: reference.masterAwb || undefined, boxAwbs: parseBoxAwbs(row.box_awbs_json), providerBookingId: textValue(row.provider_booking_id) || undefined, providerPickupId: textValue(row.provider_pickup_id) || undefined, providerSyncStatus, providerFailureReason: textValue(row.provider_failure_reason) || undefined, consignor: consignor.name, consignorAddress: consignor.address || undefined, consignee: consignee.name, consigneeAddress: consignee.address || undefined, courier: publicCourierName(row.provider, row.account_name), status, nextAction: nextActionFor(status, providerSyncStatus, Boolean(reference.lr || reference.masterAwb || reference.pur || reference.legacy)), pieces: Number(row.pieces ?? 1), weight: `${Number(row.total_weight_kg ?? 0)} kg`, eta: formatDate(row.edd), booked: formatDate(row.created_at), podDocumentId: textValue(row.pod_document_id) || undefined, invoiceDocumentId: textValue(row.invoice_document_id) || undefined }; };
 
@@ -106,6 +108,7 @@ export default function AllShipments() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectingAll, setSelectingAll] = useState(false);
   const hadRowsRef = useRef(false);
+  const apiStatusQuery = (value: ShipmentStatus) => value === "All" ? "" : `&status=${encodeURIComponent(value === "In Transit" ? "Active" : value)}`;
   // This effect owns the remote shipment fetch and its loading lifecycle.
   useEffect(() => {
     let cancelled = false;
@@ -113,7 +116,7 @@ export default function AllShipments() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setLoadError("");
-    const statusQuery = status === "All" ? "" : `&status=${encodeURIComponent(status)}`;
+    const statusQuery = apiStatusQuery(status);
     void pssApi<{ data: Array<Record<string, unknown>>; stale_data?: boolean; pagination?: { next_offset?: number; has_more?: boolean; total?: number; status_counts?: Record<string, number> } }>(`/v1/shipments?limit=50&offset=0&include_tracking=1${statusQuery}`)
       .then((result) => {
         if (cancelled) return;
@@ -141,8 +144,8 @@ export default function AllShipments() {
     const interval = window.setInterval(onFocus, 30_000);
     return () => { unsubscribe(); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); window.clearInterval(interval); };
   }, []);
-  const loadMore = async () => { if (loadingMore || !hasMore) return; setLoadingMore(true); try { const statusQuery = status === "All" ? "" : `&status=${encodeURIComponent(status)}`; const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${offset}&include_tracking=1${statusQuery}`); const nextRows = (result.data ?? []).map(mapShipmentRow); setRows((current) => [...current, ...nextRows.filter((next) => !current.some((existing) => existing.id === next.id))]); setOffset(Number(result.pagination?.next_offset ?? offset + nextRows.length)); setHasMore(Boolean(result.pagination?.has_more)); } catch (error) { setNotice(getPssErrorDetails(error, "More shipments could not be loaded.").message); } finally { setLoadingMore(false); } };
-  const statusCount = (statusName: ShipmentStatus) => { if (!Object.keys(serverStatusCounts).length) return statusName === "All" ? rows.length : statusName === "Active" ? rows.filter((row) => activeStatuses.has(row.status)).length : rows.filter((row) => row.status === statusName).length; const key = statusName.toLowerCase().replaceAll(" ", "_"); if (statusName === "All") return serverTotal ?? rows.length; if (statusName === "Active") return ["booked", "picked_up", "in_transit", "out_for_delivery", "delayed", "exception"].reduce((sum, keyName) => sum + Number(serverStatusCounts[keyName] ?? 0), 0); if (statusName === "Returned") return Number(serverStatusCounts.rto ?? 0) + Number(serverStatusCounts.returned ?? 0); return Number(serverStatusCounts[key] ?? 0); };
+  const loadMore = async () => { if (loadingMore || !hasMore) return; setLoadingMore(true); try { const statusQuery = apiStatusQuery(status); const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${offset}&include_tracking=1${statusQuery}`); const nextRows = (result.data ?? []).map(mapShipmentRow); setRows((current) => [...current, ...nextRows.filter((next) => !current.some((existing) => existing.id === next.id))]); setOffset(Number(result.pagination?.next_offset ?? offset + nextRows.length)); setHasMore(Boolean(result.pagination?.has_more)); } catch (error) { setNotice(getPssErrorDetails(error, "More shipments could not be loaded.").message); } finally { setLoadingMore(false); } };
+  const statusCount = (statusName: ShipmentStatus) => { if (!Object.keys(serverStatusCounts).length) return statusName === "All" ? rows.length : statusName === "Active" ? rows.filter((row) => activeStatuses.has(row.status)).length : rows.filter((row) => row.status === statusName).length; const key = statusName.toLowerCase().replaceAll(" ", "_"); if (statusName === "All") return serverTotal ?? rows.length; if (statusName === "Active") return ["booked", "picked_up", "in_transit", "out_for_delivery", "delayed", "exception"].reduce((sum, keyName) => sum + Number(serverStatusCounts[keyName] ?? 0), 0); if (statusName === "In Transit") return Number(serverStatusCounts.picked_up ?? 0) + Number(serverStatusCounts.in_transit ?? 0); if (statusName === "Returned") return Number(serverStatusCounts.rto ?? 0) + Number(serverStatusCounts.returned ?? 0); return Number(serverStatusCounts[key] ?? 0); };
   const counts = statuses.reduce<Record<ShipmentStatus, number>>((result, item) => { result[item] = statusCount(item); return result; }, {} as Record<ShipmentStatus, number>);
   const matchesCurrentFilter = (row: ShipmentRow) => (!query.trim() || searchable(row).includes(query.trim().toLowerCase())) && (status === "All" || status === "Active" ? status === "All" || activeStatuses.has(row.status) : row.status === status);
   const toggleSort = (key: ShipmentSortKey) => setSort((current) => current.key === key ? { key, direction: current.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" });
@@ -171,7 +174,7 @@ export default function AllShipments() {
     if (!hasMore || selectingAll) return;
     setSelectingAll(true); setNotice("Loading all shipments in this filter…");
     try {
-      const statusQuery = status === "All" ? "" : `&status=${encodeURIComponent(status)}`;
+      const statusQuery = apiStatusQuery(status);
       const allRows: ShipmentRow[] = []; let pageOffset = 0; let more = true;
       while (more) {
         const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${pageOffset}&include_tracking=1${statusQuery}`);
