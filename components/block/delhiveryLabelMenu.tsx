@@ -61,7 +61,7 @@ const saveBase64 = (name: string, value: string, contentType: string) => {
 };
 
 const physicalSizePoints: Record<LabelSize, [number, number]> = {
-  a4: [11.7 * 72, 8.3 * 72],
+  a4: [8.3 * 72, 11.7 * 72],
   "4x2": [4 * 72, 2 * 72],
   "4x2.5": [4 * 72, 2.5 * 72],
   "3x2": [3 * 72, 2 * 72],
@@ -71,14 +71,22 @@ const imageToPdf = async (reference: string, option: LabelOption, values: string
   const pdf = await PDFDocument.create();
   const [pageWidth, pageHeight] = physicalSizePoints[option.size];
   const contentType = option.contentType.toLowerCase().split(";", 1)[0].trim();
-  for (const value of values) {
+  const isA4 = option.size === "a4";
+  const pageMargin = isA4 ? 6 : 0;
+  const slotGap = isA4 ? 6 : 0;
+  const slotHeight = isA4 ? (pageHeight - (pageMargin * 2) - slotGap) / 2 : pageHeight;
+  let page = pdf.addPage([pageWidth, pageHeight]);
+  for (const [index, value] of values.entries()) {
     const bytes = Uint8Array.from(atob(value.replace(/^data:[^;]+;base64,/, "")), (character) => character.charCodeAt(0));
     const image = contentType === "image/png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
-    const scale = Math.min(pageWidth / image.width, pageHeight / image.height);
+    const slotWidth = pageWidth - (pageMargin * 2);
+    const scale = Math.min(slotWidth / image.width, slotHeight / image.height);
     const width = image.width * scale;
     const height = image.height * scale;
-    const page = pdf.addPage([pageWidth, pageHeight]);
-    page.drawImage(image, { x: (pageWidth - width) / 2, y: (pageHeight - height) / 2, width, height });
+    const slotTop = pageHeight - pageMargin - (isA4 ? (index % 2) * (slotHeight + slotGap) : 0);
+    page.drawImage(image, { x: (pageWidth - width) / 2, y: slotTop - slotHeight + (slotHeight - height) / 2, width, height });
+    if (isA4 && index % 2 === 1 && index < values.length - 1) page = pdf.addPage([pageWidth, pageHeight]);
+    if (!isA4 && index < values.length - 1) page = pdf.addPage([pageWidth, pageHeight]);
   }
   const pdfBytes = await pdf.save({ useObjectStreams: false });
   const url = URL.createObjectURL(new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" }));
