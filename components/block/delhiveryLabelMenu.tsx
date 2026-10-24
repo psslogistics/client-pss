@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, Loader2, Tag } from "lucide-react";
+import { PDFDocument } from "pdf-lib";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
@@ -19,6 +20,11 @@ const isPdfArtifact = (value: unknown) => {
   const contentType = artifactContentType(value).toLowerCase().split(";", 1)[0].trim();
   const values = artifactBase64s(value);
   return contentType === "application/pdf" && values.length > 0 && values.every(isPdfBase64);
+};
+
+const isImageArtifact = (value: unknown) => {
+  const contentType = artifactContentType(value).toLowerCase().split(";", 1)[0].trim();
+  return (contentType === "image/png" || contentType === "image/jpeg") && artifactBase64s(value).length > 0;
 };
 
 const artifactBase64s = (value: unknown): string[] => {
@@ -54,6 +60,32 @@ const saveBase64 = (name: string, value: string, contentType: string) => {
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
+const physicalSizePoints: Record<LabelSize, [number, number]> = {
+  a4: [11.7 * 72, 8.3 * 72],
+  "4x2": [4 * 72, 2 * 72],
+  "4x2.5": [4 * 72, 2.5 * 72],
+  "3x2": [3 * 72, 2 * 72],
+};
+
+const imageToPdf = async (reference: string, option: LabelOption, values: string[]) => {
+  const pdf = await PDFDocument.create();
+  const [pageWidth, pageHeight] = physicalSizePoints[option.size];
+  const contentType = option.contentType.toLowerCase().split(";", 1)[0].trim();
+  for (const value of values) {
+    const bytes = Uint8Array.from(atob(value.replace(/^data:[^;]+;base64,/, "")), (character) => character.charCodeAt(0));
+    const image = contentType === "image/png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+    const scale = Math.min(pageWidth / image.width, pageHeight / image.height);
+    const width = image.width * scale;
+    const height = image.height * scale;
+    const page = pdf.addPage([pageWidth, pageHeight]);
+    page.drawImage(image, { x: (pageWidth - width) / 2, y: (pageHeight - height) / 2, width, height });
+  }
+  const pdfBytes = await pdf.save({ useObjectStreams: false });
+  const url = URL.createObjectURL(new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" }));
+  const link = document.createElement("a"); link.href = url; link.download = `delhivery-label-${reference}-${option.size}.pdf`; link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 500);
+};
+
 export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = true }: { shipmentId: string; reference: string; onNotice?: (message: string) => void; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -69,7 +101,7 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
           const artifact = result.data?.artifact;
           // Labels must remain Delhivery PDFs. Do not expose an image fallback:
           // converting it would degrade quality and could change provider layout.
-          if (!artifact || !isPdfArtifact(artifact)) return undefined;
+          if (!artifact || (!isPdfArtifact(artifact) && !isImageArtifact(artifact))) return undefined;
           const option: LabelOption = { size, contentType: artifactContentType(artifact), artifact: artifact as unknown, copies: artifactCopies(artifact) };
           return option;
         } catch { return undefined; }
@@ -83,10 +115,16 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
     const values = artifactBase64s(option.artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).filter((value) => value.length > 100 && isPdfBase64(value));
     const type = option.contentType || artifactContentType(option.artifact);
     try {
-      // Delhivery's PDF is authoritative. Keep its original bytes, page size,
-      // sticker division, barcodes, and compression; never re-render or crop it.
-      if (!values.length || type.toLowerCase().split(";", 1)[0].trim() !== "application/pdf") throw new Error("Delhivery did not return a PDF label for this size.");
-      saveBase64(`delhivery-label-${reference}-${option.size}.pdf`, values[0], "application/pdf");
+      if (!values.length) throw new Error("Delhivery did not return a label for this size.");
+      if (type.toLowerCase().split(";", 1)[0].trim() === "application/pdf") {
+        // Keep provider PDFs byte-for-byte when Delhivery returns one.
+        saveBase64(`delhivery-label-${reference}-${option.size}.pdf`, values[0], "application/pdf");
+      } else {
+        // Delhivery's B2B label API returns PNG/JPEG assets. Embed those exact
+        // source bytes in a PDF at the selected physical size. No rasterization,
+        // JPEG recompression, sharpening, or crop is performed.
+        await imageToPdf(reference, option, values);
+      }
       setOpen(false); onNotice?.(`Delhivery ${option.size} label downloaded.`);
     } catch (error) { onNotice?.(`Label download failed: ${getPssErrorDetails(error, "The Delhivery label could not be downloaded.").message}`); }
   };
