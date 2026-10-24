@@ -52,6 +52,8 @@ const artifactCopies = (value: unknown) => {
   return Number.isFinite(copies) && copies > 0 ? copies : Array.isArray(record.artifacts) ? record.artifacts.length : 1;
 };
 
+const pdfPageCount = (option: LabelOption) => option.size === "a4" ? Math.ceil(option.copies / 2) : option.copies;
+
 const saveBase64 = (name: string, value: string, contentType: string) => {
   const normalized = value.replace(/^data:[^;]+;base64,/, "");
   const bytes = Uint8Array.from(atob(normalized), (character) => character.charCodeAt(0));
@@ -145,7 +147,7 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
     <button type="button" aria-label={`Download label for ${reference}`} aria-expanded={open} onClick={() => { if (open) setOpen(false); else void loadOptions(); }} className={cn("inline-flex items-center justify-center rounded-md border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground", compact ? "size-8" : "gap-1.5 px-2.5 py-2 text-xs font-semibold")} title="Download Delhivery label"><Tag className="size-3.5" />{!compact && <span>Label</span>}</button>
     {open && <div className="absolute right-0 top-full z-40 mt-2 w-56 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl">
       <p className="px-3 py-2 text-[11px] font-semibold text-muted-foreground">Delhivery label size</p>
-      {loading ? <p className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading formats…</p> : options.length ? options.map((option) => <button key={option.size} type="button" onClick={() => void download(option)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-accent"><Download className="size-3.5" />{sizeLabels[option.size]}{option.copies > 1 ? ` · ${option.copies} pages` : ""}</button>) : <p className="px-3 py-2 text-xs text-muted-foreground">No label formats available.</p>}
+      {loading ? <p className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading formats…</p> : options.length ? options.map((option) => <button key={option.size} type="button" onClick={() => void download(option)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-accent"><Download className="size-3.5" />{sizeLabels[option.size]}{pdfPageCount(option) > 1 ? ` · ${pdfPageCount(option)} pages` : ""}</button>) : <p className="px-3 py-2 text-xs text-muted-foreground">No label formats available.</p>}
     </div>}
   </div>;
 }
