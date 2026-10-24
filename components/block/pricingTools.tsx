@@ -13,7 +13,7 @@ const inputClass = "h-10 w-full rounded-lg border border-input bg-background px-
 const buttonClass = "inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-medium transition hover:bg-accent disabled:pointer-events-none disabled:opacity-50";
 const primaryClass = "inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50";
 
-const addressIdentity = (row: SavedAddressRecord) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode, row.contact.name, row.contact.phone].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
+const addressIdentity = (row: SavedAddressRecord) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 const dedupeAddressRecords = (rows: SavedAddressRecord[]) => { const seen = new Set<string>(); return rows.filter((row) => { const key = addressIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; }); };
 
 function useSavedAddresses() {
