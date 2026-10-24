@@ -251,7 +251,7 @@ export default function PickupRequests() {
       const addresses = addressResult.status === "fulfilled" ? (addressResult.value.data ?? []) : [];
       if (addressResult.status === "rejected") failures.push(`saved pickup locations: ${getPssErrorDetails(addressResult.reason, "temporarily unavailable").message}`);
       const savedAddresses = addresses.filter((address) => address.address_kind !== "consignee").map((address) => ({ ...address, source: "address" as const, name: address.label ?? address.contact_name ?? address.id }));
-      setWarehouses([...dedupeSavedWarehouses(warehouses), ...savedAddresses]);
+      setWarehouses(dedupeSavedWarehouses([...warehouses, ...savedAddresses]));
       setConfigurationError(failures.join("; "));
       if (failures.length) notify(`Some pickup configuration could not be loaded — ${failures.join("; ")}`, "error");
     });

@@ -77,6 +77,8 @@ const savedAddressRecord = (row: Record<string, string>): SavedPickup => {
   const pick = (...values: unknown[]) => values.map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
   return { id: String(row.id ?? ""), name: label, address: { line: cleanSavedAddressLine(row.address), city: pick(row.city, parts.length >= 4 ? parts[1] : ""), state: pick(row.state, parts.length >= 4 ? parts[2] : ""), pincode: pick(row.pincode, parts.length >= 4 ? parts[3] : ""), country: pick(row.country, "India") }, contact: { name: pick(row.contact_name, row.contactName, parts.length >= 4 ? parts[0] : ""), phone: pick(row.phone, row.contact), email: pick(row.email) } };
 };
+const savedAddressIdentity = (row: SavedPickup) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode, row.contact.name, row.contact.phone].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
+const dedupeSavedAddresses = (rows: SavedPickup[]) => { const seen = new Set<string>(); return rows.filter((row) => { const key = savedAddressIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; }); };
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
 const fileAsBase64 = async (file: File) => { const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary); };
 const allCouriers = [
@@ -307,9 +309,9 @@ export default function ShipmentBooking() {
     void Promise.allSettled([pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses"), pssApi<{ data: Array<Record<string, string>> }>("/v1/addresses")]).then(([warehouseResult, addressResult]) => {
       if (cancelled) return;
       const errors: string[] = [];
-      if (warehouseResult.status === "fulfilled") setSavedPickups(warehouseResult.value.data.map(savedAddressRecord));
+      if (warehouseResult.status === "fulfilled") setSavedPickups(dedupeSavedAddresses(warehouseResult.value.data.map(savedAddressRecord)));
       else errors.push(`Saved consignor addresses: ${getPssErrorDetails(warehouseResult.reason, "temporarily unavailable").message}`);
-      if (addressResult.status === "fulfilled") setSavedConsignees(addressResult.value.data.map(savedAddressRecord));
+      if (addressResult.status === "fulfilled") setSavedConsignees(dedupeSavedAddresses(addressResult.value.data.map(savedAddressRecord)));
       else errors.push(`Saved consignee addresses: ${getPssErrorDetails(addressResult.reason, "temporarily unavailable").message}`);
       const message = errors.join(" ");
       setSavedAddressesError(message);

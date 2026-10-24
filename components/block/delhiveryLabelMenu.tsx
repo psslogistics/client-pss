@@ -96,10 +96,11 @@ const imageToPdf = async (reference: string, option: LabelOption, values: string
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
-export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = true }: { shipmentId: string; reference: string; onNotice?: (message: string) => void; compact?: boolean }) {
+export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = true, disabled = false }: { shipmentId: string; reference: string; onNotice?: (message: string) => void; compact?: boolean; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [options, setOptions] = useState<LabelOption[]>([]);
+  const unavailable = disabled || !reference.trim() || /unavailable/i.test(reference);
 
   const loadOptions = async () => {
     if (loading) return;
@@ -144,7 +145,7 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
   };
 
   return <div className="relative inline-flex">
-    <button type="button" aria-label={`Download label for ${reference}`} aria-expanded={open} onClick={() => { if (open) setOpen(false); else void loadOptions(); }} className={cn("inline-flex items-center justify-center rounded-md border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground", compact ? "size-8" : "gap-1.5 px-2.5 py-2 text-xs font-semibold")} title="Download Delhivery label"><Tag className="size-3.5" />{!compact && <span>Label</span>}</button>
+    <button type="button" aria-label={unavailable ? `Label unavailable for ${reference}` : `Download label for ${reference}`} aria-expanded={open} disabled={unavailable} onClick={() => { if (unavailable) { onNotice?.("Label unavailable until Delhivery publishes an LR/AWB."); return; } if (open) setOpen(false); else void loadOptions(); }} className={cn("inline-flex items-center justify-center rounded-md border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50", compact ? "size-8" : "gap-1.5 px-2.5 py-2 text-xs font-semibold")} title={unavailable ? "Label unavailable until Delhivery publishes an LR/AWB" : "Download Delhivery label"}><Tag className="size-3.5" />{!compact && <span>Label</span>}</button>
     {open && <div className="absolute right-0 top-full z-40 mt-2 w-56 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl">
       <p className="px-3 py-2 text-[11px] font-semibold text-muted-foreground">Delhivery label size</p>
       {loading ? <p className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading formats…</p> : options.length ? options.map((option) => <button key={option.size} type="button" onClick={() => void download(option)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-accent"><Download className="size-3.5" />{sizeLabels[option.size]}{pdfPageCount(option) > 1 ? ` · ${pdfPageCount(option)} pages` : ""}</button>) : <p className="px-3 py-2 text-xs text-muted-foreground">No label formats available.</p>}
