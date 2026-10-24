@@ -74,7 +74,7 @@ const addressName = (value: unknown) => {
 
 const normalizeStatus = (value: unknown): Status => {
   const key = String(value ?? "booked").trim().toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
-  const map: Record<string, Status> = { booked: "Booked", pending: "Booked", manifested: "Booked", picked_up: "Picked up", pickedup: "Picked up", in_transit: "In transit", intransit: "In transit", out_for_delivery: "Out for delivery", delivered: "Delivered", delayed: "Delayed", exception: "Exception", returned: "Returned", cancelled: "Cancelled", canceled: "Cancelled" };
+  const map: Record<string, Status> = { booked: "Booked", pending: "Booked", manifested: "Booked", picked_up: "In transit", pickedup: "In transit", in_transit: "In transit", intransit: "In transit", out_for_delivery: "Out for delivery", delivered: "Delivered", delayed: "Delayed", exception: "Exception", returned: "Returned", rto: "Returned", cancelled: "Cancelled", canceled: "Cancelled" };
   return map[key] ?? "Booked";
 };
 
@@ -209,7 +209,7 @@ function mapShipment(row: Record<string, unknown>): Shipment {
 }
 
 const statusLabel = (shipment: Shipment) => {
-  if (shipment.status === "Exception" || shipment.providerSyncStatus?.toLowerCase() === "failed") return "Provider booking failed";
+  if (shipment.providerSyncStatus?.toLowerCase() === "failed" && shipment.status === "Exception") return "Provider booking failed";
   if (shipment.status === "Booked" && !(shipment.lrNumber || shipment.masterAwb || shipment.trackingNumber || shipment.providerReference)) return "Awaiting LR/AWB confirmation";
   if (shipment.status === "Booked") return "Ready to Ship";
   return shipment.status;
@@ -231,8 +231,8 @@ function ShipmentActions({ onNotice, onInvoice, onPod, onLr, labelMenu }: { onNo
 }
 
 function TrackingTimeline({ shipment, scanOpen, setScanOpen }: { shipment: Shipment; scanOpen: boolean; setScanOpen: (value: boolean) => void }) {
-  const stages: Status[] = ["Booked", "In transit", "Out for delivery", "Delivered"];
-  const current = shipment.status === "Exception" || shipment.status === "Delayed" ? 1 : Math.max(0, stages.indexOf(shipment.status));
+  const stages: Status[] = shipment.status === "Exception" ? ["Booked", "Exception", "Out for delivery", "Delivered"] : ["Booked", "In transit", "Out for delivery", "Delivered"];
+  const current = shipment.status === "Exception" ? 1 : shipment.status === "Delayed" ? 1 : Math.max(0, stages.indexOf(shipment.status));
   const latest = shipment.events.at(-1);
   const history = [...shipment.events].reverse();
   return <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center gap-2 border-b border-slate-200 px-4 py-4 sm:px-5"><div className="grid size-7 place-items-center rounded-md bg-rose-50 text-rose-600"><Truck className="size-4" /></div><h2 className="text-base font-semibold text-slate-900">Shipment tracking</h2></div><div className="px-4 py-5 sm:px-6"><ol aria-label="Shipment tracking" className="space-y-0">{stages.map((stage, index) => { const complete = index <= current; const active = index === current; const event = index === current ? latest : undefined; return <li key={stage} className="relative flex gap-3"><div className="flex w-4 shrink-0 flex-col items-center"><span className={cn("z-10 mt-0.5 grid size-4 place-items-center rounded-full border-2 bg-white", complete ? "border-emerald-500" : "border-slate-300")}>{complete && <span className="size-2 rounded-full bg-emerald-500" />}</span>{index < stages.length - 1 && <span className={cn("w-0.5 flex-1", index < current ? "bg-emerald-500" : "bg-slate-200")} />}</div><div className={cn("min-w-0 flex-1", index < stages.length - 1 ? "pb-7" : "pb-1")}><div className={cn("text-sm font-semibold", active ? "text-slate-900" : "text-slate-400")}>{stage === "Booked" ? "Manifested" : stage}</div>{active && event?.eventTime && <p className="mt-0.5 text-xs text-slate-500">{formatDateTime(event.eventTime)}</p>}{active && event && event.location !== "Not provided" && <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-700"><MapPin className="size-3.5 text-blue-600" />Current location: {event.location}</p>}{active && index === current && history.length > 1 && <div className="mt-3"><button type="button" onClick={() => setScanOpen(!scanOpen)} className="inline-flex items-center gap-1.5 px-1 py-2 text-xs font-medium text-blue-600 hover:text-blue-700">{scanOpen ? "Hide movement history" : "View movement history"}<ChevronDown className={cn("size-3.5 transition", scanOpen && "rotate-180")} /></button></div>}{active && scanOpen && history.length > 1 && <div className="mt-3 space-y-3 border-l-2 border-blue-100 pl-3 text-xs">{history.map((item, itemIndex) => <div key={`${item.eventTime}-${itemIndex}`} className="relative"><span className="block text-slate-500">{formatDateTime(item.eventTime)}</span><span className="mt-0.5 block font-medium text-slate-700">{item.description}</span>{item.location !== "Not provided" && <span className="mt-0.5 flex items-center gap-1 text-slate-500"><MapPin className="size-3" />{item.location}</span>}</div>)}</div>}</div></li>; })}</ol></div></section>;
@@ -329,6 +329,11 @@ export default function DelhiveryTrackingPane() {
 
   const refreshTracking = async (shipment: Shipment = selected as Shipment) => {
     if (!shipment) return;
+    const hasReference = Boolean(shipment.lrNumber || shipment.masterAwb || shipment.trackingNumber || shipment.providerReference);
+    if (!hasReference) {
+      setNotice("Live tracking is unavailable until Delhivery publishes an LR/AWB.");
+      return;
+    }
     setRefreshing(true); setNotice("");
     try {
       const result = await pssApi<{ data?: Array<Record<string, unknown>>; provider_status?: string }>(`/v1/shipments/${encodeURIComponent(shipment.id)}/tracking`);

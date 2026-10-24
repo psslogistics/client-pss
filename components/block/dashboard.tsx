@@ -224,11 +224,20 @@ export default function Dashboard() {
   const hasLastKnownProduction = production.shipmentStats.total > 0 || [production.shipments, production.pickups, production.billing, production.wallet, production.exceptions, production.ndr].some((collection) => collection.length > 0);
   const metricValue = (value: number) => productionReady || hasLastKnownProduction ? String(value) : "—";
   const metricState = productionReady ? "Live" : hasLastKnownProduction ? "Stale" : "Unavailable";
+  // Keep dashboard KPIs and the shipment list on the same client-facing
+  // vocabulary. Provider pickup completion is operationally in transit;
+  // return-to-origin is closed, not active.
+  const statusCounts = new Map<string, number>();
+  for (const [rawStatus, count] of Object.entries(production.shipmentStats.statuses)) {
+    const status = rawStatus.toLowerCase() === "picked_up" ? "in_transit" : rawStatus.toLowerCase() === "rto" ? "returned" : rawStatus.toLowerCase();
+    statusCounts.set(status, (statusCounts.get(status) ?? 0) + count);
+  }
+  const activeShipments = [...statusCounts.entries()].reduce((total, [status, count]) => total + (["delivered", "cancelled", "returned"].includes(status) ? 0 : count), 0);
   const liveKpiMetrics: KpiMetric[] = [
     { id: "shipments", title: "Total shipments", value: metricValue(production.shipmentStats.total), change: metricState, isPositive: true, sparklinePoints: "0,20 15,18 30,22 45,14 60,16 75,8", category: "Operations", description: "All production shipment records" },
-    { id: "active", title: "Active shipments", value: metricValue(Object.entries(production.shipmentStats.statuses).reduce((total, [status, count]) => total + (["delivered", "cancelled"].includes(status.toLowerCase()) ? 0 : count), 0)), change: metricState, isPositive: true, sparklinePoints: "0,22 15,20 30,18 45,20 60,12 75,10", category: "Operations", description: "All shipments not delivered or cancelled" },
+    { id: "active", title: "Active shipments", value: metricValue(activeShipments), change: metricState, isPositive: true, sparklinePoints: "0,22 15,20 30,18 45,20 60,12 75,10", category: "Operations", description: "All shipments not delivered, cancelled, or returned" },
     { id: "delayed", title: "Delayed shipments", value: metricValue(production.shipmentStats.delayed), change: metricState, isPositive: false, sparklinePoints: "0,10 15,12 30,9 45,16 60,14 75,20", category: "Exceptions", description: "All shipments past their expected delivery date" },
-    { id: "exceptions", title: "Open exceptions", value: metricValue(production.exceptions.length + production.ndr.length), change: metricState, isPositive: false, sparklinePoints: "0,20 15,17 30,18 45,12 60,14 75,10", category: "Exceptions", description: "NDR and exception records" },
+    { id: "exceptions", title: "Open exceptions", value: metricValue(production.shipmentStats.statuses.exception ?? 0), change: metricState, isPositive: false, sparklinePoints: "0,20 15,17 30,18 45,12 60,14 75,10", category: "Exceptions", description: "Shipment records currently in exception" },
     { id: "pickups", title: "Open pickups", value: metricValue(production.pickups.filter((pickup) => !["completed", "cancelled", "Completed", "Cancelled"].includes(String(pickup.status ?? ""))).length), change: metricState, isPositive: true, sparklinePoints: "0,22 15,18 30,20 45,15 60,13 75,8", category: "Operations", description: "Open production pickup requests" },
     { id: "billing", title: "Pending billing", value: metricValue(production.billing.filter((item) => String(item.status ?? "").toLowerCase() === "pending").length), change: metricState, isPositive: false, sparklinePoints: "0,18 15,18 30,16 45,13 60,15 75,11", category: "Finance", description: "Pending production billing records" },
   ];
@@ -257,12 +266,10 @@ export default function Dashboard() {
     }
   };
 
-  const statusCounts = new Map<string, number>(Object.entries(production.shipmentStats.statuses));
   const totalShipments = production.shipmentStats.total;
-  const activeShipments = Object.entries(production.shipmentStats.statuses).reduce((total, [status, count]) => total + (["delivered", "cancelled"].includes(status.toLowerCase()) ? 0 : count), 0);
   const delayedRows = production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; const delivered = shipment.delivered_at ? Date.parse(String(shipment.delivered_at)) : NaN; return Number.isFinite(edd) && ((Number.isFinite(delivered) && delivered > edd) || (!Number.isFinite(delivered) && edd < now)); }).map((shipment) => ({ id: String(shipment.id), trackingId: String(shipment.tracking_number ?? shipment.id), origin: String(shipment.origin ?? "Origin pending"), destination: String(shipment.destination ?? "Destination pending"), carrier: publicCourierName(shipment.provider, shipment.account_name), mode: publicCourierName(shipment.provider, shipment.account_name), date: String(shipment.edd ?? "—") }));
   const delayedShipments = production.shipmentStats.delayed;
-  const exceptionShipments = production.exceptions.length + production.ndr.length;
+  const exceptionShipments = statusCounts.get("exception") ?? 0;
   const shipmentStatusData = [...statusCounts.entries()].map(([status, count]) => ({ status, count, percentage: totalShipments ? Math.round((count / totalShipments) * 100) : 0, badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary", barClass: "bg-primary" }));
   const transportCounts = new Map<string, number>(Object.entries(production.shipmentStats.providers).map(([provider, count]) => [publicCourierName(provider, ""), count]));
   const transportModes = [...transportCounts.entries()].map(([name, shipments]) => ({ name, shipments, percentage: totalShipments ? Math.round((shipments / totalShipments) * 100) : 0, color: "var(--primary)" }));
