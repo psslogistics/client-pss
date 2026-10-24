@@ -99,8 +99,9 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
         try {
           const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(shipmentId)}/label?size=${size}`);
           const artifact = result.data?.artifact;
-          // Labels must remain Delhivery PDFs. Do not expose an image fallback:
-          // converting it would degrade quality and could change provider layout.
+          // Delhivery's label-links API may return either provider PDFs or the
+          // original PNG/JPEG label assets. Images are converted client-side
+          // without resampling or recompression when the user downloads them.
           if (!artifact || (!isPdfArtifact(artifact) && !isImageArtifact(artifact))) return undefined;
           const option: LabelOption = { size, contentType: artifactContentType(artifact), artifact: artifact as unknown, copies: artifactCopies(artifact) };
           return option;
@@ -112,11 +113,14 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
   };
 
   const download = async (option: LabelOption) => {
-    const values = artifactBase64s(option.artifact).map((value) => value.replace(/^data:[^;]+;base64,/, "")).filter((value) => value.length > 100 && isPdfBase64(value));
     const type = option.contentType || artifactContentType(option.artifact);
+    const normalizedType = type.toLowerCase().split(";", 1)[0].trim();
+    const values = artifactBase64s(option.artifact)
+      .map((value) => value.replace(/^data:[^;]+;base64,/, ""))
+      .filter((value) => value.length > 100 && (normalizedType === "application/pdf" ? isPdfBase64(value) : normalizedType === "image/png" || normalizedType === "image/jpeg"));
     try {
       if (!values.length) throw new Error("Delhivery did not return a label for this size.");
-      if (type.toLowerCase().split(";", 1)[0].trim() === "application/pdf") {
+      if (normalizedType === "application/pdf") {
         // Keep provider PDFs byte-for-byte when Delhivery returns one.
         saveBase64(`delhivery-label-${reference}-${option.size}.pdf`, values[0], "application/pdf");
       } else {
