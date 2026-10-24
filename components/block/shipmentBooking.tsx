@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Check,
@@ -224,6 +225,7 @@ function BulkPincodeField({ label, value, onChange }: { label: string; value: st
 }
 
 export default function ShipmentBooking() {
+  const router = useRouter();
   const [pickup, setPickup] = useState<Address>(emptyAddress);
   const [delivery, setDelivery] = useState<Address>(emptyAddress);
   const [pickupPerson, setPickupPerson] = useState<Contact>(emptyContact);
@@ -807,10 +809,16 @@ export default function ShipmentBooking() {
       setBookingPhase("fetching_lr");
       setBookingAmount(Number(result.data.pricing_amount ?? 0));
       const lrOrAwb = result.data.lr_number || result.data.master_awb || result.data.provider_reference || result.data.tracking_number;
-      if (!lrOrAwb || result.data.provider_status !== "accepted") throw new Error("Delhivery did not return an LR/AWB, so the booking was not confirmed or billed.");
+      const providerAccepted = result.data.provider_status === "accepted" || result.data.provider_sync_status === "pending";
+      if (!providerAccepted) throw new Error("Delhivery did not accept the booking.");
       setSingleCompleted(true);
       setBookingPhase("idle");
-      setBookingNotice(`Booking confirmed with LR/AWB ${lrOrAwb}.`);
+      if (lrOrAwb) {
+        setBookingNotice(`Booking confirmed with LR/AWB ${lrOrAwb}.`);
+      } else {
+        setBookingNotice("Booking accepted by Delhivery; LR/AWB is being confirmed.");
+        router.replace(`/dashboard/shipmentTracking?id=${encodeURIComponent(result.data.id)}&refresh_provider=1`);
+      }
     } catch (error) {
       const details = getPssErrorDetails(error, "Unable to save booking.");
       setBookingPhase("idle");
