@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase/client";
 
 const GET_CACHE_TTL_MS = 15_000;
+const READ_TIMEOUT_MS = 15_000;
+const MUTATION_TIMEOUT_MS = 45_000;
+const FILE_TIMEOUT_MS = 45_000;
 // Keep the last authenticated read available across route reloads for a short
 // window. The key includes the Supabase user id, and mutations clear the
 // in-memory cache; an explicit browser refresh uses cache: "no-store".
@@ -162,7 +165,7 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
   }
   const request = (async () => {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 45000);
+  const timeout = globalThis.setTimeout(() => controller.abort(), mutating ? MUTATION_TIMEOUT_MS : READ_TIMEOUT_MS);
   try {
     const endpoint = `${baseUrl.replace(/\/$/, "")}${path}`;
     const idempotencyKey = mutating ? (new Headers(init.headers).get("Idempotency-Key") ?? crypto.randomUUID()) : undefined;
@@ -194,7 +197,7 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
   } catch (caught) {
     if (caught instanceof DOMException && caught.name === "AbortError") throw new Error("The production API timed out. Check the Worker deployment and try again.");
     throw caught;
-  } finally { window.clearTimeout(timeout); }
+  } finally { globalThis.clearTimeout(timeout); }
   })();
   if (!mutating) {
     getInFlight.set(cacheKey, request);
@@ -216,11 +219,21 @@ export async function pssApiFile(path: string): Promise<{ blob: Blob; contentTyp
   const baseUrl = process.env.NEXT_PUBLIC_PSS_API_URL;
   if (!baseUrl) throw new Error("PSS API is not configured.");
   const endpoint = `${baseUrl.replace(/\/$/, "")}${path}`;
-  let response = await fetch(endpoint, { headers: { Authorization: `Bearer ${session.access_token}` } });
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), FILE_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, { signal: controller.signal, headers: { Authorization: `Bearer ${session.access_token}` } });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw new Error("The document download timed out. Check the provider response and try again.");
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
   if (response.status === 401) {
     const refreshed = await createClient().auth.refreshSession();
     const refreshedToken = refreshed.data.session?.access_token;
-    if (refreshedToken) response = await fetch(endpoint, { headers: { Authorization: `Bearer ${refreshedToken}` } });
+    if (refreshedToken) response = await fetch(endpoint, { signal: AbortSignal.timeout(FILE_TIMEOUT_MS), headers: { Authorization: `Bearer ${refreshedToken}` } });
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
