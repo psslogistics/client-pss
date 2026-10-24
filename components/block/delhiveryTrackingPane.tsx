@@ -187,7 +187,7 @@ function mapShipment(row: Record<string, unknown>): Shipment {
     provider: String(row.provider ?? "Delhivery"),
     status,
     pieces: Number(row.pieces ?? 1),
-    weight: `${Number(row.total_weight_kg ?? 0).toFixed(2)} kg`,
+    weight: `${Math.max(20, Number(row.total_weight_kg ?? 0), Number(row.weight_override_kg ?? 0)).toFixed(2)} kg`,
     origin: String(row.origin ?? "Not provided"),
     destination: String(row.destination ?? "Not provided"),
     consignor,
