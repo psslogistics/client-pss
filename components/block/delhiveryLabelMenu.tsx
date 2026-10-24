@@ -45,13 +45,6 @@ const artifactContentType = (value: unknown): string => {
   return Object.values(record).map(artifactContentType).find((type) => type !== "application/octet-stream") ?? "application/octet-stream";
 };
 
-const artifactCopies = (value: unknown) => {
-  if (!value || typeof value !== "object") return 1;
-  const record = value as Record<string, unknown>;
-  const copies = Number(record.copies);
-  return Number.isFinite(copies) && copies > 0 ? copies : Array.isArray(record.artifacts) ? record.artifacts.length : 1;
-};
-
 const pdfPageCount = (option: LabelOption) => option.size === "a4" ? Math.ceil(option.copies / 2) : option.copies;
 
 const saveBase64 = (name: string, value: string, contentType: string) => {
@@ -99,37 +92,36 @@ const imageToPdf = async (reference: string, option: LabelOption, values: string
 export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = true, disabled = false }: { shipmentId: string; reference: string; onNotice?: (message: string) => void; compact?: boolean; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [downloadingSize, setDownloadingSize] = useState<LabelSize | null>(null);
   const [options, setOptions] = useState<LabelOption[]>([]);
   const unavailable = disabled || !reference.trim() || /unavailable/i.test(reference);
 
   const loadOptions = async () => {
     if (loading) return;
-    setOpen(true); setLoading(true); onNotice?.("Checking label formats with Delhivery…");
-    try {
-      const results = await Promise.all(sizes.map(async (size) => {
-        try {
-          const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(shipmentId)}/label?size=${size}`);
-          const artifact = result.data?.artifact;
-          // Delhivery's label-links API may return either provider PDFs or the
-          // original PNG/JPEG label assets. Images are converted client-side
-          // without resampling or recompression when the user downloads them.
-          if (!artifact || (!isPdfArtifact(artifact) && !isImageArtifact(artifact))) return undefined;
-          const option: LabelOption = { size, contentType: artifactContentType(artifact), artifact: artifact as unknown, copies: artifactCopies(artifact) };
-          return option;
-        } catch { return undefined; }
-      }));
-      const available = results.filter((option): option is LabelOption => option !== undefined);
-      setOptions(available); onNotice?.(available.length ? "Delhivery label formats are ready to download." : "Delhivery has not published a label for this shipment yet.");
-    } finally { setLoading(false); }
+    setOpen(true); setLoading(true);
+    // The four physical sizes are a stable Delhivery contract. Do not start
+    // four full provider artifact jobs just to populate this menu: that made
+    // the UI wait for slow PDF fallbacks and incorrectly show “no formats”
+    // even when Delhivery's order page offered Print Label. Fetch the chosen
+    // artifact only when the user selects a size.
+    setOptions(sizes.map((size) => ({ size, contentType: "", artifact: undefined, copies: 1 })));
+    setLoading(false);
+    onNotice?.("Choose a Delhivery label size to download.");
   };
 
   const download = async (option: LabelOption) => {
-    const type = option.contentType || artifactContentType(option.artifact);
-    const normalizedType = type.toLowerCase().split(";", 1)[0].trim();
-    const values = artifactBase64s(option.artifact)
+    setDownloadingSize(option.size);
+    let artifact = option.artifact;
+    try {
+      if (!artifact || (!isPdfArtifact(artifact) && !isImageArtifact(artifact))) {
+        const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(shipmentId)}/label?size=${option.size}`);
+        artifact = result.data?.artifact;
+      }
+      const type = option.contentType || artifactContentType(artifact);
+      const normalizedType = type.toLowerCase().split(";", 1)[0].trim();
+      const values = artifactBase64s(artifact)
       .map((value) => value.replace(/^data:[^;]+;base64,/, ""))
       .filter((value) => value.length > 100 && (normalizedType === "application/pdf" ? isPdfBase64(value) : normalizedType === "image/png" || normalizedType === "image/jpeg"));
-    try {
       if (!values.length) throw new Error("Delhivery did not return a label for this size.");
       if (normalizedType === "application/pdf") {
         // Keep provider PDFs byte-for-byte when Delhivery returns one.
@@ -142,13 +134,14 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
       }
       setOpen(false); onNotice?.(`Delhivery ${option.size} label downloaded.`);
     } catch (error) { onNotice?.(`Label download failed: ${getPssErrorDetails(error, "The Delhivery label could not be downloaded.").message}`); }
+    finally { setDownloadingSize(null); }
   };
 
   return <div className="relative inline-flex">
     <button type="button" aria-label={unavailable ? `Label unavailable for ${reference}` : `Download label for ${reference}`} aria-expanded={open} disabled={unavailable} onClick={() => { if (unavailable) { onNotice?.("Label unavailable until Delhivery publishes an LR/AWB."); return; } if (open) setOpen(false); else void loadOptions(); }} className={cn("inline-flex items-center justify-center rounded-md border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50", compact ? "size-8" : "gap-1.5 px-2.5 py-2 text-xs font-semibold")} title={unavailable ? "Label unavailable until Delhivery publishes an LR/AWB" : "Download Delhivery label"}><Tag className="size-3.5" />{!compact && <span>Label</span>}</button>
     {open && <div className="absolute right-0 top-full z-40 mt-2 w-56 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl">
       <p className="px-3 py-2 text-[11px] font-semibold text-muted-foreground">Delhivery label size</p>
-      {loading ? <p className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading formats…</p> : options.length ? options.map((option) => <button key={option.size} type="button" onClick={() => void download(option)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-accent"><Download className="size-3.5" />{sizeLabels[option.size]}{pdfPageCount(option) > 1 ? ` · ${pdfPageCount(option)} pages` : ""}</button>) : <p className="px-3 py-2 text-xs text-muted-foreground">No label formats available.</p>}
+      {loading ? <p className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading formats…</p> : options.length ? options.map((option) => <button key={option.size} type="button" disabled={downloadingSize !== null} onClick={() => void download(option)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-accent disabled:cursor-wait disabled:opacity-60">{downloadingSize === option.size ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}{downloadingSize === option.size ? "Preparing…" : sizeLabels[option.size]}{pdfPageCount(option) > 1 ? ` · ${pdfPageCount(option)} pages` : ""}</button>) : <p className="px-3 py-2 text-xs text-muted-foreground">No label formats available.</p>}
     </div>}
   </div>;
 }
