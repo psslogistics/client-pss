@@ -904,11 +904,27 @@ export default function ShipmentBooking() {
         if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`);
         return { key: invoiceFileKey(file), name: file.name, content_type: contentType, body_base64: await fileAsBase64(file) };
       }));
-      const staged = await pssApi<{ data: { documents: Array<{ object_key: string; name: string; content_type: string }> } }>("/v1/shipments/documents/stage", {
-        method: "POST",
-        headers: { "Idempotency-Key": `shipment-document-stage-${crypto.randomUUID()}` },
-        body: JSON.stringify({ documents: prepared.map(({ name, content_type, body_base64 }) => ({ name, content_type, body_base64 })) }),
-      });
+      const stageKey = `shipment-document-stage-${crypto.randomUUID()}`;
+      let staged: { data: { documents: Array<{ object_key: string; name: string; content_type: string }> } } | null = null;
+      let stagingError: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          staged = await pssApi<{ data: { documents: Array<{ object_key: string; name: string; content_type: string }> } }>("/v1/shipments/documents/stage", {
+            method: "POST",
+            headers: { "Idempotency-Key": stageKey },
+            body: JSON.stringify({ documents: prepared.map(({ name, content_type, body_base64 }) => ({ name, content_type, body_base64 })) }),
+          });
+          stagingError = null;
+          break;
+        } catch (error) {
+          stagingError = error;
+          const details = getPssErrorDetails(error);
+          if (!details.retryable || attempt === 2) break;
+          setNotice(`Temporary production interruption. Retrying invoice upload (${attempt + 2}/3)…`);
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 700 * (attempt + 1)));
+        }
+      }
+      if (!staged) throw stagingError instanceof Error ? stagingError : new Error("The invoice could not be prepared.");
       const preparedWithReferences = prepared.map((document, index) => ({ ...document, body_base64: "", object_key: staged.data.documents[index]?.object_key }));
       if (preparedWithReferences.some((document) => !document.object_key)) throw new Error("The invoice upload did not return a secure document reference.");
       setInvoices((current) => [...current, ...files]);
