@@ -482,28 +482,51 @@ export default function ShipmentBooking() {
     const fingerprint = JSON.stringify({ accountId: courier.accountId, warehouseId: selectedSavedPickupId, paymentMode, pickup, pickupPerson: { name: pickupPerson.name, phone: pickupPerson.phone }, delivery, deliveryPerson: { name: deliveryPerson.name, phone: deliveryPerson.phone } });
     if (providerReadinessFingerprint.current === fingerprint && ["ready", "checking", "error"].includes(providerReadiness)) return;
     const requestToken = ++providerReadinessRequest.current;
+    let cancelled = false;
+    const waitBeforeRetry = () => new Promise<void>((resolve) => window.setTimeout(resolve, 5000));
     const timer = window.setTimeout(() => {
       providerReadinessFingerprint.current = fingerprint;
       setProviderReadiness("checking");
       setProviderReadinessError("");
-      void pssApi<{ data: { ready: boolean; warehouse_name?: string | null } }>("/v1/shipments/preflight", {
-        method: "POST",
-        headers: { "Idempotency-Key": `shipment-preflight-${crypto.randomUUID()}` },
-        body: JSON.stringify({ provider: "delhivery", provider_account_id: courier.accountId, warehouse_id: selectedSavedPickupId || undefined, origin_address: { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }, destination_address: { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }, origin: `${pickup.city}, ${pickup.state}`, payment_mode: paymentMode.toLowerCase() }),
-      }).then((result) => {
-        if (requestToken !== providerReadinessRequest.current) return;
-        if (result.data.ready) setProviderReadiness("ready");
-        else { setProviderReadiness("error"); setProviderReadinessError("The pickup location is not ready with Delhivery yet."); }
-      }).catch((error) => {
-        if (requestToken !== providerReadinessRequest.current) return;
-        const details = getPssErrorDetails(error, "The pickup location could not be prepared with Delhivery.");
-        setProviderReadiness("error");
-        setProviderReadinessError(details.message);
-      });
+      const runReadinessCheck = async () => {
+        const maxAttempts = 3;
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+          if (cancelled || requestToken !== providerReadinessRequest.current) return;
+          try {
+            const result = await pssApi<{ data: { ready: boolean; warehouse_name?: string | null } }>("/v1/shipments/preflight", {
+              method: "POST",
+              headers: { "Idempotency-Key": `shipment-preflight-${crypto.randomUUID()}` },
+              body: JSON.stringify({ provider: "delhivery", provider_account_id: courier.accountId, warehouse_id: selectedSavedPickupId || undefined, origin_address: { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }, destination_address: { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }, origin: `${pickup.city}, ${pickup.state}`, payment_mode: paymentMode.toLowerCase() }),
+            });
+            if (cancelled || requestToken !== providerReadinessRequest.current) return;
+            if (result.data.ready) {
+              setProviderReadiness("ready");
+              return;
+            }
+            if (attempt < maxAttempts - 1) {
+              await waitBeforeRetry();
+              continue;
+            }
+            setProviderReadiness("error");
+            setProviderReadinessError("The pickup location is not ready with Delhivery yet. Please retry before confirming the booking.");
+            return;
+          } catch (error) {
+            if (cancelled || requestToken !== providerReadinessRequest.current) return;
+            const details = getPssErrorDetails(error, "The pickup location could not be prepared with Delhivery.");
+            if (details.retryable && attempt < maxAttempts - 1) {
+              await waitBeforeRetry();
+              continue;
+            }
+            setProviderReadiness("error");
+            setProviderReadinessError(details.message);
+            return;
+          }
+        }
+      };
+      void runReadinessCheck();
     }, 350);
-    return () => window.clearTimeout(timer);
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [selectedCourier, couriers, selectedSavedPickupId, paymentMode, pickup, pickupPerson, delivery, deliveryPerson, providerReadiness]);
-
   useEffect(() => {
     if (!showBulkReview || !bulkRows.length) {
       const resetTimer = window.setTimeout(() => {
