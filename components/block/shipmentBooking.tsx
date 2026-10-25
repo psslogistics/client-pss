@@ -768,11 +768,14 @@ export default function ShipmentBooking() {
       setBookingNotice("An invoice number is required before booking this shipment.");
       return;
     }
-    let invoiceDocumentRefs: Array<{ object_key: string; name: string; content_type: string }>;
+    let invoiceDocuments: Array<{ name: string; content_type: string; body_base64: string; invoice_number: string }>;
     try {
       const preparedByKey = new Map(preparedInvoices.map((item) => [item.key, item]));
-      if (invoices.some((file) => !preparedByKey.get(invoiceFileKey(file))?.object_key)) throw new Error("Invoice upload is still in progress. Please wait a moment and try again.");
-      invoiceDocumentRefs = invoices.map((file) => { const prepared = preparedByKey.get(invoiceFileKey(file))!; return { object_key: prepared.object_key!, name: prepared.name, content_type: prepared.content_type }; });
+      if (invoices.some((file) => !preparedByKey.get(invoiceFileKey(file))?.body_base64)) throw new Error("Invoice upload is still in progress. Please wait a moment and try again.");
+      invoiceDocuments = invoices.map((file) => {
+        const prepared = preparedByKey.get(invoiceFileKey(file))!;
+        return { name: prepared.name, content_type: prepared.content_type, body_base64: prepared.body_base64, invoice_number: documentReference };
+      });
     } catch (error) {
       setSingleAttemptId("");
       setSingleSubmitting(false);
@@ -819,7 +822,7 @@ export default function ShipmentBooking() {
           // EDD is a provider-supplied delivery date, not a confirmation
           // status. Delhivery may return no EDD at booking time.
           edd: null,
-          invoice_document_refs: invoiceDocumentRefs,
+          invoice_documents: invoiceDocuments,
           ...(ewayBill ? {
             eway_document: {
               name: `eway-bill-${ewayBill.name}`,
@@ -920,38 +923,15 @@ export default function ShipmentBooking() {
     if (!files.length) return;
     setInvoicePromptOpen(false);
     setBookingPhase("saving_documents");
-    setNotice("Saving invoice documents securely…");
+    setNotice("Preparing invoice documents securely…");
     try {
       const prepared = await Promise.all(files.map(async (file) => {
         const contentType = documentContentType(file);
         if (!contentType) throw new Error(`Unsupported invoice format: ${file.name}`);
         return { key: invoiceFileKey(file), name: file.name, content_type: contentType, body_base64: await fileAsBase64(file) };
       }));
-      const stageKey = `shipment-document-stage-${crypto.randomUUID()}`;
-      let staged: { data: { documents: Array<{ object_key: string; name: string; content_type: string }> } } | null = null;
-      let stagingError: unknown = null;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          staged = await pssApi<{ data: { documents: Array<{ object_key: string; name: string; content_type: string }> } }>("/v1/shipments/documents/stage", {
-            method: "POST",
-            headers: { "Idempotency-Key": stageKey },
-            body: JSON.stringify({ documents: prepared.map(({ name, content_type, body_base64 }) => ({ name, content_type, body_base64 })) }),
-          });
-          stagingError = null;
-          break;
-        } catch (error) {
-          stagingError = error;
-          const details = getPssErrorDetails(error);
-          if (!details.retryable || attempt === 2) break;
-          setNotice(`Temporary production interruption. Retrying invoice upload (${attempt + 2}/3)…`);
-          await new Promise<void>((resolve) => window.setTimeout(resolve, 700 * (attempt + 1)));
-        }
-      }
-      if (!staged) throw stagingError instanceof Error ? stagingError : new Error("The invoice could not be prepared.");
-      const preparedWithReferences = prepared.map((document, index) => ({ ...document, body_base64: "", object_key: staged.data.documents[index]?.object_key }));
-      if (preparedWithReferences.some((document) => !document.object_key)) throw new Error("The invoice upload did not return a secure document reference.");
       setInvoices((current) => [...current, ...files]);
-      setPreparedInvoices((current) => [...current, ...preparedWithReferences]);
+      setPreparedInvoices((current) => [...current, ...prepared]);
       setBookingPhase("idle");
       setNotice("");
     } catch (error) {
