@@ -308,6 +308,7 @@ export default function ShipmentBooking() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     void Promise.allSettled([pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses"), pssApi<{ data: Array<Record<string, string>> }>("/v1/addresses")]).then(([warehouseResult, addressResult]) => {
       if (cancelled) return;
       const errors: string[] = [];
@@ -394,6 +395,7 @@ export default function ShipmentBooking() {
     }
     const dimensions = boxDimensions.map((item) => ({ length: Number(item.length), width: Number(item.width), height: Number(item.height), quantity: Number(item.boxCount) || 1 }));
     const volumetricWeight = dimensions.reduce((sum, item) => sum + (item.length * item.width * item.height * item.quantity) / 5000, 0);
+    let cancelled = false;
     const preparationTimer = window.setTimeout(() => {
       setReviewQuoteLoading(true);
       setReviewQuoteError("");
@@ -481,7 +483,6 @@ export default function ShipmentBooking() {
     const fingerprint = JSON.stringify({ accountId: courier.accountId, warehouseId: selectedSavedPickupId, paymentMode, pickup, pickupPerson: { name: pickupPerson.name, phone: pickupPerson.phone }, delivery, deliveryPerson: { name: deliveryPerson.name, phone: deliveryPerson.phone } });
     if (providerReadinessFingerprint.current === fingerprint && ["ready", "checking", "error"].includes(providerReadiness)) return;
     const requestToken = ++providerReadinessRequest.current;
-    let cancelled = false;
     const waitBeforeRetry = () => new Promise<void>((resolve) => window.setTimeout(resolve, 5000));
     const timer = window.setTimeout(() => {
       providerReadinessFingerprint.current = fingerprint;
