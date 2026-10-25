@@ -308,7 +308,6 @@ export default function ShipmentBooking() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
     void Promise.allSettled([pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses"), pssApi<{ data: Array<Record<string, string>> }>("/v1/addresses")]).then(([warehouseResult, addressResult]) => {
       if (cancelled) return;
       const errors: string[] = [];
@@ -395,7 +394,6 @@ export default function ShipmentBooking() {
     }
     const dimensions = boxDimensions.map((item) => ({ length: Number(item.length), width: Number(item.width), height: Number(item.height), quantity: Number(item.boxCount) || 1 }));
     const volumetricWeight = dimensions.reduce((sum, item) => sum + (item.length * item.width * item.height * item.quantity) / 5000, 0);
-    let cancelled = false;
     const preparationTimer = window.setTimeout(() => {
       setReviewQuoteLoading(true);
       setReviewQuoteError("");
@@ -492,14 +490,14 @@ export default function ShipmentBooking() {
       const runReadinessCheck = async () => {
         const maxAttempts = 3;
         for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-          if (cancelled || requestToken !== providerReadinessRequest.current) return;
+          if (requestToken !== providerReadinessRequest.current) return;
           try {
             const result = await pssApi<{ data: { ready: boolean; warehouse_name?: string | null } }>("/v1/shipments/preflight", {
               method: "POST",
               headers: { "Idempotency-Key": `shipment-preflight-${crypto.randomUUID()}` },
               body: JSON.stringify({ provider: "delhivery", provider_account_id: courier.accountId, warehouse_id: selectedSavedPickupId || undefined, origin_address: { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }, destination_address: { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }, origin: `${pickup.city}, ${pickup.state}`, payment_mode: paymentMode.toLowerCase() }),
             });
-            if (cancelled || requestToken !== providerReadinessRequest.current) return;
+            if (requestToken !== providerReadinessRequest.current) return;
             if (result.data.ready) {
               setProviderReadiness("ready");
               return;
@@ -512,7 +510,7 @@ export default function ShipmentBooking() {
             setProviderReadinessError("The pickup location is not ready with Delhivery yet. Please retry before confirming the booking.");
             return;
           } catch (error) {
-            if (cancelled || requestToken !== providerReadinessRequest.current) return;
+            if (requestToken !== providerReadinessRequest.current) return;
             const details = getPssErrorDetails(error, "The pickup location could not be prepared with Delhivery.");
             if (details.retryable && attempt < maxAttempts - 1) {
               await waitBeforeRetry();
@@ -526,7 +524,7 @@ export default function ShipmentBooking() {
       };
       void runReadinessCheck();
     }, 350);
-    return () => { cancelled = true; window.clearTimeout(timer); };
+    return () => window.clearTimeout(timer);
   }, [selectedCourier, couriers, selectedSavedPickupId, paymentMode, pickup, pickupPerson, delivery, deliveryPerson, providerReadinessRetry]);
   useEffect(() => {
     if (!showBulkReview || !bulkRows.length) {
