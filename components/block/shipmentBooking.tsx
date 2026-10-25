@@ -493,11 +493,16 @@ export default function ShipmentBooking() {
         for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
           if (requestToken !== providerReadinessRequest.current) return;
           try {
-            const result = await pssApi<{ data: { ready: boolean; warehouse_name?: string | null } }>("/v1/shipments/preflight", {
-              method: "POST",
-              headers: { "Idempotency-Key": `shipment-preflight-${crypto.randomUUID()}` },
-              body: JSON.stringify({ provider: "delhivery", provider_account_id: courier.accountId, warehouse_id: selectedSavedPickupId || undefined, origin_address: { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }, destination_address: { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }, origin: `${pickup.city}, ${pickup.state}`, payment_mode: paymentMode.toLowerCase() }),
-            });
+            const result = await Promise.race([
+              pssApi<{ data: { ready: boolean; warehouse_name?: string | null } }>("/v1/shipments/preflight", {
+                method: "POST",
+                headers: { "Idempotency-Key": `shipment-preflight-${crypto.randomUUID()}` },
+                body: JSON.stringify({ provider: "delhivery", provider_account_id: courier.accountId, warehouse_id: selectedSavedPickupId || undefined, origin_address: { ...pickup, name: pickupPerson.name, phone: pickupPerson.phone }, destination_address: { ...delivery, name: deliveryPerson.name, phone: deliveryPerson.phone }, origin: `${pickup.city}, ${pickup.state}`, payment_mode: paymentMode.toLowerCase() }),
+              }),
+              new Promise<{ data: { ready: false; warehouse_name?: string | null } }>((_, reject) => {
+                window.setTimeout(() => reject(new Error("Delhivery readiness check timed out.")), 15000);
+              }),
+            ]);
             if (requestToken !== providerReadinessRequest.current) return;
             if (result.data.ready) {
               setProviderReadiness("ready");
@@ -513,12 +518,15 @@ export default function ShipmentBooking() {
           } catch (error) {
             if (requestToken !== providerReadinessRequest.current) return;
             const details = getPssErrorDetails(error, "The pickup location could not be prepared with Delhivery.");
+            const message = error instanceof Error && error.message === "Delhivery readiness check timed out."
+              ? "Delhivery readiness check timed out. Please retry before confirming the booking."
+              : details.message;
             if (details.retryable && attempt < maxAttempts - 1) {
               await waitBeforeRetry();
               continue;
             }
             setProviderReadiness("error");
-            setProviderReadinessError(details.message);
+            setProviderReadinessError(message);
             return;
           }
         }
