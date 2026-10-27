@@ -145,9 +145,10 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
   const baseUrl = process.env.NEXT_PUBLIC_PSS_API_URL;
   if (!baseUrl) throw new Error("PSS API is not configured.");
   const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase());
+  const providerRefresh = !mutating && path.includes("refresh_provider=1");
   const cacheKey = `${session.user.id}:${path}`;
   let staleValue: T | undefined;
-  if (!mutating) {
+  if (!mutating && !providerRefresh) {
     const cached = getCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.value as T;
     if (isSessionCachedRead(path)) {
@@ -170,7 +171,7 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
     const endpoint = `${baseUrl.replace(/\/$/, "")}${path}`;
     const idempotencyKey = mutating ? (new Headers(init.headers).get("Idempotency-Key") ?? crypto.randomUUID()) : undefined;
     const requestHeaders = (accessToken: string) => ({ Authorization: `Bearer ${accessToken}`, ...(init.body ? { "content-type": "application/json" } : {}), ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}), ...init.headers });
-    let response = await fetch(endpoint, { ...init, signal: controller.signal, headers: requestHeaders(session.access_token) });
+    let response = await fetch(endpoint, { ...init, cache: providerRefresh ? "no-store" : init.cache, signal: controller.signal, headers: requestHeaders(session.access_token) });
     // A token can expire between getSession() and the route request. Refresh
     // once and retry the same request before surfacing an auth failure. This
     // is safe for mutations because the idempotency key is stable for the
@@ -178,13 +179,13 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
     if (response.status === 401) {
       const refreshed = await createClient().auth.refreshSession();
       const refreshedToken = refreshed.data.session?.access_token;
-      if (refreshedToken) response = await fetch(endpoint, { ...init, signal: controller.signal, headers: requestHeaders(refreshedToken) });
+      if (refreshedToken) response = await fetch(endpoint, { ...init, cache: providerRefresh ? "no-store" : init.cache, signal: controller.signal, headers: requestHeaders(refreshedToken) });
       else { await expireAuthSession(); throw new PssApiError("Your session has expired. Please sign in again.", 401, { error: { category: "auth", user_safe_message: "Your session has expired. Please sign in again." } }); }
     }
     const payload = await response.json().catch(() => ({})) as T & { error?: { message?: string; user_safe_message?: string } };
     if (response.status === 401) { await expireAuthSession(); throw new PssApiError("Your session has expired. Please sign in again.", 401, payload); }
     if (!response.ok) throw new PssApiError(payload.error?.user_safe_message || payload.error?.message || "The PSS API request failed.", response.status, payload);
-    if (!mutating) {
+    if (!mutating && !providerRefresh) {
       const expiresAt = Date.now() + GET_CACHE_TTL_MS;
       getCache.set(cacheKey, { expiresAt, value: payload });
       if (isSessionCachedRead(path)) {
