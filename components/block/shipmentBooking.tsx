@@ -272,6 +272,7 @@ export default function ShipmentBooking() {
   const couriers = enabledCouriers;
   const [singleCompleted, setSingleCompleted] = useState(false);
   const [singleQueued, setSingleQueued] = useState(false);
+  const [singlePendingLr, setSinglePendingLr] = useState(false);
   const [bookingNotice, setBookingNotice] = useState("");
   const [bookingDiagnostic, setBookingDiagnostic] = useState<{ technicalMessage: string; requestId?: string } | null>(null);
   const [bookingAmount, setBookingAmount] = useState<number | null>(null);
@@ -786,15 +787,24 @@ export default function ShipmentBooking() {
       const providerQueued = result.data.provider_status === "pending" || result.data.provider_sync_status === "pending" || result.data.retry_at === "scheduled";
       const providerAccepted = result.data.provider_status === "accepted" || providerQueued;
       if (!providerAccepted) throw new Error("Delhivery did not accept the booking.");
-      setSingleQueued(providerQueued);
-      setSingleCompleted(true);
-      setBookingPhase("idle");
       if (providerQueued) {
+        setSingleQueued(true);
+        setSinglePendingLr(false);
+        setSingleCompleted(true);
+        setBookingPhase("idle");
         setBookingNotice(result.data.message ?? "Booking queued; Delhivery is activating the pickup warehouse and will retry automatically.");
       } else if (lrOrAwb) {
+        setSingleQueued(false);
+        setSinglePendingLr(false);
+        setSingleCompleted(true);
+        setBookingPhase("idle");
         setBookingNotice(`Booking confirmed with LR/AWB ${lrOrAwb}.`);
       } else {
-        setBookingNotice("Booking accepted by Delhivery; LR/AWB is being confirmed.");
+        setSingleQueued(false);
+        setSinglePendingLr(true);
+        setSingleCompleted(true);
+        setBookingPhase("idle");
+        setBookingNotice("Booking accepted by Delhivery; LR/AWB is still being published. No PSS billing has been applied.");
         router.replace(`/dashboard/shipmentTracking?id=${encodeURIComponent(result.data.id)}&refresh_provider=1`);
       }
     } catch (error) {
@@ -807,16 +817,25 @@ export default function ShipmentBooking() {
       if (timeoutShipmentId) {
         setBookingPhase("fetching_lr");
         setBookingNotice("Fetching the latest LR from Delhivery…");
-        try {
-          const refreshed = await pssApi<{ data: { lr_number?: string | null; master_awb?: string | null; provider_reference?: string | null; tracking_number?: string | null } }>(`/v1/shipments/${encodeURIComponent(timeoutShipmentId)}?refresh_provider=1`);
-          const refreshedReference = refreshed.data.lr_number || refreshed.data.master_awb || refreshed.data.provider_reference || refreshed.data.tracking_number;
-          if (refreshedReference) {
-            setBookingPhase("idle");
-            setSingleCompleted(true);
-            setBookingNotice(`Booking confirmed with LR/AWB ${refreshedReference}.`);
-            return;
-          }
-        } catch { /* Keep the retryable LR timeout visible when the provider is still processing. */ }
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          try {
+            const refreshed = await pssApi<{ data: { lr_number?: string | null; master_awb?: string | null; provider_reference?: string | null; tracking_number?: string | null } }>(`/v1/shipments/${encodeURIComponent(timeoutShipmentId)}?refresh_provider=1`);
+            const refreshedReference = refreshed.data.lr_number || refreshed.data.master_awb || refreshed.data.provider_reference || refreshed.data.tracking_number;
+            if (refreshedReference) {
+              setBookingPhase("idle");
+              setSingleQueued(false);
+              setSinglePendingLr(false);
+              setSingleCompleted(true);
+              setBookingNotice(`Booking confirmed with LR/AWB ${refreshedReference}.`);
+              return;
+            }
+          } catch { /* Keep polling when the provider is still processing. */ }
+          if (attempt < 5) await new Promise<void>((resolve) => window.setTimeout(resolve, 5000));
+        }
+        setSingleQueued(false);
+        setSinglePendingLr(true);
+        setSingleCompleted(true);
+        setBookingNotice("Delhivery accepted the booking, but the LR/AWB is still pending. It will continue polling automatically; no PSS billing has been applied.");
         setBookingPhase("idle");
       } else if (details.category !== "network") {
         setSingleAttemptId("");
@@ -868,7 +887,7 @@ export default function ShipmentBooking() {
       setBulkSubmitting(false);
     }
   };
-  const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoices([]); setPreparedInvoices([]); setInvoiceNumber(""); setOrderId(""); setBoxDimensions([{ length: "", width: "", height: "", boxCount: "" }]); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setRiskType("owner"); setCodAmount(""); setSelectedCourier(null); setSingleAttemptId(""); setSingleSubmitting(false); setBookingPhase("idle"); setShowReview(false); setSingleCompleted(false); setSingleQueued(false); setProviderReadiness("idle"); setProviderReadinessError(""); providerReadinessFingerprint.current = ""; providerReadinessRequest.current += 1; setBookingAmount(null); setReviewQuote(null); setReviewQuoteError(""); setBookingNotice(""); setBookingDiagnostic(null); setNotice(""); setInvoicePromptOpen(false); };
+  const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoices([]); setPreparedInvoices([]); setInvoiceNumber(""); setOrderId(""); setBoxDimensions([{ length: "", width: "", height: "", boxCount: "" }]); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setRiskType("owner"); setCodAmount(""); setSelectedCourier(null); setSingleAttemptId(""); setSingleSubmitting(false); setBookingPhase("idle"); setShowReview(false); setSingleCompleted(false); setSingleQueued(false); setSinglePendingLr(false); setProviderReadiness("idle"); setProviderReadinessError(""); providerReadinessFingerprint.current = ""; providerReadinessRequest.current += 1; setBookingAmount(null); setReviewQuote(null); setReviewQuoteError(""); setBookingNotice(""); setBookingDiagnostic(null); setNotice(""); setInvoicePromptOpen(false); };
   const addInvoiceFiles = async (files: File[]) => {
     const invalid = files.find((file) => !isAllowedDocument(file));
     if (invalid) { setNotice(`${invalid.name} must be a PDF, JPG, or PNG up to 10 MB`); return; }
@@ -900,7 +919,7 @@ export default function ShipmentBooking() {
   const milestones = ["Shipment details", "Documentation", "PSS service", "Review"];
 
   if (singleCompleted) {
-    return <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center space-y-5 py-20 text-center"><span className={`flex h-14 w-14 items-center justify-center rounded-full ${singleQueued ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"}`}><Check className="h-7 w-7" /></span><div><h1 className="text-2xl font-semibold tracking-tight">{singleQueued ? "Booking queued" : "Booking confirmed"}</h1><p className="mt-2 text-sm text-muted-foreground">{singleQueued ? "The shipment is saved but is not booked with Delhivery yet. It will retry automatically after the pickup warehouse is activated." : "The shipment was saved and invoiced using your PSS Delhivery B2B rate card."}</p></div><div className="w-full rounded-xl border border-border bg-card p-4 text-left shadow-xs"><div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Service</span><span className="font-semibold">Delhivery B2B</span></div><div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted-foreground">Pickup scheduling</span><span className="font-semibold">Handled separately</span></div><div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted-foreground">PSS billed amount</span><span className="font-semibold">{singleQueued ? "Not billed until Delhivery accepts" : bookingAmount !== null ? `₹${bookingAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "Shown on invoice"}</span></div></div><p role="status" className="text-xs text-primary">{bookingNotice}</p><button type="button" onClick={resetBooking} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"><Package className="h-4 w-4" /> Book another shipment</button></div>;
+    return <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center space-y-5 py-20 text-center"><span className={`flex h-14 w-14 items-center justify-center rounded-full ${singleQueued || singlePendingLr ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"}`}><Check className="h-7 w-7" /></span><div><h1 className="text-2xl font-semibold tracking-tight">{singleQueued ? "Booking queued" : singlePendingLr ? "Booking accepted — LR pending" : "Booking confirmed"}</h1><p className="mt-2 text-sm text-muted-foreground">{singleQueued ? "The shipment is saved but is not booked with Delhivery yet. It will retry automatically after the pickup warehouse is activated." : singlePendingLr ? "Delhivery accepted the shipment. The LR/AWB is still being published and will be reconciled automatically." : "The shipment was saved and invoiced using your PSS Delhivery B2B rate card."}</p></div><div className="w-full rounded-xl border border-border bg-card p-4 text-left shadow-xs"><div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Service</span><span className="font-semibold">Delhivery B2B</span></div><div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted-foreground">Pickup scheduling</span><span className="font-semibold">Handled separately</span></div><div className="mt-2 flex items-center justify-between text-sm"><span className="text-muted-foreground">PSS billed amount</span><span className="font-semibold">{singleQueued || singlePendingLr ? "Not billed until the LR/AWB is published" : bookingAmount !== null ? `₹${bookingAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "Shown on invoice"}</span></div></div><p role="status" className="text-xs text-primary">{bookingNotice}</p><button type="button" onClick={resetBooking} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"><Package className="h-4 w-4" /> Book another shipment</button></div>;
   }
 
 if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center space-y-5 py-20 text-center"><span className={`flex h-14 w-14 items-center justify-center rounded-full ${bulkResult.failed ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"}`}>{bulkResult.failed ? <TriangleAlert className="h-7 w-7" /> : <Check className="h-7 w-7" />}</span><div><h1 className="text-2xl font-semibold tracking-tight">{bulkResult.failed ? "Bulk booking needs attention" : "Bulk bookings confirmed"}</h1><p className="mt-2 text-sm text-muted-foreground">{bulkResult.created} booking{bulkResult.created === 1 ? "" : "s"} persisted through the production API; {bulkResult.failed} failed row{bulkResult.failed === 1 ? "" : "s"} can be retried safely.</p></div><p role="status" className="text-xs text-primary">{bookingNotice}</p><button type="button" onClick={() => { setBulkCompleted(false); setBulkSubmitting(false); setShowBulkReview(false); setBulkRows([]); setBulkFile(null); setBulkBatchId(""); setBulkResult({ created: 0, failed: 0 }); setBulkNotice(""); setBookingNotice(""); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"><Upload className="h-4 w-4" /> Upload another file</button></div>;
