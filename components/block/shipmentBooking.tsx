@@ -788,11 +788,36 @@ export default function ShipmentBooking() {
       const providerAccepted = result.data.provider_status === "accepted" || providerQueued;
       if (!providerAccepted) throw new Error("Delhivery did not accept the booking.");
       if (providerQueued) {
-        setSingleQueued(true);
-        setSinglePendingLr(false);
-        setSingleCompleted(true);
-        setBookingPhase("idle");
-        setBookingNotice(result.data.message ?? "Booking queued; Delhivery is activating the pickup warehouse and will retry automatically.");
+        if (result.data.retry_at === "scheduled") {
+          setSingleQueued(true);
+          setSinglePendingLr(false);
+          setSingleCompleted(true);
+          setBookingPhase("idle");
+          setBookingNotice(result.data.message ?? "Booking queued; Delhivery is activating the pickup warehouse and will retry automatically.");
+        } else {
+          setBookingPhase("fetching_lr");
+          setBookingNotice("Delhivery accepted the booking; fetching the LR/AWB now…");
+          for (let attempt = 0; attempt < 12; attempt += 1) {
+            if (attempt > 0) await new Promise<void>((resolve) => window.setTimeout(resolve, 3000));
+            try {
+              const refreshed = await pssApi<{ data: { lr_number?: string | null; master_awb?: string | null; provider_reference?: string | null; tracking_number?: string | null } }>(`/v1/shipments/${encodeURIComponent(result.data.id)}?refresh_provider=1`);
+              const refreshedReference = refreshed.data.lr_number || refreshed.data.master_awb || refreshed.data.provider_reference || refreshed.data.tracking_number;
+              if (refreshedReference) {
+                setSingleQueued(false);
+                setSinglePendingLr(false);
+                setSingleCompleted(true);
+                setBookingPhase("idle");
+                setBookingNotice(`Booking confirmed with LR/AWB ${refreshedReference}.`);
+                return;
+              }
+            } catch { /* Keep polling while Delhivery publishes the reference. */ }
+          }
+          setSingleQueued(false);
+          setSinglePendingLr(true);
+          setSingleCompleted(true);
+          setBookingPhase("idle");
+          setBookingNotice("Delhivery accepted the booking, but the LR/AWB is still pending. It will continue syncing automatically; no PSS billing has been applied.");
+        }
       } else if (lrOrAwb) {
         setSingleQueued(false);
         setSinglePendingLr(false);
