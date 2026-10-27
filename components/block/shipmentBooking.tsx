@@ -21,7 +21,7 @@ import {
 import Dropdown from "@/components/ui/dropdown";
 import ConfirmationToast, { type ConfirmationToastTone } from "@/components/ui/confirmationToast";
 import { getPssErrorDetails, PssApiError, pssApi } from "@/lib/pss-api";
-import { isActiveDelhiveryB2BAccount } from "@/lib/client-pricing-data";
+import { canonicalDelhiveryB2BAccountName, isActiveDelhiveryB2BAccount } from "@/lib/client-pricing-data";
 import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 
 type Address = { line: string; city: string; state: string; pincode: string; country: string };
@@ -268,7 +268,7 @@ export default function ShipmentBooking() {
   const providerReadinessRequest = useRef(0);
   const [providerHealth, setProviderHealth] = useState<Record<string, { health?: string; last_error_code?: string | null }>>({});
   const [accountPolicies, setAccountPolicies] = useState<Array<{ id: string; provider: string; account_name: string; enabled?: boolean; confidence_score?: number; priority?: number }>>([]);
-  const enabledCouriers = useMemo(() => accountPolicies.filter((account) => account.provider.toLowerCase() === "delhivery" && account.enabled !== false && isActiveDelhiveryB2BAccount(account.account_name)).map((account) => ({ ...allCouriers[0], id: account.id, accountId: account.id, name: account.account_name, accountName: "", accountCode: "other", confidence: Number(account.confidence_score ?? 0), service: "PSS rate card applied at booking", health: providerHealth.delhivery?.health ?? "unknown", lastError: "" })), [accountPolicies, providerHealth.delhivery?.health]);
+  const enabledCouriers = useMemo(() => accountPolicies.filter((account) => account.provider.toLowerCase() === "delhivery" && account.enabled !== false && isActiveDelhiveryB2BAccount(account.account_name)).map((account) => ({ ...allCouriers[0], id: account.id, accountId: account.id, name: canonicalDelhiveryB2BAccountName(account.account_name), accountName: "", accountCode: "other", confidence: Number(account.confidence_score ?? 0), service: "PSS rate card applied at booking", health: providerHealth.delhivery?.health ?? "unknown", lastError: "" })), [accountPolicies, providerHealth.delhivery?.health]);
   const couriers = enabledCouriers;
   const [singleCompleted, setSingleCompleted] = useState(false);
   const [singleQueued, setSingleQueued] = useState(false);

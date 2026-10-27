@@ -11,10 +11,16 @@ export type ServiceabilityResult = { pickup: boolean; delivery: boolean; modes: 
 
 const normalizeDelhiveryAccountName = (value: unknown) => String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 
+/** Delhivery's exact provider name; accept the historical local typo while it is being migrated. */
+export function canonicalDelhiveryB2BAccountName(value: unknown) {
+  const normalized = normalizeDelhiveryAccountName(value);
+  return normalized === "PSSBOOKCFT10B2BC" ? "PSSBOOKSCFT10 B2BC" : String(value ?? "").trim();
+}
+
 const ACTIVE_DELHIVERY_B2B_ACCOUNT_LABELS: Record<string, string> = {
   PSSLOGISTICS10B2BC: "Delhivery Heavy",
   PSSCHANDIGARHCARGO6B2BC: "Delhivery Light",
-  PSSBOOKCFT10B2BC: "Delhivery Standard",
+  PSSBOOKSCFT10B2BC: "Delhivery Standard",
   PSSLOGISTICS04B2BC: "Delhivery Account 04",
 };
 
@@ -24,7 +30,7 @@ const ACTIVE_DELHIVERY_B2B_ACCOUNT_LABELS: Record<string, string> = {
  * back to a client-facing component as a display label.
  */
 export function delhiveryB2BAccountLabel(value: unknown) {
-  return ACTIVE_DELHIVERY_B2B_ACCOUNT_LABELS[normalizeDelhiveryAccountName(value)] ?? null;
+  return ACTIVE_DELHIVERY_B2B_ACCOUNT_LABELS[normalizeDelhiveryAccountName(canonicalDelhiveryB2BAccountName(value))] ?? null;
 }
 
 export function isActiveDelhiveryB2BAccount(value: unknown) {
