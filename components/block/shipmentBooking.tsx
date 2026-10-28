@@ -792,12 +792,20 @@ export default function ShipmentBooking() {
       setBookingAmount(Number(result.data.pricing_amount ?? 0));
       const lrOrAwb = result.data.lr_number || result.data.master_awb || result.data.provider_reference || result.data.tracking_number;
       const providerQueued = result.data.provider_status === "pending" || result.data.provider_sync_status === "pending" || result.data.retry_at === "scheduled";
-      if (providerQueued || !lrOrAwb) {
-        throw new Error(providerQueued ? "Delhivery accepted the request but did not return an LR/AWB immediately." : "Delhivery did not return an LR/AWB during the booking attempt.");
-      } else {
+      if (lrOrAwb) {
         setSingleCompleted(true);
         setBookingPhase("idle");
         setBookingNotice(`Booking confirmed with LR/AWB ${lrOrAwb}.`);
+      } else if (providerQueued) {
+        // A successful POST can precede Delhivery publishing the LR/AWB. The
+        // shipment is accepted and will reconcile into All Shipments; it must
+        // not be presented as a failed booking merely because the reference is
+        // asynchronous.
+        setSingleCompleted(true);
+        setBookingPhase("idle");
+        setBookingNotice("Booking accepted by Delhivery. The LR/AWB is being published and will appear in All Shipments shortly.");
+      } else {
+        throw new Error("Delhivery did not return an LR/AWB during the booking attempt.");
       }
     } catch (error) {
       const details = getPssErrorDetails(error, "Unable to save booking.");
