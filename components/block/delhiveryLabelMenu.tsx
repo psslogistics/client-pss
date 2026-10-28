@@ -71,6 +71,8 @@ const saveBase64 = (name: string, value: string, contentType: string) => {
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
+const labelFileName = (reference: string, size: LabelSize) => `${reference}-LABEL-${size === "a4" ? "A4" : size}.pdf`;
+
 const physicalSizePoints: Record<LabelSize, [number, number]> = {
   a4: [8.3 * 72, 11.7 * 72],
   "4x2": [4 * 72, 2 * 72],
@@ -101,7 +103,7 @@ const imageToPdf = async (reference: string, option: LabelOption, entries: Artif
   }
   const pdfBytes = await pdf.save({ useObjectStreams: false });
   const url = URL.createObjectURL(new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" }));
-  const link = document.createElement("a"); link.href = url; link.download = `delhivery-label-${reference}-${option.size}.pdf`; link.click();
+  const link = document.createElement("a"); link.href = url; link.download = labelFileName(reference, option.size); link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
@@ -148,7 +150,7 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
       if (pdfEntries.length && (option.size === "a4" || !imageEntries.length)) {
         // Keep the provider PDF byte-for-byte when it is the authoritative
         // A4/MPS document. This avoids re-encoding mixed provider assets.
-        saveBase64(`delhivery-label-${reference}-${option.size}.pdf`, pdfEntries[0].value, "application/pdf");
+        saveBase64(labelFileName(reference, option.size), pdfEntries[0].value, "application/pdf");
       } else if (imageEntries.length) {
         // Delhivery's B2B label API returns PNG/JPEG assets. Embed those exact
         // source bytes in a PDF at the selected physical size. No rasterization,
