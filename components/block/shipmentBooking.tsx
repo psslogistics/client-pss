@@ -822,7 +822,11 @@ export default function ShipmentBooking() {
               return;
             }
           }
-          setSingleProviderPending(false);
+          // Keep the accepted booking visibly pending after the first polling
+          // window. Delhivery can publish the LR after this page stops polling;
+          // clearing the pending state here makes the screen claim an
+          // immediate confirmation while still showing a pending notice.
+          setSingleProviderPending(true);
           setBookingNotice("Booking accepted by Delhivery. The LR/AWB is still pending; refresh All Shipments to check the provider update.");
         })();
       } else {
