@@ -80,7 +80,19 @@ const savedAddressRecord = (row: Record<string, string>): SavedPickup => {
 const savedAddressIdentity = (row: SavedPickup) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 const dedupeSavedAddresses = (rows: SavedPickup[]) => { const seen = new Set<string>(); return rows.filter((row) => { const key = savedAddressIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; }); };
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
-const fileAsBase64 = (file: File) => new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => { const result = String(reader.result ?? ""); const separator = result.indexOf(","); resolve(separator >= 0 ? result.slice(separator + 1) : result); }; reader.onerror = () => reject(reader.error ?? new Error("The selected document could not be read.")); reader.readAsDataURL(file); });
+const fileAsBase64 = async (file: File) => {
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+    return btoa(binary);
+  } catch {
+    throw new Error("The selected document could not be read.");
+  }
+};
 const allCouriers = [
   { id: "delhivery", provider: "delhivery", name: "DELHIVERY", service: "PSS rate card applied at booking", eta: "", rate: "PSS pricing", confidence: 0, accountName: "", accountCode: "other", accountId: "", health: "unknown", lastError: "", accent: "bg-violet-500/10 text-violet-600" },
 ];
