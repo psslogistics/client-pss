@@ -4,6 +4,7 @@ const GET_CACHE_TTL_MS = 15_000;
 const READ_TIMEOUT_MS = 15_000;
 const MUTATION_TIMEOUT_MS = 45_000;
 const FILE_TIMEOUT_MS = 45_000;
+const LABEL_TIMEOUT_MS = 45_000;
 // Keep the last authenticated read available across route reloads for a short
 // window. The key includes the Supabase user id, and mutations clear the
 // in-memory cache; an explicit browser refresh uses cache: "no-store".
@@ -166,7 +167,8 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
   }
   const request = (async () => {
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), mutating ? MUTATION_TIMEOUT_MS : READ_TIMEOUT_MS);
+  const labelArtifactRequest = !mutating && /^\/v1\/shipments\/[^/]+\/(?:label|sticker)(?:\?|$)/.test(path);
+  const timeout = globalThis.setTimeout(() => controller.abort(), labelArtifactRequest ? LABEL_TIMEOUT_MS : mutating ? MUTATION_TIMEOUT_MS : READ_TIMEOUT_MS);
   try {
     const endpoint = `${baseUrl.replace(/\/$/, "")}${path}`;
     const idempotencyKey = mutating ? (new Headers(init.headers).get("Idempotency-Key") ?? crypto.randomUUID()) : undefined;
