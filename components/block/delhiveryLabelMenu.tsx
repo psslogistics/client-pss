@@ -61,7 +61,33 @@ const artifactContentType = (value: unknown): string => {
   return Object.values(record).map(artifactContentType).find((type) => type !== "application/octet-stream") ?? "application/octet-stream";
 };
 
-const pdfPageCount = (option: LabelOption) => option.size === "a4" ? Math.ceil(option.copies / 2) : option.copies;
+const a4Points: [number, number] = [8.3 * 72, 11.7 * 72];
+const sheetLayouts: Record<LabelSize, { width: number; height: number; columns: number; rows: number; gap: number }> = {
+  a4: { width: a4Points[0] - 12, height: (a4Points[1] - 18) / 2, columns: 1, rows: 2, gap: 6 },
+  "4x2": { width: 4 * 72, height: 2 * 72, columns: 2, rows: 5, gap: 0 },
+  "4x2.5": { width: 4 * 72, height: 2.5 * 72, columns: 2, rows: 4, gap: 0 },
+  "3x2": { width: 3 * 72, height: 2 * 72, columns: 2, rows: 5, gap: 0 },
+};
+
+const pdfPageCount = (option: LabelOption) => {
+  const layout = sheetLayouts[option.size];
+  return Math.ceil(option.copies / (layout.columns * layout.rows));
+};
+
+const sheetSlot = (size: LabelSize, index: number) => {
+  const layout = sheetLayouts[size];
+  const [pageWidth, pageHeight] = a4Points;
+  const totalWidth = layout.columns * layout.width + (layout.columns - 1) * layout.gap;
+  const totalHeight = layout.rows * layout.height + (layout.rows - 1) * layout.gap;
+  const column = index % layout.columns;
+  const row = Math.floor(index / layout.columns) % layout.rows;
+  return {
+    x: (pageWidth - totalWidth) / 2 + column * (layout.width + layout.gap),
+    y: pageHeight - (pageHeight - totalHeight) / 2 - (row + 1) * layout.height - row * layout.gap,
+    width: layout.width,
+    height: layout.height,
+  };
+};
 
 const saveBase64 = (name: string, value: string, contentType: string) => {
   const normalized = value.replace(/^data:[^;]+;base64,/, "");
@@ -73,33 +99,45 @@ const saveBase64 = (name: string, value: string, contentType: string) => {
 
 const labelFileName = (reference: string, size: LabelSize) => `${reference}-LABEL-${size === "a4" ? "A4" : size}.pdf`;
 
-const physicalSizePoints: Record<LabelSize, [number, number]> = {
-  a4: [8.3 * 72, 11.7 * 72],
-  "4x2": [4 * 72, 2 * 72],
-  "4x2.5": [4 * 72, 2.5 * 72],
-  "3x2": [3 * 72, 2 * 72],
-};
-
 const imageToPdf = async (reference: string, option: LabelOption, entries: ArtifactEntry[]) => {
   const pdf = await PDFDocument.create();
-  const [pageWidth, pageHeight] = physicalSizePoints[option.size];
-  const isA4 = option.size === "a4";
-  const pageMargin = isA4 ? 6 : 0;
-  const slotGap = isA4 ? 6 : 0;
-  const slotHeight = isA4 ? (pageHeight - (pageMargin * 2) - slotGap) / 2 : pageHeight;
-  let page = pdf.addPage([pageWidth, pageHeight]);
+  const layout = sheetLayouts[option.size];
+  const capacity = layout.columns * layout.rows;
+  let page = pdf.addPage(a4Points);
   for (const [index, entry] of entries.entries()) {
     const bytes = Uint8Array.from(atob(entry.value.replace(/^data:[^;]+;base64,/, "")), (character) => character.charCodeAt(0));
     const entryType = entry.contentType.toLowerCase().split(";", 1)[0].trim();
     const image = entryType === "image/png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
-    const slotWidth = pageWidth - (pageMargin * 2);
-    const scale = Math.min(slotWidth / image.width, slotHeight / image.height);
+    const slot = sheetSlot(option.size, index);
+    const scale = Math.min(slot.width / image.width, slot.height / image.height);
     const width = image.width * scale;
     const height = image.height * scale;
-    const slotTop = pageHeight - pageMargin - (isA4 ? (index % 2) * (slotHeight + slotGap) : 0);
-    page.drawImage(image, { x: (pageWidth - width) / 2, y: slotTop - slotHeight + (slotHeight - height) / 2, width, height });
-    if (isA4 && index % 2 === 1 && index < entries.length - 1) page = pdf.addPage([pageWidth, pageHeight]);
-    if (!isA4 && index < entries.length - 1) page = pdf.addPage([pageWidth, pageHeight]);
+    page.drawImage(image, { x: slot.x + (slot.width - width) / 2, y: slot.y + (slot.height - height) / 2, width, height });
+    if ((index + 1) % capacity === 0 && index < entries.length - 1) page = pdf.addPage(a4Points);
+  }
+  const pdfBytes = await pdf.save({ useObjectStreams: false });
+  const url = URL.createObjectURL(new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" }));
+  const link = document.createElement("a"); link.href = url; link.download = labelFileName(reference, option.size); link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 500);
+};
+
+const pdfToA4 = async (reference: string, option: LabelOption, entries: ArtifactEntry[]) => {
+  const pdf = await PDFDocument.create();
+  const layout = sheetLayouts[option.size];
+  const capacity = layout.columns * layout.rows;
+  const sourcePages = [];
+  for (const entry of entries) {
+    const source = await PDFDocument.load(Uint8Array.from(atob(entry.value), (character) => character.charCodeAt(0)));
+    for (const sourcePage of source.getPages()) sourcePages.push(await pdf.embedPage(sourcePage));
+  }
+  let page = pdf.addPage(a4Points);
+  for (const [index, sourcePage] of sourcePages.entries()) {
+    const slot = sheetSlot(option.size, index);
+    const scale = Math.min(slot.width / sourcePage.width, slot.height / sourcePage.height);
+    const width = sourcePage.width * scale;
+    const height = sourcePage.height * scale;
+    page.drawPage(sourcePage, { x: slot.x + (slot.width - width) / 2, y: slot.y + (slot.height - height) / 2, width, height });
+    if ((index + 1) % capacity === 0 && index < sourcePages.length - 1) page = pdf.addPage(a4Points);
   }
   const pdfBytes = await pdf.save({ useObjectStreams: false });
   const url = URL.createObjectURL(new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" }));
@@ -156,6 +194,10 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
         // source bytes in a PDF at the selected physical size. No rasterization,
         // JPEG recompression, sharpening, or crop is performed.
         await imageToPdf(reference, option, imageEntries);
+      } else if (pdfEntries.length) {
+        // If Delhivery returns only PDF pages for a sticker size, impose those
+        // vector pages onto an A4 sheet without rasterizing them.
+        await pdfToA4(reference, option, pdfEntries);
       } else {
         throw new Error("Delhivery did not return a usable label for this size.");
       }
