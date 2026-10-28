@@ -1,7 +1,8 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { zipSync } from "fflate";
 import { formatDate } from "@/lib/date-format";
-import { downloadWorkbook, type WorkbookCell } from "@/lib/xlsx";
+import { buildWorkbook, type WorkbookCell } from "@/lib/xlsx";
 
 export type BillingExportRecord = {
   id: string;
@@ -59,7 +60,7 @@ function makeXlsx(records: BillingExportRecord[], days: number) {
     record.amendments?.map((item) => `${item.amendment_type}: ${money(item.previous_amount)} -> ${money(item.new_amount)} (${item.reason})`).join(" | "), record.amount,
   ] as WorkbookCell[]);
   const billableTotal = records.filter((record) => !isExcluded(record)).reduce((sum, record) => sum + Number(record.amount || 0), 0);
-  downloadWorkbook(`PSS-Billing-Last-${days}-Days.xlsx`, [
+  return buildWorkbook([
     { name: "Billing summary", headers: ["Field", "Value"], rows: [["Period", `Last ${days} days`], ["Generated at", new Date().toISOString()], ["Records exported", records.length], ["Billable records", records.filter((record) => !isExcluded(record)).length], ["Excluded records", records.filter(isExcluded).length], ["Final billed total", billableTotal]], columnWidths: [24, 34], currencyColumns: [1], autoFilter: false },
     { name: `Billing ${days} days`, headers, rows, columnWidths: [18, 22, 18, 16, 18, 20, 20, 20, 22, 34, 34, 10, 14, 20, 24, 16, 22, 14, 22, 42, 14, 42, 42, 16], numericColumns: [11, 12, 13], currencyColumns: [15, 20, 23], dateColumns: [16, 18] },
   ]);
@@ -98,6 +99,11 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number) {
 }
 
 export function downloadBillingExport(records: BillingExportRecord[], days: number) {
-  makeXlsx(records, days);
-  downloadBytes(makeSummaryPdf(records, days), `PSS-Billing-Last-${days}-Days.pdf`, "application/pdf");
+  const xlsx = makeXlsx(records, days);
+  const pdf = new Uint8Array(makeSummaryPdf(records, days));
+  const archive = zipSync({
+    [`PSS-Billing-Last-${days}-Days.xlsx`]: xlsx,
+    [`PSS-Billing-Last-${days}-Days.pdf`]: pdf,
+  });
+  downloadBytes(archive.buffer, `PSS-Billing-Last-${days}-Days.zip`, "application/zip");
 }
