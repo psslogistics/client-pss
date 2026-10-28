@@ -234,12 +234,12 @@ export default function Dashboard() {
   }
   const activeShipments = [...statusCounts.entries()].reduce((total, [status, count]) => total + (["delivered", "cancelled", "returned"].includes(status) ? 0 : count), 0);
   const liveKpiMetrics: KpiMetric[] = [
-    { id: "shipments", title: "Total shipments", value: metricValue(production.shipmentStats.total), change: metricState, isPositive: true, sparklinePoints: "0,20 15,18 30,22 45,14 60,16 75,8", category: "Operations", description: "All production shipment records" },
+    { id: "shipments", title: "Total shipments", value: metricValue(production.shipmentStats.total), change: metricState, isPositive: true, sparklinePoints: "0,20 15,18 30,22 45,14 60,16 75,8", category: "Operations", description: "All shipment records" },
     { id: "active", title: "Active shipments", value: metricValue(activeShipments), change: metricState, isPositive: true, sparklinePoints: "0,22 15,20 30,18 45,20 60,12 75,10", category: "Operations", description: "All shipments not delivered, cancelled, or returned" },
     { id: "delayed", title: "Delayed shipments", value: metricValue(production.shipmentStats.delayed), change: metricState, isPositive: false, sparklinePoints: "0,10 15,12 30,9 45,16 60,14 75,20", category: "Exceptions", description: "All shipments past their expected delivery date" },
     { id: "exceptions", title: "Open exceptions", value: metricValue(production.shipmentStats.statuses.exception ?? 0), change: metricState, isPositive: false, sparklinePoints: "0,20 15,17 30,18 45,12 60,14 75,10", category: "Exceptions", description: "Shipment records currently in exception" },
-    { id: "pickups", title: "Open pickups", value: metricValue(production.pickups.filter((pickup) => !["completed", "cancelled", "Completed", "Cancelled"].includes(String(pickup.status ?? ""))).length), change: metricState, isPositive: true, sparklinePoints: "0,22 15,18 30,20 45,15 60,13 75,8", category: "Operations", description: "Open production pickup requests" },
-    { id: "billing", title: "Pending billing", value: metricValue(production.billing.filter((item) => String(item.status ?? "").toLowerCase() === "pending").length), change: metricState, isPositive: false, sparklinePoints: "0,18 15,18 30,16 45,13 60,15 75,11", category: "Finance", description: "Pending production billing records" },
+    { id: "pickups", title: "Open pickups", value: metricValue(production.pickups.filter((pickup) => !["completed", "cancelled", "Completed", "Cancelled"].includes(String(pickup.status ?? ""))).length), change: metricState, isPositive: true, sparklinePoints: "0,22 15,18 30,20 45,15 60,13 75,8", category: "Operations", description: "Open pickup requests" },
+    { id: "billing", title: "Pending billing", value: metricValue(production.billing.filter((item) => String(item.status ?? "").toLowerCase() === "pending").length), change: metricState, isPositive: false, sparklinePoints: "0,18 15,18 30,16 45,13 60,15 75,11", category: "Finance", description: "Pending billing records" },
   ];
 
   // Filtered active KPI objects (limit to max 5)
@@ -290,7 +290,7 @@ export default function Dashboard() {
 
   return (
     <div className="pss-page-enter w-full space-y-4">
-      {productionError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"><span>{hasLastKnownProduction ? `Showing last successful dashboard data. Refresh failed: ${productionError}` : `${productionError} Metrics are unavailable until the connection succeeds.`}<details className="mt-1 w-full text-[11px] text-muted-foreground"><summary className="cursor-pointer font-semibold">Technical details</summary><p className="mt-1 break-words">{productionTechnicalError || "No additional diagnostic message."}{productionRequestId ? ` · Request ID: ${productionRequestId}` : ""}</p></details></span><button type="button" onClick={handleRefresh} disabled={isRefreshing} className="rounded-md border border-destructive/30 px-2.5 py-1.5 font-semibold hover:bg-destructive/10 disabled:opacity-50">{isRefreshing ? "Retrying…" : "Retry dashboard"}</button></div>}
+      {productionError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"><span>{hasLastKnownProduction ? `Showing last successful dashboard data. Refresh failed: ${productionError}` : `${productionError} Metrics are unavailable until the connection succeeds.`}<p className="mt-1">Please try again.</p></span><button type="button" onClick={handleRefresh} disabled={isRefreshing} className="rounded-md border border-destructive/30 px-2.5 py-1.5 font-semibold hover:bg-destructive/10 disabled:opacity-50">{isRefreshing ? "Retrying…" : "Retry dashboard"}</button></div>}
       {/* Header Section */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span className="font-semibold text-foreground">{productionReady || hasLastKnownProduction ? totalShipments : "—"} shipments</span><span>·</span><span>{productionReady || hasLastKnownProduction ? activeShipments : "—"} active</span><span className="text-amber-600 dark:text-amber-300">· {productionReady || hasLastKnownProduction ? delayedShipments : "—"} delayed</span><span className="text-destructive">· {productionReady || hasLastKnownProduction ? exceptionShipments : "—"} exception{(productionReady || hasLastKnownProduction) && exceptionShipments === 1 ? "" : "s"}</span></div>
@@ -561,7 +561,7 @@ export default function Dashboard() {
                   </li>
                 );
               })}
-              {!activities.length && <li className="px-2.5 py-8 text-center text-xs text-muted-foreground">No production activity recorded yet.</li>}
+              {!activities.length && <li className="px-2.5 py-8 text-center text-xs text-muted-foreground">No recent activity yet.</li>}
             </ol>
           </div>
         </div>

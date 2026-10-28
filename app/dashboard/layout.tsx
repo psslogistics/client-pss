@@ -245,8 +245,8 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
           </div>
           {!collapsed && (
             <div className="text-center">
-              <div className="max-w-[180px] truncate text-[15px] font-semibold tracking-tight">{profile.display_name || "Client account"}</div>
-              <div className="max-w-[180px] truncate text-[13px] text-sidebar-foreground/50">{profile.email || "Secure Supabase session"}</div>
+              <div className="max-w-[180px] truncate text-[15px] font-semibold tracking-tight">{profile.display_name || "Account"}</div>
+              <div className="max-w-[180px] truncate text-[13px] text-sidebar-foreground/50">{profile.email || "Email unavailable"}</div>
             </div>
           )}
         </SidebarHeader>

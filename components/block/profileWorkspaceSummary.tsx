@@ -6,7 +6,7 @@ const cards = [
   { icon: ShieldCheck, title: "Verification", detail: "KYC review and approval are managed by PSS.", status: "Support review" },
   { icon: CreditCard, title: "Bank accounts", detail: "Bank details are never displayed after secure submission.", status: "Secure setup" },
   { icon: KeyRound, title: "API & webhooks", detail: "Secrets remain server-side and are shown only as masked status.", status: "Master managed" },
-  { icon: ClipboardCheck, title: "Integrations", detail: "Courier capability and health come from the production Worker.", status: "Live status" },
+  { icon: ClipboardCheck, title: "Integrations", detail: "Courier availability and service status.", status: "Live status" },
 ] as const;
 
 export default function ProfileWorkspaceSummary() {

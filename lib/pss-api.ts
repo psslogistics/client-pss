@@ -122,7 +122,7 @@ export type PssErrorDetails = {
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" ? value as Record<string, unknown> : {};
 
 /** Convert API failures into a stable, user-safe state without losing diagnostic metadata. */
-export function getPssErrorDetails(error: unknown, fallback = "The production request could not be completed."): PssErrorDetails {
+export function getPssErrorDetails(error: unknown, fallback = "The request could not be completed."): PssErrorDetails {
   const source = error instanceof PssApiError ? { ...record(error.payload), status: error.status } : record(error);
   const nestedError = record(source.error);
   const technicalMessage = typeof nestedError.technical_message === "string" ? nestedError.technical_message : typeof (error as Error | undefined)?.message === "string" ? (error as Error).message : fallback;
@@ -132,7 +132,7 @@ export function getPssErrorDetails(error: unknown, fallback = "The production re
   const requestId = [source.request_id, source.requestId, nestedError.request_id, nestedError.requestId].find((value) => typeof value === "string") as string | undefined;
   const normalized = technicalMessage.toLowerCase();
   const category: PssErrorCategory = PssErrorCategoryValues.includes(String(contractCategory) as PssErrorCategory) ? contractCategory as PssErrorCategory : status === 401 || normalized.includes("session has expired") ? "auth" : status === 403 ? "permission" : normalized.includes("not configured") || normalized.includes("configuration") ? "configuration" : providerCode || normalized.includes("provider") || normalized.includes("delhivery") ? "provider" : status >= 500 ? "server" : status === 0 ? "network" : "request";
-  const userMessage = typeof nestedError.user_safe_message === "string" ? nestedError.user_safe_message : category === "auth" ? "Your session has expired. Please sign in again." : category === "permission" ? "You do not have permission to complete this operation." : category === "configuration" ? "This production connection is not configured yet." : category === "provider" ? "The courier provider could not complete this operation." : category === "network" || category === "server" ? "Production data is temporarily unavailable. Existing records are unchanged." : technicalMessage === "The PSS API request failed." ? fallback : technicalMessage;
+  const userMessage = typeof nestedError.user_safe_message === "string" ? nestedError.user_safe_message : category === "auth" ? "Your session has expired. Please sign in again." : category === "permission" ? "You do not have permission to complete this operation." : category === "configuration" ? "This service is not available yet." : category === "provider" ? "The courier provider could not complete this operation." : category === "network" || category === "server" ? "We could not load the latest data. Please try again." : technicalMessage === "The PSS API request failed." ? fallback : technicalMessage;
   return { category, message: userMessage, technicalMessage, providerCode, requestId, retryable: typeof nestedError.retryable === "boolean" ? nestedError.retryable : category === "network" || category === "server" || category === "provider" || status === 408 || status === 409 || status === 429, staleData: typeof nestedError.stale_data === "boolean" ? nestedError.stale_data : false };
 }
 
@@ -198,7 +198,7 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
     }
     return payload;
   } catch (caught) {
-    if (caught instanceof DOMException && caught.name === "AbortError") throw new Error("The production API timed out. Check the Worker deployment and try again.");
+    if (caught instanceof DOMException && caught.name === "AbortError") throw new Error("The request took too long. Please try again.");
     throw caught;
   } finally { globalThis.clearTimeout(timeout); }
   })();
