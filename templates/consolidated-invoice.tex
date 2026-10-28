@@ -1,0 +1,55 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=18mm]{geometry}
+\usepackage{array,booktabs,longtable,xcolor,tabularx}
+\usepackage[T1]{fontenc}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\definecolor{pssblue}{HTML}{0F3958}
+\definecolor{softblue}{HTML}{F8FAFC}
+\pagestyle{plain}
+
+\newcommand{\invoiceNo}{BILL-YYYYMMDD-15D}
+\newcommand{\billingPeriod}{Last 15 days}
+\newcommand{\sellerAddress}{123 Logistics Park, Industrial Area, New Delhi, Delhi 110001}
+\newcommand{\buyerAddress}{456 Client Business Park, Gurugram, Haryana 122001}
+
+\begin{document}
+\noindent\colorbox{pssblue}{\parbox{\dimexpr\textwidth-2\fboxsep}{\color{white}\Large\textbf{PSS LOGISTICS}\hfill\normalsize CONSOLIDATED TAX INVOICE\\[-1mm]\small\invoiceNo\hfill Billing period: \billingPeriod}}
+
+\vspace{8mm}
+\noindent\begin{tabularx}{\textwidth}{@{}X X@{}}
+\textbf{From} & \textbf{Bill to}\\
+\fcolorbox{black!10}{softblue}{\parbox{0.92\linewidth}{PSS Logistics\\\sellerAddress\\GSTIN: EXAMPLE-GSTIN\\billing@example.com}} &
+\fcolorbox{black!10}{softblue}{\parbox{0.92\linewidth}{Client Company\\\buyerAddress\\GSTIN: CLIENT-EXAMPLE-GSTIN}}
+\end{tabularx}
+
+\vspace{7mm}
+\textbf{Shipment articles}
+
+\vspace{2mm}
+\begin{longtable}{>{\raggedright\arraybackslash}p{7mm} >{\raggedright\arraybackslash}p{38mm} >{\raggedright\arraybackslash}p{66mm} >{\raggedleft\arraybackslash}p{24mm} >{\raggedleft\arraybackslash}p{25mm}}
+\toprule
+\textbf{\#} & \textbf{Shipment / invoice} & \textbf{Route and consignee} & \textbf{Boxes / weight} & \textbf{Amount}\\
+\midrule
+% Generated rows: invoice number, LR/LRN, date, route, consignee, pieces, weight, amount.
+\endhead
+\bottomrule
+\end{longtable}
+
+\vspace{4mm}
+\begin{flushright}
+\begin{tabular}{lr}
+Subtotal & INR 0.00\\
+Tax / additional charges & Included in shipment amounts\\
+\midrule
+\textbf{Grand total} & \textbf{INR 0.00}\\
+\end{tabular}
+\end{flushright}
+
+\vspace{3mm}
+\textbf{Amount chargeable in words:} INR Zero Only\\
+Payment terms: As agreed with the client account.
+
+\vfill
+\small\color{gray}PSS Logistics | Computer generated invoice | Example addresses pending configuration\hfill Page \thepage
+\end{document}

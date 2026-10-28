@@ -37,6 +37,7 @@ export type BillingExportRecord = {
 
 const money = (value: unknown) => Number(value ?? 0).toFixed(2);
 const text = (value: unknown) => String(value ?? "").trim();
+const shipmentInvoiceNumber = (record: BillingExportRecord) => record.lr_number ? `INV-${text(record.lr_number).replace(/[^A-Za-z0-9-]/g, "-")}` : text(record.invoice_number ?? record.id);
 const addressText = (value: Record<string, unknown> | null | undefined) => value ? [value.name, value.line ?? value.address_line1 ?? value.address, value.city, value.state, value.pincode ?? value.pin].map(text).filter(Boolean).join(", ") : "";
 const dimensionsText = (value: BillingExportRecord["dimensions"]) => {
   if (!value) return "";
@@ -48,11 +49,14 @@ const taxFor = (record: BillingExportRecord) => linesFor(record).filter((line) =
 const breakupText = (record: BillingExportRecord) => linesFor(record).map((line) => `${line.label}${line.marker ?? ""}: Rs. ${money(line.amount)}`).join(" | ");
 const isExcluded = (record: BillingExportRecord) => ["void", "cancelled", "canceled"].includes(text(record.status).toLowerCase());
 const downloadBytes = (bytes: ArrayBuffer, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([bytes], { type })); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
+const exampleSeller = "PSS Logistics\n123 Logistics Park, Industrial Area\nNew Delhi, Delhi 110001\nGSTIN: EXAMPLE-GSTIN\nEmail: billing@example.com";
+const exampleBuyer = "Client Company\n456 Client Business Park\nGurugram, Haryana 122001\nGSTIN: CLIENT-EXAMPLE-GSTIN";
+const amountInWords = (value: number) => `INR ${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.max(0, Math.round(value)))} Only`;
 
 function makeXlsx(records: BillingExportRecord[], days: number) {
   const headers = ["Invoice", "Shipment ID", "PSS Reference", "LR / LRN", "Tracking", "From", "To", "Consignor", "Consignee", "Origin address", "Destination address", "Pieces", "Weight (kg)", "Chargeable weight (kg)", "Dimensions", "Declared value", "Billing date", "Status", "Due date", "Charge breakup", "Tax", "Adjustments", "Amendments", "Total"];
   const rows: WorkbookCell[][] = records.map((record) => [
-    record.invoice_number ?? record.id, record.shipment_id, record.shipment_pss_reference, record.lr_number, record.tracking_number,
+    shipmentInvoiceNumber(record), record.shipment_id, record.shipment_pss_reference, record.lr_number, record.tracking_number,
     record.shipment_origin, record.shipment_destination, text(record.shipment_origin_address?.name), record.shipment_consignee ?? text(record.shipment_destination_address?.name),
     addressText(record.shipment_origin_address), addressText(record.shipment_destination_address), record.pieces ?? null, record.total_weight_kg ?? null,
     record.pricing?.chargeableWeightKg ?? null, dimensionsText(record.dimensions), record.declared_value ?? null, record.created_at, record.status, record.due_date ?? null,
@@ -67,34 +71,59 @@ function makeXlsx(records: BillingExportRecord[], days: number) {
 }
 
 function makeSummaryPdf(records: BillingExportRecord[], days: number) {
-  const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
-  const margin = 28;
+  const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
+  const margin = 34;
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const billable = records.filter((record) => !isExcluded(record));
   const excluded = records.length - billable.length;
   const total = billable.reduce((sum, record) => sum + Number(record.amount || 0), 0);
-  const generated = formatDate(new Date().toISOString());
-  pdf.setProperties({ title: `PSS Logistics Billing - Last ${days} days`, subject: "Client billing export", creator: "PSS Logistics" });
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(18); pdf.setTextColor(23, 32, 51); pdf.text("PSS Logistics - Billing Summary", margin, 38);
-  pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(71, 85, 105); pdf.text(`Period: last ${days} days | Generated: ${generated}`, margin, 55);
-  pdf.setFontSize(10); pdf.setTextColor(23, 32, 51); pdf.text(`Records: ${records.length} | Billable: ${billable.length} | Excluded: ${excluded} | Final billed total: Rs. ${money(total)}`, margin, 78);
+  const generatedAt = new Date();
+  const generated = formatDate(generatedAt.toISOString());
+  const cycleNumber = `BILL-${generatedAt.toISOString().slice(0, 10).replaceAll("-", "")}-${days}D`;
+  pdf.setProperties({ title: `PSS Logistics Billing Invoice ${cycleNumber}`, subject: "Consolidated client tax invoice", creator: "PSS Logistics" });
+  const drawHeader = () => {
+    pdf.setFillColor(15, 57, 88); pdf.rect(0, 0, pageWidth, 74, "F");
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(20); pdf.setTextColor(255, 255, 255); pdf.text("PSS LOGISTICS", margin, 32);
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.text("CONSOLIDATED TAX INVOICE", margin, 49);
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.text(cycleNumber, pageWidth - margin, 30, { align: "right" });
+    pdf.setFont("helvetica", "normal"); pdf.text(`Billing period: Last ${days} days`, pageWidth - margin, 46, { align: "right" });
+  };
+  drawHeader();
+  pdf.setTextColor(30, 41, 59); pdf.setFont("helvetica", "normal"); pdf.setFontSize(8);
+  pdf.text("From", margin, 98); pdf.text("Bill to", pageWidth / 2 + 8, 98);
+  pdf.setDrawColor(203, 213, 225); pdf.setFillColor(248, 250, 252); pdf.roundedRect(margin, 106, pageWidth / 2 - margin - 8, 84, 5, 5, "FD"); pdf.roundedRect(pageWidth / 2 + 8, 106, pageWidth / 2 - margin - 8, 84, 5, 5, "FD");
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.text(exampleSeller.split("\n"), margin + 10, 122); pdf.text(exampleBuyer.split("\n"), pageWidth / 2 + 18, 122);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(15, 57, 88); pdf.text("Invoice details", margin, 214);
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(30, 41, 59); pdf.text(`Invoice number: ${cycleNumber}`, margin, 230); pdf.text(`Invoice date: ${generated}`, margin, 244); pdf.text(`Shipments included: ${billable.length}`, pageWidth / 2 + 8, 230); pdf.text(`Excluded records: ${excluded}`, pageWidth / 2 + 8, 244);
   autoTable(pdf, {
-    startY: 96,
-    head: [["Invoice", "LR / LRN", "From -> To", "Pieces", "Weight", "Status", "Billing date", "Total"]],
-    body: records.map((record) => [text(record.invoice_number ?? record.id), text(record.lr_number ?? "Not available"), `${text(record.shipment_origin)} -> ${text(record.shipment_destination)}`, text(record.pieces ?? ""), `${text(record.total_weight_kg ?? "")} kg`, text(record.status), formatDate(record.created_at), `Rs. ${money(record.amount)}`]),
-    margin: { left: margin, right: margin, top: 74, bottom: 32 },
+    startY: 264,
+    head: [["#", "Shipment / invoice", "Route and consignee", "Boxes / weight", "Amount"]],
+    body: billable.map((record, index) => {
+      const lr = text(record.lr_number ?? "Not available");
+      const invoice = shipmentInvoiceNumber(record);
+      return [String(index + 1), `${invoice}\nLR / LRN: ${lr}\nDate: ${formatDate(record.shipment_created_at ?? record.created_at)}`, `${text(record.shipment_origin) || "Not provided"} -> ${text(record.shipment_destination) || "Not provided"}\nConsignee: ${text(record.shipment_consignee) || "Not provided"}`, `${text(record.pieces ?? 1)} boxes\n${text(record.total_weight_kg ?? "Not recorded")} kg`, `Rs. ${money(record.amount)}`];
+    }),
+    margin: { left: margin, right: margin, top: 74, bottom: 54 },
     tableWidth: pageWidth - margin * 2,
-    styles: { font: "helvetica", fontSize: 8, cellPadding: 5, overflow: "linebreak", lineColor: [203, 213, 225], lineWidth: 0.35, textColor: [30, 41, 59] },
-    headStyles: { fillColor: [29, 78, 216], textColor: 255, fontStyle: "bold", halign: "left" },
+    styles: { font: "helvetica", fontSize: 7.5, cellPadding: 6, minCellHeight: 34, overflow: "linebreak", lineColor: [203, 213, 225], lineWidth: 0.35, textColor: [30, 41, 59], valign: "middle" },
+    headStyles: { fillColor: [15, 57, 88], textColor: 255, fontStyle: "bold", halign: "left" },
     alternateRowStyles: { fillColor: [245, 248, 252] },
-    columnStyles: { 0: { cellWidth: 82 }, 1: { cellWidth: 76 }, 2: { cellWidth: 210 }, 3: { cellWidth: 46, halign: "right" }, 4: { cellWidth: 66, halign: "right" }, 5: { cellWidth: 70 }, 6: { cellWidth: 82 }, 7: { cellWidth: 78, halign: "right" } },
+    columnStyles: { 0: { cellWidth: 24, halign: "center" }, 1: { cellWidth: 140 }, 2: { cellWidth: 170 }, 3: { cellWidth: 64, halign: "right" }, 4: { cellWidth: 76, halign: "right" } },
     didDrawPage: (hookData) => {
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(100, 116, 139);
-      pdf.text("PSS Logistics | Confidential client billing export", margin, pageHeight - 16);
-      pdf.text(`Page ${hookData.pageNumber}`, pageWidth - margin - 42, pageHeight - 16);
+      if (hookData.pageNumber > 1) drawHeader();
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(100, 116, 139); pdf.text("PSS Logistics | Computer generated invoice | Example addresses pending configuration", margin, pageHeight - 24); pdf.text(`Page ${hookData.pageNumber}`, pageWidth - margin, pageHeight - 24, { align: "right" });
     },
   });
+  const finalY = (pdf as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 264;
+  const totalsY = finalY + 18;
+  const needsTotalsPage = totalsY + 92 > pageHeight - 40;
+  if (needsTotalsPage) { pdf.addPage(); drawHeader(); }
+  const y = needsTotalsPage ? 104 : totalsY;
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(15, 57, 88); pdf.text("Amount summary", margin, y);
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(30, 41, 59); pdf.text("Subtotal", pageWidth - margin - 128, y + 18); pdf.text(`Rs. ${money(total)}`, pageWidth - margin, y + 18, { align: "right" }); pdf.text("Tax / additional charges", pageWidth - margin - 128, y + 34); pdf.text("Included in shipment amounts", pageWidth - margin, y + 34, { align: "right" });
+  pdf.setDrawColor(15, 57, 88); pdf.line(pageWidth - margin - 170, y + 42, pageWidth - margin, y + 42); pdf.setFont("helvetica", "bold"); pdf.text("Grand total", pageWidth - margin - 128, y + 58); pdf.text(`Rs. ${money(total)}`, pageWidth - margin, y + 58, { align: "right" });
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.text(`Amount chargeable in words: ${amountInWords(total)}`, margin, y + 76); pdf.text("Payment terms: As agreed with the client account.", margin, y + 90);
   return pdf.output("arraybuffer");
 }
 
@@ -103,7 +132,7 @@ export function downloadBillingExport(records: BillingExportRecord[], days: numb
   const pdf = new Uint8Array(makeSummaryPdf(records, days));
   const archive = zipSync({
     [`PSS-Billing-Last-${days}-Days.xlsx`]: xlsx,
-    [`PSS-Billing-Last-${days}-Days.pdf`]: pdf,
+    [`PSS-Billing-${days}-Day-Invoice.pdf`]: pdf,
   });
   downloadBytes(archive.buffer, `PSS-Billing-Last-${days}-Days.zip`, "application/zip");
 }
