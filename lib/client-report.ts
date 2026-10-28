@@ -3,7 +3,7 @@ import type { ExceptionCase, NdrCase } from "@/lib/client-operations-data";
 import type { WorkflowPickup } from "@/lib/client-workflow-store";
 
 export type ClientReportData = {
-  shipments: (BillingRecord & { edd?: string; delayDays?: number })[];
+  shipments: (BillingRecord & { edd?: string; delayDays?: number; mode?: string })[];
   pickups: WorkflowPickup[];
   ndr: NdrCase[];
   exceptions: ExceptionCase[];

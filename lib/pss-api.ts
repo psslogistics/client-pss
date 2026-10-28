@@ -147,9 +147,10 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
   if (!baseUrl) throw new Error("PSS API is not configured.");
   const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes((init.method ?? "GET").toUpperCase());
   const providerRefresh = !mutating && path.includes("refresh_provider=1");
+  const bypassCache = !mutating && init.cache === "no-store";
   const cacheKey = `${session.user.id}:${path}`;
   let staleValue: T | undefined;
-  if (!mutating && !providerRefresh) {
+  if (!mutating && !providerRefresh && !bypassCache) {
     const cached = getCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.value as T;
     if (isSessionCachedRead(path)) {
@@ -187,7 +188,7 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
     const payload = await response.json().catch(() => ({})) as T & { error?: { message?: string; user_safe_message?: string } };
     if (response.status === 401) { await expireAuthSession(); throw new PssApiError("Your session has expired. Please sign in again.", 401, payload); }
     if (!response.ok) throw new PssApiError(payload.error?.user_safe_message || payload.error?.message || "The PSS API request failed.", response.status, payload);
-    if (!mutating && !providerRefresh) {
+    if (!mutating && !providerRefresh && !bypassCache) {
       const expiresAt = Date.now() + GET_CACHE_TTL_MS;
       getCache.set(cacheKey, { expiresAt, value: payload });
       if (isSessionCachedRead(path)) {
@@ -202,7 +203,7 @@ export async function pssApi<T>(path: string, init: RequestInit = {}): Promise<T
     throw caught;
   } finally { globalThis.clearTimeout(timeout); }
   })();
-  if (!mutating) {
+  if (!mutating && !bypassCache) {
     getInFlight.set(cacheKey, request);
     void request.finally(() => getInFlight.delete(cacheKey)).catch(() => undefined);
   }

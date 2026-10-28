@@ -1,7 +1,7 @@
-import { zipSync } from "fflate";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate } from "@/lib/date-format";
+import { downloadWorkbook, type WorkbookCell } from "@/lib/xlsx";
 
 export type BillingExportRecord = {
   id: string;
@@ -40,48 +40,64 @@ const addressText = (value: Record<string, unknown> | null | undefined) => value
 const dimensionsText = (value: BillingExportRecord["dimensions"]) => {
   if (!value) return "";
   const list = Array.isArray(value) ? value : [value];
-  return list.map((item) => `${text(item.length)} × ${text(item.width ?? item.breadth)} × ${text(item.height)}${text(item.unit) ? ` ${text(item.unit)}` : ""}`).filter((item) => item.replace(/[ ×]/g, "")).join("; ");
+  return list.map((item) => `${text(item.length)} x ${text(item.width ?? item.breadth)} x ${text(item.height)}${text(item.unit) ? ` ${text(item.unit)}` : ""}`).filter((item) => item.replace(/[ x]/g, "")).join("; ");
 };
-const linesFor = (record: BillingExportRecord) => (record.line_items?.length ? [...record.line_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)) : record.pricing?.lines ?? []);
+const linesFor = (record: BillingExportRecord) => record.line_items?.length ? [...record.line_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)) : record.pricing?.lines ?? [];
 const taxFor = (record: BillingExportRecord) => linesFor(record).filter((line) => line.code.toLowerCase().includes("gst") || line.code.toLowerCase().includes("tax")).reduce((sum, line) => sum + Number(line.amount || 0), 0);
-const breakupText = (record: BillingExportRecord) => linesFor(record).map((line) => `${line.label}${line.marker ?? ""}: ₹${money(line.amount)}`).join(" | ");
-const xmlEscape = (value: unknown) => text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+const breakupText = (record: BillingExportRecord) => linesFor(record).map((line) => `${line.label}${line.marker ?? ""}: Rs. ${money(line.amount)}`).join(" | ");
+const isExcluded = (record: BillingExportRecord) => ["void", "cancelled", "canceled"].includes(text(record.status).toLowerCase());
+const downloadBytes = (bytes: ArrayBuffer, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([bytes], { type })); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
 
 function makeXlsx(records: BillingExportRecord[], days: number) {
   const headers = ["Invoice", "Shipment ID", "PSS Reference", "LR / LRN", "Tracking", "From", "To", "Consignor", "Consignee", "Origin address", "Destination address", "Pieces", "Weight (kg)", "Chargeable weight (kg)", "Dimensions", "Declared value", "Billing date", "Status", "Due date", "Charge breakup", "Tax", "Adjustments", "Amendments", "Total"];
-  const rows = records.map((record) => [
+  const rows: WorkbookCell[][] = records.map((record) => [
     record.invoice_number ?? record.id, record.shipment_id, record.shipment_pss_reference, record.lr_number, record.tracking_number,
-    record.shipment_origin, record.shipment_destination, record.shipment_origin_address?.name, record.shipment_consignee ?? record.shipment_destination_address?.name,
-    addressText(record.shipment_origin_address), addressText(record.shipment_destination_address), record.pieces, record.total_weight_kg,
-    record.pricing?.chargeableWeightKg, dimensionsText(record.dimensions), record.declared_value, record.created_at, record.status, record.due_date,
-    breakupText(record), money(taxFor(record)), record.adjustments?.map((item) => `${item.component_code}: ${money(item.previous_amount)} → ${money(item.new_amount)} (${item.reason})`).join(" | "),
-    record.amendments?.map((item) => `${item.amendment_type}: ${money(item.previous_amount)} → ${money(item.new_amount)} (${item.reason})`).join(" | "), money(record.amount),
+    record.shipment_origin, record.shipment_destination, text(record.shipment_origin_address?.name), record.shipment_consignee ?? text(record.shipment_destination_address?.name),
+    addressText(record.shipment_origin_address), addressText(record.shipment_destination_address), record.pieces ?? null, record.total_weight_kg ?? null,
+    record.pricing?.chargeableWeightKg ?? null, dimensionsText(record.dimensions), record.declared_value ?? null, record.created_at, record.status, record.due_date ?? null,
+    breakupText(record), taxFor(record), record.adjustments?.map((item) => `${item.component_code}: ${money(item.previous_amount)} -> ${money(item.new_amount)} (${item.reason})`).join(" | "),
+    record.amendments?.map((item) => `${item.amendment_type}: ${money(item.previous_amount)} -> ${money(item.new_amount)} (${item.reason})`).join(" | "), record.amount,
+  ] as WorkbookCell[]);
+  const billableTotal = records.filter((record) => !isExcluded(record)).reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  downloadWorkbook(`PSS-Billing-Last-${days}-Days.xlsx`, [
+    { name: "Billing summary", headers: ["Field", "Value"], rows: [["Period", `Last ${days} days`], ["Generated at", new Date().toISOString()], ["Records exported", records.length], ["Billable records", records.filter((record) => !isExcluded(record)).length], ["Excluded records", records.filter(isExcluded).length], ["Final billed total", billableTotal]], columnWidths: [24, 34], currencyColumns: [1], autoFilter: false },
+    { name: `Billing ${days} days`, headers, rows, columnWidths: [18, 22, 18, 16, 18, 20, 20, 20, 22, 34, 34, 10, 14, 20, 24, 16, 22, 14, 22, 42, 14, 42, 42, 16], numericColumns: [11, 12, 13], currencyColumns: [15, 20, 23], dateColumns: [16, 18] },
   ]);
-  const allRows = [headers, ...rows];
-  const sheetRows = allRows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((value, colIndex) => `<c r="${String.fromCharCode(65 + (colIndex % 26))}${rowIndex + 1}" t="inlineStr"><is><t>${xmlEscape(value)}</t></is></c>`).join("")}</row>`).join("");
-  const files: Record<string, Uint8Array> = {
-    "[Content_Types].xml": new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`),
-    "_rels/.rels": new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
-    "xl/workbook.xml": new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Billing ${days} days" sheetId="1" r:id="rId1"/></sheets></workbook>`),
-    "xl/_rels/workbook.xml.rels": new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`),
-    "xl/worksheets/sheet1.xml": new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows}</sheetData></worksheet>`),
-  };
-  return zipSync(files, { level: 6 });
-}
-
-function download(bytes: Uint8Array, filename: string, type: string) {
-  const blob = new Blob([bytes.buffer as ArrayBuffer], { type }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function makeSummaryPdf(records: BillingExportRecord[], days: number) {
-  const pdf = new jsPDF({ unit: "pt", format: "a4" }); const total = records.filter((record) => !["void", "cancelled"].includes(record.status)).reduce((sum, record) => sum + Number(record.amount || 0), 0); const generated = formatDate(new Date().toISOString());
-  pdf.setFontSize(18); pdf.text("PSS Logistics Billing Summary", 40, 44); pdf.setFontSize(9); pdf.text(`Last ${days} days · Generated ${generated}`, 40, 61); pdf.setFontSize(11); pdf.text(`Shipments: ${records.length}`, 40, 88); pdf.text(`Final billed total: ₹${money(total)}`, 40, 106);
-  autoTable(pdf, { startY: 126, head: [["Invoice", "LR / LRN", "From → To", "Weight", "Status", "Total"]], body: records.map((record) => [text(record.invoice_number ?? record.id), text(record.lr_number ?? "Not available"), `${text(record.shipment_origin)} → ${text(record.shipment_destination)}`, `${text(record.total_weight_kg)} kg`, text(record.status), `₹${money(record.amount)}`]), margin: { left: 40, right: 40 }, styles: { font: "helvetica", fontSize: 7, cellPadding: 4, overflow: "linebreak" }, headStyles: { fillColor: [37, 99, 235], textColor: 255 }, alternateRowStyles: { fillColor: [245, 248, 252] } });
+  const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
+  const margin = 28;
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const billable = records.filter((record) => !isExcluded(record));
+  const excluded = records.length - billable.length;
+  const total = billable.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  const generated = formatDate(new Date().toISOString());
+  pdf.setProperties({ title: `PSS Logistics Billing - Last ${days} days`, subject: "Client billing export", creator: "PSS Logistics" });
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(18); pdf.setTextColor(23, 32, 51); pdf.text("PSS Logistics - Billing Summary", margin, 38);
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(71, 85, 105); pdf.text(`Period: last ${days} days | Generated: ${generated}`, margin, 55);
+  pdf.setFontSize(10); pdf.setTextColor(23, 32, 51); pdf.text(`Records: ${records.length} | Billable: ${billable.length} | Excluded: ${excluded} | Final billed total: Rs. ${money(total)}`, margin, 78);
+  autoTable(pdf, {
+    startY: 96,
+    head: [["Invoice", "LR / LRN", "From -> To", "Pieces", "Weight", "Status", "Billing date", "Total"]],
+    body: records.map((record) => [text(record.invoice_number ?? record.id), text(record.lr_number ?? "Not available"), `${text(record.shipment_origin)} -> ${text(record.shipment_destination)}`, text(record.pieces ?? ""), `${text(record.total_weight_kg ?? "")} kg`, text(record.status), formatDate(record.created_at), `Rs. ${money(record.amount)}`]),
+    margin: { left: margin, right: margin, top: 74, bottom: 32 },
+    tableWidth: pageWidth - margin * 2,
+    styles: { font: "helvetica", fontSize: 8, cellPadding: 5, overflow: "linebreak", lineColor: [203, 213, 225], lineWidth: 0.35, textColor: [30, 41, 59] },
+    headStyles: { fillColor: [29, 78, 216], textColor: 255, fontStyle: "bold", halign: "left" },
+    alternateRowStyles: { fillColor: [245, 248, 252] },
+    columnStyles: { 0: { cellWidth: 82 }, 1: { cellWidth: 76 }, 2: { cellWidth: 210 }, 3: { cellWidth: 46, halign: "right" }, 4: { cellWidth: 66, halign: "right" }, 5: { cellWidth: 70 }, 6: { cellWidth: 82 }, 7: { cellWidth: 78, halign: "right" } },
+    didDrawPage: (hookData) => {
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(100, 116, 139);
+      pdf.text("PSS Logistics | Confidential client billing export", margin, pageHeight - 16);
+      pdf.text(`Page ${hookData.pageNumber}`, pageWidth - margin - 42, pageHeight - 16);
+    },
+  });
   return pdf.output("arraybuffer");
 }
 
 export function downloadBillingExport(records: BillingExportRecord[], days: number) {
-  const suffix = `Last-${days}-Days`;
-  download(makeXlsx(records, days), `PSS-Billing-${suffix}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  download(new Uint8Array(makeSummaryPdf(records, days)), `PSS-Billing-${suffix}.pdf`, "application/pdf");
+  makeXlsx(records, days);
+  downloadBytes(makeSummaryPdf(records, days), `PSS-Billing-Last-${days}-Days.pdf`, "application/pdf");
 }
