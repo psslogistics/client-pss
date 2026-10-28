@@ -9,6 +9,7 @@ import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 const sizes = ["a4", "4x2", "4x2.5", "3x2"] as const;
 type LabelSize = (typeof sizes)[number];
 type LabelOption = { size: LabelSize; contentType: string; artifact: unknown; copies: number };
+type ArtifactEntry = { value: string; contentType: string };
 const sizeLabels: Record<LabelSize, string> = { a4: "A4", "4x2": "4 × 2 in", "4x2.5": "4 × 2.5 in", "3x2": "3 × 2 in" };
 
 const isPdfBase64 = (value: string) => {
@@ -34,6 +35,21 @@ const artifactBase64s = (value: unknown): string[] => {
   const record = value as Record<string, unknown>;
   const direct = ["content_base64", "base64", "data"].flatMap((key) => typeof record[key] === "string" ? [record[key]] : []);
   return direct.length ? direct : Object.values(record).flatMap(artifactBase64s);
+};
+
+// Delhivery's get_urls response can contain both raster box labels and a
+// provider-generated PDF/MPS document. Preserve the MIME type attached to
+// each individual asset; using the root type for every nested asset makes
+// pdf-lib try to decode a PDF as PNG (and fail with a generic UI error).
+const artifactEntries = (value: unknown, inheritedType = "application/octet-stream"): ArtifactEntry[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap((item) => artifactEntries(item, inheritedType));
+  if (typeof value !== "object") return [];
+  const item = value as Record<string, unknown>;
+  const contentType = artifactContentType(value) === "application/octet-stream" ? inheritedType : artifactContentType(value);
+  const direct = ["content_base64", "base64", "data"].flatMap((key) => typeof item[key] === "string" ? [{ value: item[key] as string, contentType }] : []);
+  if (direct.length) return direct;
+  return Object.values(item).flatMap((child) => artifactEntries(child, contentType));
 };
 
 const artifactContentType = (value: unknown): string => {
@@ -62,26 +78,26 @@ const physicalSizePoints: Record<LabelSize, [number, number]> = {
   "3x2": [3 * 72, 2 * 72],
 };
 
-const imageToPdf = async (reference: string, option: LabelOption, values: string[]) => {
+const imageToPdf = async (reference: string, option: LabelOption, entries: ArtifactEntry[]) => {
   const pdf = await PDFDocument.create();
   const [pageWidth, pageHeight] = physicalSizePoints[option.size];
-  const contentType = option.contentType.toLowerCase().split(";", 1)[0].trim();
   const isA4 = option.size === "a4";
   const pageMargin = isA4 ? 6 : 0;
   const slotGap = isA4 ? 6 : 0;
   const slotHeight = isA4 ? (pageHeight - (pageMargin * 2) - slotGap) / 2 : pageHeight;
   let page = pdf.addPage([pageWidth, pageHeight]);
-  for (const [index, value] of values.entries()) {
-    const bytes = Uint8Array.from(atob(value.replace(/^data:[^;]+;base64,/, "")), (character) => character.charCodeAt(0));
-    const image = contentType === "image/png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+  for (const [index, entry] of entries.entries()) {
+    const bytes = Uint8Array.from(atob(entry.value.replace(/^data:[^;]+;base64,/, "")), (character) => character.charCodeAt(0));
+    const entryType = entry.contentType.toLowerCase().split(";", 1)[0].trim();
+    const image = entryType === "image/png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
     const slotWidth = pageWidth - (pageMargin * 2);
     const scale = Math.min(slotWidth / image.width, slotHeight / image.height);
     const width = image.width * scale;
     const height = image.height * scale;
     const slotTop = pageHeight - pageMargin - (isA4 ? (index % 2) * (slotHeight + slotGap) : 0);
     page.drawImage(image, { x: (pageWidth - width) / 2, y: slotTop - slotHeight + (slotHeight - height) / 2, width, height });
-    if (isA4 && index % 2 === 1 && index < values.length - 1) page = pdf.addPage([pageWidth, pageHeight]);
-    if (!isA4 && index < values.length - 1) page = pdf.addPage([pageWidth, pageHeight]);
+    if (isA4 && index % 2 === 1 && index < entries.length - 1) page = pdf.addPage([pageWidth, pageHeight]);
+    if (!isA4 && index < entries.length - 1) page = pdf.addPage([pageWidth, pageHeight]);
   }
   const pdfBytes = await pdf.save({ useObjectStreams: false });
   const url = URL.createObjectURL(new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" }));
@@ -117,20 +133,29 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
         const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(shipmentId)}/label?size=${option.size}`);
         artifact = result.data?.artifact;
       }
-      const type = option.contentType || artifactContentType(artifact);
-      const normalizedType = type.toLowerCase().split(";", 1)[0].trim();
-      const values = artifactBase64s(artifact)
-      .map((value) => value.replace(/^data:[^;]+;base64,/, ""))
-      .filter((value) => value.length > 100 && (normalizedType === "application/pdf" ? isPdfBase64(value) : normalizedType === "image/png" || normalizedType === "image/jpeg"));
-      if (!values.length) throw new Error("Delhivery did not return a label for this size.");
-      if (normalizedType === "application/pdf") {
-        // Keep provider PDFs byte-for-byte when Delhivery returns one.
-        saveBase64(`delhivery-label-${reference}-${option.size}.pdf`, values[0], "application/pdf");
-      } else {
+      const entries = artifactEntries(artifact)
+        .map((entry) => ({ ...entry, value: entry.value.replace(/^data:[^;]+;base64,/, "") }))
+        .filter((entry) => {
+          const type = entry.contentType.toLowerCase().split(";", 1)[0].trim();
+          return entry.value.length > 100 && (type === "application/pdf" ? isPdfBase64(entry.value) : type === "image/png" || type === "image/jpeg");
+        });
+      const pdfEntries = entries.filter((entry) => entry.contentType.toLowerCase().split(";", 1)[0].trim() === "application/pdf");
+      const imageEntries = entries.filter((entry) => {
+        const type = entry.contentType.toLowerCase().split(";", 1)[0].trim();
+        return type === "image/png" || type === "image/jpeg";
+      });
+      if (!entries.length) throw new Error("Delhivery did not return a label for this size.");
+      if (pdfEntries.length && (option.size === "a4" || !imageEntries.length)) {
+        // Keep the provider PDF byte-for-byte when it is the authoritative
+        // A4/MPS document. This avoids re-encoding mixed provider assets.
+        saveBase64(`delhivery-label-${reference}-${option.size}.pdf`, pdfEntries[0].value, "application/pdf");
+      } else if (imageEntries.length) {
         // Delhivery's B2B label API returns PNG/JPEG assets. Embed those exact
         // source bytes in a PDF at the selected physical size. No rasterization,
         // JPEG recompression, sharpening, or crop is performed.
-        await imageToPdf(reference, option, values);
+        await imageToPdf(reference, option, imageEntries);
+      } else {
+        throw new Error("Delhivery did not return a usable label for this size.");
       }
       setOpen(false); onNotice?.(`Delhivery ${option.size} label downloaded.`);
     } catch (error) { onNotice?.(`Label download failed: ${getPssErrorDetails(error, "The Delhivery label could not be downloaded.").message}`); }
