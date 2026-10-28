@@ -746,7 +746,7 @@ export default function ShipmentBooking() {
     setBookingPhase("submitting");
     setBookingNotice("Submitting the booking to Delhivery…");
     try {
-      const result = await pssApi<{ data: { id: string; status: string; pricing_amount?: number; provider_status?: string; provider_sync_status?: string; retry_at?: string; message?: string; tracking_number?: string | null; lr_number?: string | null; master_awb?: string | null; provider_reference?: string | null } }>("/v1/shipments", {
+      const result = await pssApi<{ data: { id: string; status: string; pricing_amount?: number; provider_status?: string; provider_sync_status?: string; provider_pending?: boolean; provider_booking_id?: string | null; retry_at?: string; message?: string; tracking_number?: string | null; lr_number?: string | null; master_awb?: string | null; provider_reference?: string | null } }>("/v1/shipments", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
@@ -792,7 +792,7 @@ export default function ShipmentBooking() {
       });
       setBookingAmount(Number(result.data.pricing_amount ?? 0));
       const lrOrAwb = result.data.lr_number || result.data.master_awb || result.data.provider_reference || result.data.tracking_number;
-      const providerQueued = result.data.provider_status === "pending" || result.data.provider_sync_status === "pending" || result.data.retry_at === "scheduled";
+      const providerQueued = result.data.provider_pending === true || result.data.provider_status === "pending" || result.data.provider_sync_status === "pending" || result.data.retry_at === "scheduled";
       if (lrOrAwb) {
         setSingleProviderPending(false);
         setSingleCompleted(true);
@@ -806,7 +806,7 @@ export default function ShipmentBooking() {
         setSingleProviderPending(true);
         setSingleCompleted(true);
         setBookingPhase("idle");
-        setBookingNotice("Booking accepted by Delhivery. The LR/AWB is being published and will appear in All Shipments shortly.");
+        setBookingNotice(result.data.message || "Booking accepted by Delhivery. The LR/AWB is being published and will appear in All Shipments shortly.");
         void (async () => {
           for (let attempt = 0; attempt < 30; attempt += 1) {
             await new Promise<void>((resolve) => window.setTimeout(resolve, 3000));
