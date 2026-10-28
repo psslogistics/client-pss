@@ -106,6 +106,7 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number) {
     }),
     margin: { left: margin, right: margin, top: 74, bottom: 54 },
     tableWidth: pageWidth - margin * 2,
+    rowPageBreak: "avoid",
     styles: { font: "helvetica", fontSize: 7.5, cellPadding: 6, minCellHeight: 34, overflow: "linebreak", lineColor: [203, 213, 225], lineWidth: 0.35, textColor: [30, 41, 59], valign: "middle" },
     headStyles: { fillColor: [15, 57, 88], textColor: 255, fontStyle: "bold", halign: "left" },
     alternateRowStyles: { fillColor: [245, 248, 252] },
@@ -121,7 +122,7 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number) {
   if (needsTotalsPage) { pdf.addPage(); drawHeader(); }
   const y = needsTotalsPage ? 104 : totalsY;
   pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(15, 57, 88); pdf.text("Amount summary", margin, y);
-  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(30, 41, 59); pdf.text("Subtotal", pageWidth - margin - 128, y + 18); pdf.text(`Rs. ${money(total)}`, pageWidth - margin, y + 18, { align: "right" }); pdf.text("Tax / additional charges", pageWidth - margin - 128, y + 34); pdf.text("Included in shipment amounts", pageWidth - margin, y + 34, { align: "right" });
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(30, 41, 59); pdf.text("Subtotal", pageWidth - margin - 180, y + 18); pdf.text(`Rs. ${money(total)}`, pageWidth - margin, y + 18, { align: "right" }); pdf.text("Taxes / charges", pageWidth - margin - 180, y + 34); pdf.text("Included above", pageWidth - margin, y + 34, { align: "right" });
   pdf.setDrawColor(15, 57, 88); pdf.line(pageWidth - margin - 170, y + 42, pageWidth - margin, y + 42); pdf.setFont("helvetica", "bold"); pdf.text("Grand total", pageWidth - margin - 128, y + 58); pdf.text(`Rs. ${money(total)}`, pageWidth - margin, y + 58, { align: "right" });
   pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.text(`Amount chargeable in words: ${amountInWords(total)}`, margin, y + 76); pdf.text("Payment terms: As agreed with the client account.", margin, y + 90);
   return pdf.output("arraybuffer");
