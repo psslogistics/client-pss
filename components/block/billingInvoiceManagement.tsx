@@ -8,11 +8,12 @@ import { downloadBillingExport, type BillingExportRecord } from "@/lib/billing-e
 import { SkeletonKpi, SkeletonTable } from "@/components/ui/skeleton";
 import { formatDate, localDateInput, shiftLocalDays } from "@/lib/date-format";
 import { billingTotals } from "@/lib/finance-contract";
+import { clientShipmentReference } from "@/lib/client-shipment-reference";
 
 const money = (value: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 type RecordRow = InvoicePdfRecord & BillingExportRecord;
 const shipmentInvoiceNumber = (row: RecordRow) => row.lr_number ? invoiceNumberForLr(row.lr_number) : invoiceNumberForLr(undefined);
-const shipmentReference = (row: RecordRow) => row.lr_number || row.master_awb || row.tracking_number || row.shipment_pss_reference || "Pending reference";
+const shipmentReference = (row: RecordRow) => clientShipmentReference(row, "Pending reference");
 const billingRange = (days: number, now = new Date()) => ({ start: shiftLocalDays(now, -(days - 1)), end: localDateInput(now) });
 
 export default function BillingInvoiceManagement() {
