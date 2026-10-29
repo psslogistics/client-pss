@@ -49,7 +49,7 @@ The matrix is validated by `npm run test:fixtures`; it is not seeded into produc
 - [x] Report, billing, wallet, and COD identities and totals reconcile against the same non-production fixture set; the current production client has no COD rows for a controlled live reconciliation
 - [x] No provider-only text, raw UUID, or test record appears in client-facing output in the authenticated 23-route rendered-text scan; reviewed test/QA records are explicitly classified and hidden on Pickup, Warehouse, and Shipment lists
 - [x] Client production build completes with elevated filesystem access; ordinary sandboxed execution still fails on Next output-directory creation with Windows `EPERM`
-- [x] Vercel deployment is Ready and authenticated production routes are verified (Client `ccf7e4d`; Worker `6a47bfd9-d6a1-4714-bb91-bfcbf94f378d`)
+- [x] Vercel deployment is Ready and authenticated production routes are verified (Client `5be5e55`; Worker `6a47bfd9-d6a1-4714-bb91-bfcbf94f378d`)
 - [x] Client and Worker acceptance suites pass, including domain, safety, labels, PDFs, XLSX, finance, reports, fixtures, populated workflow contracts, pricing, pickup, serviceability, warehouse, notification, billing, and test-data visibility checks
 
 ## Known delivery constraint
