@@ -9,6 +9,7 @@ import {
   toClientShipmentStatus,
 } from "../lib/shipment-status.ts";
 import { expectedStickerCount, labelFileName } from "../lib/label-contract.ts";
+import { cleanClientAddress, clientAddressDetails } from "../lib/address-display.ts";
 
 assert.equal(normalizeShipmentStatus("Ready to Ship"), "manifested");
 assert.equal(normalizeShipmentStatus("picked_up"), "in_transit");
@@ -25,6 +26,8 @@ assert.equal(labelFileName("321964753", "4x2.5"), "321964753-LABEL-4x2.5.pdf");
 assert.equal(labelFileName("LR 123/456", "a4"), "LR-123-456-LABEL-A4.pdf");
 assert.equal(expectedStickerCount(1), 2);
 assert.equal(expectedStickerCount(3), 4);
+assert.equal(cleanClientAddress("RISHIKESH PAL || 7084685756 Address: FUJIYAMA POWER SYSTEMS LIMITED-NOIDA 51,52 State: Uttar Pradesh (Code: 09) GSTIN / Unique ID: 09AADCF2634F1ZU"), "FUJIYAMA POWER SYSTEMS LIMITED-NOIDA 51,52");
+assert.deepEqual(clientAddressDetails(JSON.stringify({ name: "PSS Client", address: "Address: 12 Main Road", city: "Jaipur", state: "Rajasthan", pincode: "302001", country: "India" }), "Fallback"), { name: "PSS Client", address: "12 Main Road, Jaipur, Rajasthan, 302001, India" });
 const labelSource = await readFile(new URL("../components/block/delhiveryLabelMenu.tsx", import.meta.url), "utf8");
 const labelPdfSource = await readFile(new URL("../lib/label-pdf.ts", import.meta.url), "utf8");
 const trackingSource = await readFile(new URL("../components/block/shipmentTracking.tsx", import.meta.url), "utf8");
