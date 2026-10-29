@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { HelpCircle, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +22,7 @@ export function DelhiverySurface({
   children: ReactNode;
   className?: string;
 }) {
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <div className={cn("w-full space-y-4", className)}>
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border/70 pb-4">
@@ -34,7 +35,7 @@ export function DelhiverySurface({
           <span className="hidden items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-2 text-[11px] font-medium text-muted-foreground sm:inline-flex">
             <span className="size-1.5 rounded-full bg-emerald-500" /> Live
           </span>
-          <button type="button" className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-semibold hover:bg-accent">
+          <button type="button" onClick={() => setHelpOpen(true)} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-semibold hover:bg-accent">
             <HelpCircle className="size-3.5" /> How it works
           </button>
           {action}
@@ -44,6 +45,7 @@ export function DelhiverySurface({
         </div>
       </header>
       {children}
+      {helpOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="presentation" onClick={() => setHelpOpen(false)}><div role="dialog" aria-modal="true" aria-labelledby="surface-help-title" className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><h2 id="surface-help-title" className="text-base font-semibold">How this workspace works</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">This page shows live records from your PSS Logistics account. Use the page actions to refresh, filter, or download the information available to your account. Courier credentials and provider-only data remain managed by PSS.</p></div><button type="button" aria-label="Close help" onClick={() => setHelpOpen(false)} className="rounded-md border border-border px-2 py-1 text-xs font-semibold hover:bg-accent">Close</button></div></div></div>}
     </div>
   );
 }

@@ -14,7 +14,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:domain": "node --experimental-strip-types tools/domain-contract-acceptance.mjs",
+    "test:billing": "node tools/billing-contract-acceptance.mjs",
+    "test:pdf": "node --experimental-strip-types --experimental-loader ./tools/ts-alias-loader.mjs tools/pdf-contract-acceptance.mjs",
+    "test:label-pdf": "node --experimental-strip-types --experimental-loader ./tools/ts-alias-loader.mjs tools/label-pdf-contract-acceptance.mjs",
+    "test:safety": "node tools/client-safety-acceptance.mjs",
     "test:pickup": "node tools/pickup-contract-acceptance.mjs",
+    "test:finance": "node --experimental-strip-types tools/finance-contract-acceptance.mjs",
+    "test:reports": "node --experimental-strip-types tools/report-contract-acceptance.mjs",
+    "test:xlsx": "node --experimental-strip-types tools/xlsx-contract-acceptance.mjs",
+    "test:fixtures": "node tools/fixture-matrix-acceptance.mjs",
     "test:warehouse": "node tools/exact-warehouse-client-contract.mjs"
   },
   "dependencies": {

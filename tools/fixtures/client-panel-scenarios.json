@@ -1,0 +1,20 @@
+{
+  "purpose": "Non-production client-panel acceptance fixtures. Do not seed these values into production.",
+  "scenarios": [
+    { "id": "booked-lr", "kind": "shipment", "status": "booked", "lr_number": "321964753", "pieces": 1 },
+    { "id": "delayed", "kind": "shipment", "status": "booked", "edd": "2026-10-01", "pieces": 1 },
+    { "id": "exception-no-reference", "kind": "shipment", "status": "exception", "lr_number": null, "master_awb": null, "pieces": 1 },
+    { "id": "mps-two-stickers", "kind": "shipment", "status": "manifested", "lr_number": "321964753", "pieces": 1, "expected_sticker_count": 2, "mps_required": true },
+    { "id": "missing-provider-reference", "kind": "shipment", "status": "provider_pending", "lr_number": null, "master_awb": null, "pieces": 2 },
+    { "id": "cod-pending", "kind": "cod_remittance", "status": "pending", "amount": 12500 },
+    { "id": "cod-paid", "kind": "cod_remittance", "status": "paid", "amount": 12500 },
+    { "id": "pickup-failed", "kind": "pickup", "status": "failed", "retryable": true },
+    { "id": "saved-consignor", "kind": "address", "address_type": "consignor", "is_active": true, "is_test": false },
+    { "id": "saved-consignee", "kind": "address", "address_type": "consignee", "is_active": true, "is_test": false },
+    { "id": "weight-open", "kind": "weight_reconciliation", "status": "pending", "provider_weight_received": true, "dispute_window_open": true },
+    { "id": "invoice-paid", "kind": "billing", "status": "paid", "invoice_number": "INV-321964753" },
+    { "id": "invoice-unpaid", "kind": "billing", "status": "pending", "invoice_number": "INV-321964754" },
+    { "id": "kyc-draft", "kind": "kyc", "status": "draft", "booking_allowed": false },
+    { "id": "kyc-approved", "kind": "kyc", "status": "approved", "booking_allowed": true }
+  ]
+}

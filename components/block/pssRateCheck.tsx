@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Calculator, ChevronDown } from "lucide-react";
 import { pssApi } from "@/lib/pss-api";
-import { delhiveryB2BAccountLabel, isActiveDelhiveryB2BAccount } from "@/lib/client-pricing-data";
+import { isActiveDelhiveryB2BAccount } from "@/lib/client-pricing-data";
 import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary";
@@ -11,12 +11,12 @@ type Line = { code: string; label: string; amount: number; marker?: "*" };
 type Account = { id: string; provider: string; account_name: string; status?: string; enabled?: boolean; explicitly_configured?: boolean };
 type Quote = { provider_account_id?: string | null; provider_account_name?: string | null; account_code?: string; lane: string; chargeableWeightKg: number; oda?: boolean; opa?: boolean; total: number; lines: Line[] };
 
-// Account names are private routing data. The client sees only the approved label.
-const accountLabel = (accountName: string) => delhiveryB2BAccountLabel(accountName) ?? "Delhivery";
+const publicServiceLabel = "PSS Delhivery B2B service";
 
 export default function PssRateCheck() {
   const [form, setForm] = useState({ origin_pincode: "", destination_pincode: "", weight_kg: "", invoice_value: "" });
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [rateServiceAvailable, setRateServiceAvailable] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState("all");
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const requestId = useRef(0);
@@ -26,16 +26,24 @@ export default function PssRateCheck() {
   const destinationLocation = usePincodeLocation(form.destination_pincode);
 
   useEffect(() => {
-    void pssApi<{ data: Account[] }>("/v1/provider-account-policies")
-      .then((response) => setAccounts((response.data ?? []).filter((account) => account.provider.toLowerCase() === "delhivery" && isActiveDelhiveryB2BAccount(account.account_name) && account.enabled !== false && account.explicitly_configured === true)))
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Assigned Delhivery accounts could not be loaded."));
+    void Promise.allSettled([
+      pssApi<{ data: Account[] }>("/v1/provider-account-policies"),
+      pssApi<{ data: Record<string, { available_for_client?: boolean; rate_enabled?: boolean }> }>("/v1/client-courier-capabilities"),
+    ]).then(([accountsResult, capabilitiesResult]) => {
+      if (accountsResult.status === "rejected") { setError(accountsResult.reason instanceof Error ? accountsResult.reason.message : "Assigned Delhivery accounts could not be loaded."); return; }
+      if (capabilitiesResult.status === "rejected") { setError("Courier availability could not be confirmed for this account."); return; }
+      const delhivery = capabilitiesResult.value.data?.delhivery;
+      const available = delhivery?.available_for_client === true && delhivery.rate_enabled !== false;
+      setRateServiceAvailable(available);
+      setAccounts(available ? (accountsResult.value.data ?? []).filter((account) => account.provider.toLowerCase() === "delhivery" && isActiveDelhiveryB2BAccount(account.account_name) && account.enabled !== false && account.explicitly_configured === true) : []);
+    });
   }, []);
 
   const update = (key: keyof typeof form, value: string) => { setError(""); setQuotes([]); setForm((current) => ({ ...current, [key]: value })); };
   const calculate = async () => {
     const currentRequestId = ++requestId.current;
     const requestedAccounts = selectedAccountId === "all" ? accounts : accounts.filter((account) => account.id === selectedAccountId);
-    if (!requestedAccounts.length) { setError("No assigned Delhivery B2B account is available for this client."); return; }
+    if (!rateServiceAvailable || !requestedAccounts.length) { setError("The PSS courier rate service is not currently available for this account."); return; }
     const weight = Number(form.weight_kg);
     const invoiceValue = Number(form.invoice_value);
     if (!form.weight_kg.trim() || !Number.isFinite(weight) || weight <= 0) { setError("Enter a weight greater than 0 kg before calculating."); return; }
@@ -49,13 +57,15 @@ export default function PssRateCheck() {
       if (currentRequestId !== requestId.current) return;
       const successful = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
       if (!successful.length) throw new Error("No assigned Delhivery account could calculate this shipment.");
-      setQuotes(successful);
+      // Provider accounts are routing details, not client-facing choices. The
+      // PSS charge is presented as one service even when several internal
+      // accounts are available behind the scenes.
+      setQuotes(successful.length ? [successful[0]] : []);
       if (successful.length < requestedAccounts.length) setError("Some assigned accounts could not return a quote.");
     } catch (caught) { if (currentRequestId === requestId.current) setError(caught instanceof Error ? caught.message : "Unable to calculate the PSS rates."); }
     finally { if (currentRequestId === requestId.current) setLoading(false); }
   };
   const pincodeInput = (key: "origin_pincode" | "destination_pincode", label: string, lookup: ReturnType<typeof usePincodeLocation>) => <label className="space-y-1.5"><span className="text-xs font-medium">{label}</span><input className={field} inputMode="numeric" maxLength={6} placeholder="6-digit pincode" value={form[key]} onChange={(event) => update(key, event.target.value.replace(/\D/g, "").slice(0, 6))} /><PincodeLocationHint location={lookup.location} lookupState={lookup.lookupState} /></label>;
   const input = (key: keyof typeof form, label: string, type = "text") => <label className="space-y-1.5"><span className="text-xs font-medium">{label}</span><input className={field} type={type} value={form[key]} onChange={(event) => update(key, event.target.value)} /></label>;
-  const quoteAccountName = (quote: Quote) => quote.provider_account_name?.trim() || accounts.find((account) => account.id === quote.provider_account_id)?.account_name || "PSS Delhivery account";
-  return <div className="w-full space-y-5"><header><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Pricing</p><h1 className="mt-1 text-2xl font-semibold tracking-tight">PSS B2B rate calculator</h1><p className="mt-1 text-sm text-muted-foreground">Compare the assigned Delhivery B2B account rate cards. Courier costs and provider responses remain hidden.</p></header><div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]"><section className="space-y-4 rounded-xl border border-border bg-card p-4"><div className="flex items-center gap-2"><Calculator className="size-4 text-primary" /><h2 className="text-sm font-semibold">Shipment inputs</h2></div><div className="grid gap-3 sm:grid-cols-2">{pincodeInput("origin_pincode", "Pickup pincode", originLocation)}{pincodeInput("destination_pincode", "Delivery pincode", destinationLocation)}{input("weight_kg", "Weight (kg)", "number")}{input("invoice_value", "Invoice value (₹)", "number")}</div><label className="block space-y-1.5"><span className="text-xs font-medium">Courier / account</span><select className={field} value={selectedAccountId} onChange={(event) => { setSelectedAccountId(event.target.value); setError(""); setQuotes([]); }}><option value="all">All active Delhivery accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{accountLabel(account.account_name)}</option>)}</select></label>{error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}<button type="button" disabled={loading} onClick={() => void calculate()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:opacity-50">{loading ? "Calculating…" : "Calculate PSS rates"}</button></section><section className="rounded-xl border border-border bg-card p-4" aria-live="polite"><h2 className="text-sm font-semibold">PSS B2B quotes</h2>{quotes.length ? <div className="mt-4 space-y-2">{quotes.map((quote, index) => <details key={`${quote.provider_account_id ?? quote.account_code ?? "account"}-${index}`} className="group rounded-lg border border-border"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3"><span className="min-w-0"><span className="block truncate text-sm font-semibold">{accountLabel(quoteAccountName(quote))}</span><span className="mt-1 block text-xs text-muted-foreground">{quote.lane} · {quote.chargeableWeightKg} kg charged{quote.oda ? " · ODA charge applied" : ""}</span></span><span className="flex shrink-0 items-center gap-2"><strong>₹{quote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</strong><ChevronDown className="size-4 transition-transform group-open:rotate-180" /></span></summary><div className="space-y-2 border-t border-border px-3 pb-3 pt-3">{quote.lines.map((line) => <div key={line.code} className="flex justify-between text-sm"><span>{line.label}{line.marker ?? ""}</span><span>₹{line.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div>)}<p className="border-t border-border pt-3 text-[11px] text-muted-foreground">Only the PSS Logistics client charge is shown. Courier rates and provider responses are never displayed.</p></div></details>)}</div> : <div className="grid min-h-[280px] place-items-center text-center text-sm text-muted-foreground">Enter shipment details and calculate to compare assigned account rates.</div>}</section></div></div>;
+  return <div className="w-full space-y-5"><header><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Pricing</p><h1 className="mt-1 text-2xl font-semibold tracking-tight">PSS B2B rate calculator</h1><p className="mt-1 text-sm text-muted-foreground">Calculate the PSS Logistics charge for a shipment. Internal courier accounts and provider responses remain hidden.</p></header><div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]"><section className="space-y-4 rounded-xl border border-border bg-card p-4"><div className="flex items-center gap-2"><Calculator className="size-4 text-primary" /><h2 className="text-sm font-semibold">Shipment inputs</h2></div><div className="grid gap-3 sm:grid-cols-2">{pincodeInput("origin_pincode", "Pickup pincode", originLocation)}{pincodeInput("destination_pincode", "Delivery pincode", destinationLocation)}{input("weight_kg", "Weight (kg)", "number")}{input("invoice_value", "Invoice value (₹)", "number")}</div><p className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">Service: <span className="font-semibold text-foreground">{publicServiceLabel}</span></p>{error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}<button type="button" disabled={loading} onClick={() => void calculate()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:opacity-50">{loading ? "Calculating…" : "Calculate PSS rate"}</button></section><section className="rounded-xl border border-border bg-card p-4" aria-live="polite"><h2 className="text-sm font-semibold">PSS B2B quote</h2>{quotes.length ? <div className="mt-4 space-y-2">{quotes.map((quote, index) => <details key={`${quote.account_code ?? "pss"}-${index}`} open className="group rounded-lg border border-border"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3"><span className="min-w-0"><span className="block truncate text-sm font-semibold">{publicServiceLabel}</span><span className="mt-1 block text-xs text-muted-foreground">{quote.lane} · {quote.chargeableWeightKg} kg charged{quote.oda ? " · ODA charge applied" : ""}</span></span><span className="flex shrink-0 items-center gap-2"><strong>₹{quote.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</strong><ChevronDown className="size-4 transition-transform group-open:rotate-180" /></span></summary><div className="space-y-2 border-t border-border px-3 pb-3 pt-3">{quote.lines.map((line) => <div key={line.code} className="flex justify-between text-sm"><span>{line.label}{line.marker ?? ""}</span><span>₹{line.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div>)}<p className="border-t border-border pt-3 text-[11px] text-muted-foreground">Only the PSS Logistics client charge is shown. Courier rates and provider responses are never displayed.</p></div></details>)}</div> : <div className="grid min-h-[280px] place-items-center text-center text-sm text-muted-foreground">Enter shipment details and calculate to see your PSS charge.</div>}</section></div></div>;
 }

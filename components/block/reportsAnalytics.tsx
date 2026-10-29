@@ -5,6 +5,7 @@ import { CalendarDays, Download, FileSpreadsheet, RefreshCw } from "lucide-react
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { downloadWorkbook } from "@/lib/xlsx";
 import { publicCourierName } from "@/lib/client-pricing-data";
+import { localDateInput, shiftLocalDays } from "@/lib/date-format";
 
 type Shipment = Record<string, unknown>;
 type Pickup = Record<string, unknown>;
@@ -12,17 +13,19 @@ type ShipmentPage = { data: Shipment[]; pagination?: { next_offset?: number; has
 type PreferenceResponse = { data?: { preferences?: { reportRange?: string } } };
 const cell = (value: unknown) => value == null ? "" : String(value);
 const date = (value: unknown) => typeof value === "string" ? value.slice(0, 10) : "";
-const today = () => new Date().toISOString().slice(0, 10);
-const shiftDays = (value: Date, days: number) => { const next = new Date(value); next.setDate(next.getDate() + days); return next.toISOString().slice(0, 10); };
+const shipmentReference = (row: Shipment) => cell(row.pss_reference) || cell(row.lr_number) || cell(row.master_awb) || cell(row.tracking_number) || "Pending reference";
+const pickupReference = (row: Pickup) => cell(row.reference) || cell(row.provider_reference) || cell(row.shipment_reference) || "Pending reference";
+const today = () => localDateInput();
+const generatedAt = () => new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZoneName: "short" }).format(new Date());
 const rangeFor = (value: string) => {
   const now = new Date();
   if (value === "Previous month") {
     const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const last = new Date(now.getFullYear(), now.getMonth(), 0);
-    return { start: first.toISOString().slice(0, 10), end: last.toISOString().slice(0, 10) };
+    return { start: localDateInput(first), end: localDateInput(last) };
   }
-  if (value === "Last 30 days") return { start: shiftDays(now, -29), end: today() };
-  return { start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10), end: today() };
+  if (value === "Last 30 days") return { start: shiftLocalDays(now, -29), end: today() };
+  return { start: localDateInput(new Date(now.getFullYear(), now.getMonth(), 1)), end: today() };
 };
 const delayDays = (row: Shipment) => {
   const edd = date(row.edd);
@@ -85,9 +88,9 @@ export default function ReportsAnalytics() {
     if (staleData || loadError) { setNotice("Refresh the report successfully before exporting so the file is complete and current."); return; }
     const from = start || "all"; const to = end || "time";
     downloadWorkbook(`PSS-shipment-report-${from}-to-${to}.xlsx`, [
-      { name: "Report summary", headers: ["Field", "Value"], rows: [["Report period", `${start || "All dates"} to ${end || "Today"}`], ["Generated at", new Date().toISOString()], ["Shipments", filteredShipments.length], ["Pickups", filteredPickups.length]], columnWidths: [24, 34], autoFilter: false },
-      { name: "Shipments", headers: ["ID", "Client", "Status", "Provider", "Origin", "Destination", "EDD", "Delivered", "Delay days", "Created"], rows: filteredShipments.map((row) => [cell(row.id), cell(row.client_id), cell(row.status), publicCourierName(row.provider, row.account_name), cell(row.origin), cell(row.destination), cell(row.edd), cell(row.delivered_at), delayDays(row), cell(row.created_at)]), columnWidths: [22, 22, 16, 16, 24, 24, 14, 14, 12, 22], numericColumns: [8], dateColumns: [6, 7, 9] },
-      { name: "Pickups", headers: ["ID", "Client", "Shipment", "Requested date", "Status", "Address"], rows: filteredPickups.map((row) => [cell(row.id), cell(row.client_id), cell(row.shipment_id), cell(row.requested_date), cell(row.status), cell(row.pickup_address)]), columnWidths: [22, 22, 22, 16, 16, 48], dateColumns: [3] },
+      { name: "Report summary", headers: ["Field", "Value"], rows: [["Report title", "PSS Logistics shipment and pickup report"], ["Report period", `${start || "All dates"} to ${end || "Today"}`], ["Generated at", generatedAt()], ["Timezone", "Asia/Kolkata"], ["Shipments", filteredShipments.length], ["Pickups", filteredPickups.length]], columnWidths: [24, 48], autoFilter: false },
+      { name: "Shipments", headers: ["Shipment reference", "Status", "Provider", "Origin", "Destination", "EDD", "Delivered", "Delay days", "Created"], rows: filteredShipments.map((row) => [shipmentReference(row), cell(row.status), publicCourierName(row.provider, row.account_name), cell(row.origin), cell(row.destination), cell(row.edd), cell(row.delivered_at), delayDays(row), cell(row.created_at)]), columnWidths: [24, 16, 16, 24, 24, 14, 14, 12, 22], numericColumns: [7], dateColumns: [5, 6, 8] },
+      { name: "Pickups", headers: ["Pickup reference", "Shipment reference", "Requested date", "Status", "Address"], rows: filteredPickups.map((row) => [pickupReference(row), cell(row.shipment_reference) || "Pending reference", cell(row.requested_date), cell(row.status), cell(row.pickup_address)]), columnWidths: [24, 24, 16, 16, 48], dateColumns: [2] },
     ]);
     setNotice(`Report downloaded: ${filteredShipments.length} shipments and ${filteredPickups.length} pickups.`);
   };

@@ -75,6 +75,21 @@ function relativeTime(value: string) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function clientActivityTitle(action: unknown) {
+  const value = String(action ?? "activity").trim().toLowerCase();
+  const labels: Record<string, string> = {
+    "addresses.created": "Saved address added",
+    "addresses.deleted": "Saved address removed",
+    "warehouses.created": "Pickup location added",
+    "warehouses.deleted": "Pickup location removed",
+    "pickup.created": "Pickup request created",
+    "shipment.provider_failed": "Courier booking needs attention",
+    "shipment.provider_lr_pending": "Courier reference pending",
+  };
+  if (labels[value]) return labels[value];
+  return value.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Activity";
+}
+
 function activityIconType(action: string): ActivityItem["iconType"] {
   const normalized = action.toLowerCase();
   if (normalized.includes("exception") || normalized.includes("ndr") || normalized.includes("failed")) return "warning";
@@ -115,8 +130,8 @@ export default function Dashboard() {
       setProductionTechnicalError("");
       setProductionRequestId("");
        setProduction((current) => ({ ...current, shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, exceptions: data.exceptions, ndr: data.ndr, shipmentStats: data.shipment_stats ?? { total: data.shipments.length, delayed: 0, statuses: {}, providers: {} } }));
-      setActivities(data.activity.slice(0, 12).map((row) => ({ id: String(row.id), title: String(row.action ?? "Activity"), description: `${String(row.entity_type ?? "Record")}${row.entity_id ? ` · ${String(row.entity_id)}` : ""}`, timeAgo: relativeTime(String(row.created_at ?? "")), iconType: activityIconType(String(row.action ?? "")), iconName: activityIconName(String(row.action ?? "")) })));
-      setAlerts([...data.exceptions, ...data.ndr].filter((row) => !["resolved", "closed", "delivered", "cancelled"].includes(String(row.status ?? "").toLowerCase())).slice(0, 8).map((row) => ({ id: String(row.id), title: String(row.title ?? row.reason ?? "Operational exception"), description: String(row.details ?? row.notes ?? "Requires operational review"), timeAgo: relativeTime(String(row.created_at ?? "")), refId: String(row.shipment_id ?? row.id), type: "warning", dotColor: "bg-amber-500" })));
+       setActivities(data.activity.slice(0, 12).map((row) => ({ id: String(row.id), title: clientActivityTitle(row.action), description: row.shipment_pss_reference || row.lr_number || row.master_awb ? `Shipment ${String(row.shipment_pss_reference ?? row.lr_number ?? row.master_awb)}` : String(row.entity_type ?? "PSS activity"), timeAgo: relativeTime(String(row.created_at ?? "")), iconType: activityIconType(String(row.action ?? "")), iconName: activityIconName(String(row.action ?? "")) })));
+       setAlerts([...data.exceptions, ...data.ndr].filter((row) => !["resolved", "closed", "delivered", "cancelled"].includes(String(row.status ?? "").toLowerCase())).slice(0, 8).map((row) => ({ id: String(row.id), title: String(row.title ?? row.reason ?? "Operational exception"), description: String(row.details ?? row.notes ?? "Requires operational review"), timeAgo: relativeTime(String(row.created_at ?? "")), refId: String(row.shipment_pss_reference ?? row.lr_number ?? row.master_awb ?? "Shipment reference unavailable"), type: "warning", dotColor: "bg-amber-500" })));
      }).catch((error) => {
       if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
       const details = getPssErrorDetails(error, "Dashboard data is temporarily unavailable. Your existing records are unchanged.");
@@ -267,7 +282,7 @@ export default function Dashboard() {
   };
 
   const totalShipments = production.shipmentStats.total;
-  const delayedRows = production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; const delivered = shipment.delivered_at ? Date.parse(String(shipment.delivered_at)) : NaN; return Number.isFinite(edd) && ((Number.isFinite(delivered) && delivered > edd) || (!Number.isFinite(delivered) && edd < now)); }).map((shipment) => ({ id: String(shipment.id), trackingId: String(shipment.tracking_number ?? shipment.id), origin: String(shipment.origin ?? "Origin pending"), destination: String(shipment.destination ?? "Destination pending"), carrier: publicCourierName(shipment.provider, shipment.account_name), mode: publicCourierName(shipment.provider, shipment.account_name), date: String(shipment.edd ?? "—") }));
+  const delayedRows = production.shipments.filter((shipment) => { const edd = shipment.edd ? Date.parse(String(shipment.edd)) : NaN; const delivered = shipment.delivered_at ? Date.parse(String(shipment.delivered_at)) : NaN; return Number.isFinite(edd) && ((Number.isFinite(delivered) && delivered > edd) || (!Number.isFinite(delivered) && edd < now)); }).map((shipment) => { const trackingId = String(shipment.lr_number ?? shipment.master_awb ?? shipment.tracking_number ?? shipment.pss_reference ?? "Reference pending"); const trackingQuery = String(shipment.lr_number ?? shipment.master_awb ?? shipment.tracking_number ?? shipment.pss_reference ?? shipment.id); return { id: String(shipment.id), trackingQuery, trackingId, origin: String(shipment.origin ?? "Origin pending"), destination: String(shipment.destination ?? "Destination pending"), carrier: publicCourierName(shipment.provider, shipment.account_name), mode: publicCourierName(shipment.provider, shipment.account_name), date: String(shipment.edd ?? "—") }; });
   const delayedShipments = production.shipmentStats.delayed;
   const exceptionShipments = statusCounts.get("exception") ?? 0;
   const shipmentStatusData = [...statusCounts.entries()].map(([status, count]) => ({ status, count, percentage: totalShipments ? Math.round((count / totalShipments) * 100) : 0, badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary", barClass: "bg-primary" }));
@@ -285,7 +300,7 @@ export default function Dashboard() {
     .map((pickup) => {
       const status = String(pickup.status ?? "requested").trim().toLowerCase();
       const label = status.replace(/(^|_)(\w)/g, (_, __, letter: string) => ` ${letter.toUpperCase()}`).trim();
-      return { pickupId: String(pickup.id), timeSlot: String(pickup.requested_time_slot ?? pickup.window ?? "—"), status: label, company: String(pickup.client_id ?? "Client"), location: String(pickup.pickup_address ?? pickup.location ?? "Location pending"), pcs: "—", kg: "—", badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary" };
+      return { pickupId: String(pickup.pickup_reference ?? pickup.id), timeSlot: String(pickup.requested_time_slot ?? pickup.window ?? "—"), status: label, company: "Client workspace", location: String(pickup.pickup_address ?? pickup.location ?? "Location pending"), pcs: "—", kg: "—", badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary" };
     });
 
   return (

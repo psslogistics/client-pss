@@ -11,7 +11,7 @@ let bookingPrefetch: Promise<void> | null = null;
 export function prefetchBookingDependencies() {
   if (bookingPrefetch) return bookingPrefetch;
   bookingPrefetch = Promise.allSettled([
-    pssApi("/v1/provider-capabilities"),
+    pssApi("/v1/client-courier-capabilities"),
     pssApi("/v1/provider-account-policies"),
     pssApi("/v1/warehouses"),
     pssApi("/v1/addresses"),

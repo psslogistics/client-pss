@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import { formatDate } from "@/lib/date-format";
+import { EXAMPLE_INVOICE_BUYER, EXAMPLE_INVOICE_SELLER, amountInWords, invoiceFileName, invoiceNumberForLr } from "@/lib/invoice-contract";
 
 export type InvoicePdfRecord = {
   id: string;
@@ -28,6 +29,11 @@ export type InvoicePdfRecord = {
   buyer_gstin?: string;
   buyer_state?: string;
   buyer_state_code?: string;
+  client_name?: string;
+  client_address?: string;
+  client_gstin?: string;
+  client_state?: string;
+  client_state_code?: string;
   destination?: string;
   origin?: string;
   consignor?: string;
@@ -55,32 +61,11 @@ export type InvoicePdfRecord = {
   ack_date?: string;
 };
 
-const PAGE_W = 612;
-const PAGE_H = 792;
+const PAGE_W = 595.28;
+const PAGE_H = 841.89;
 const LEFT = 36;
 const INK = [24, 24, 24] as const;
 const GREY = [238, 238, 238] as const;
-
-const wordsBelowHundred = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
-const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
-function wordsUnderThousand(value: number): string {
-  if (value < 20) return wordsBelowHundred[value];
-  if (value < 100) return `${tens[Math.floor(value / 10)]}${value % 10 ? ` ${wordsBelowHundred[value % 10]}` : ""}`;
-  return `${wordsBelowHundred[Math.floor(value / 100)]} Hundred${value % 100 ? ` ${wordsUnderThousand(value % 100)}` : ""}`;
-}
-function amountInWords(value: number) {
-  const rounded = Math.max(0, Math.round(value));
-  if (!rounded) return "Zero Only";
-  const groups: Array<[number, string]> = [[10000000, "Crore"], [100000, "Lakh"], [1000, "Thousand"], [1, ""]];
-  let remaining = rounded;
-  const result: string[] = [];
-  for (const [unit, label] of groups) {
-    const count = Math.floor(remaining / unit);
-    if (count) result.push(`${wordsUnderThousand(count)}${label ? ` ${label}` : ""}`);
-    remaining %= unit;
-  }
-  return `${result.join(" ")} Only`;
-}
 
 function clean(value: unknown, fallback: string) {
   const text = String(value ?? "").trim();
@@ -93,22 +78,6 @@ function date(value: string | undefined) {
   const parsed = value ? new Date(value) : new Date();
   return Number.isNaN(parsed.getTime()) ? "Not provided" : formatDate(parsed.toISOString());
 }
-const EXAMPLE_SELLER = {
-  name: "PSS Logistics",
-  address: "123 Logistics Park, Industrial Area, New Delhi, Delhi 110001",
-  gstin: "EXAMPLE-GSTIN",
-  state: "Delhi",
-  stateCode: "07",
-  contact: "+91 00000 00000",
-  email: "billing@example.com",
-};
-const EXAMPLE_BUYER = {
-  name: "Client Company",
-  address: "456 Client Business Park, Gurugram, Haryana 122001",
-  gstin: "CLIENT-EXAMPLE-GSTIN",
-  state: "Haryana",
-  stateCode: "06",
-};
 function line(doc: jsPDF, x1: number, y1: number, x2: number, y2: number, width = 0.6) {
   doc.setLineWidth(width); doc.setDrawColor(...INK); doc.line(x1, y1, x2, y2);
 }
@@ -130,7 +99,8 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
   const roundOff = Number(record.round_off ?? (Math.round(total) - total));
   const quantity = Number(record.quantity ?? 1);
   const rate = Number(record.rate ?? base / Math.max(quantity, 1));
-  const invoiceNumber = clean(record.invoice_number, `INV-${clean(record.lr_number, record.id).replace(/[^A-Za-z0-9-]/g, "-")}`);
+  const invoiceNumber = invoiceNumberForLr(record.lr_number);
+  const publicReference = clean(record.lr_number ?? record.tracking_number ?? record.reference_number, "Pending reference");
   const invoiceDate = date(record.created_at);
 
   doc.setTextColor(...INK); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text("Tax Invoice", 174, 34);
@@ -142,9 +112,9 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
   doc.setFontSize(7); doc.text(record.irn ? "IRN QR data available" : "E-invoice QR data unavailable", 462, 106, { align: "center" });
 
   const top = 164; const sellerH = 84; const buyerH = 70; const metaX = 276; const leftW = 240; const metaRowH = (sellerH + buyerH) / 6;
-  cell(doc, LEFT, top, leftW, sellerH, `${clean(record.seller_name, EXAMPLE_SELLER.name)}\n${clean(record.seller_address, EXAMPLE_SELLER.address)}\nGSTIN/UIN: ${clean(record.seller_gstin, EXAMPLE_SELLER.gstin)}\nState Name: ${clean(record.seller_state, EXAMPLE_SELLER.state)}, Code: ${clean(record.seller_state_code, EXAMPLE_SELLER.stateCode)}\nContact: ${clean(record.seller_contact, EXAMPLE_SELLER.contact)}\nE-Mail: ${clean(record.seller_email, EXAMPLE_SELLER.email)}`, { bold: true, size: 8 });
-  cell(doc, LEFT, top + sellerH, leftW, buyerH, `Buyer (Bill to)\n${clean(record.buyer_name, EXAMPLE_BUYER.name)}\n${clean(record.buyer_address, EXAMPLE_BUYER.address)}\nGSTIN/UIN: ${clean(record.buyer_gstin, EXAMPLE_BUYER.gstin)}\nState Name: ${clean(record.buyer_state, EXAMPLE_BUYER.state)}, Code: ${clean(record.buyer_state_code, EXAMPLE_BUYER.stateCode)}`, { size: 8 });
-  const metaRows = [["Invoice No.", invoiceNumber, "Dated", invoiceDate], ["Delivery Note", clean(record.lr_number, "Pending LR/LRN"), "LR / LRN", clean(record.lr_number, "Pending")], ["Reference No. & Date", clean(record.reference_number, ""), "Other References", clean(record.tracking_number, "")], ["Buyer's Order No.", "", "Dated", ""], ["Dispatch Doc No.", clean(record.shipment_id, ""), "Delivery Note Date", ""], ["From / To", `${clean(record.origin, "Not provided")} → ${clean(record.destination, "Not provided")}`, "Boxes / Weight", `${record.pieces ?? 1} / ${record.weight_kg ?? "—"} kg`]];
+  cell(doc, LEFT, top, leftW, sellerH, `${clean(record.seller_name, EXAMPLE_INVOICE_SELLER.name)}\n${clean(record.seller_address, EXAMPLE_INVOICE_SELLER.address)}\nGSTIN/UIN: ${clean(record.seller_gstin, EXAMPLE_INVOICE_SELLER.gstin)}\nState Name: ${clean(record.seller_state, EXAMPLE_INVOICE_SELLER.state)}, Code: ${clean(record.seller_state_code, EXAMPLE_INVOICE_SELLER.stateCode)}\nContact: ${clean(record.seller_contact, EXAMPLE_INVOICE_SELLER.contact)}\nE-Mail: ${clean(record.seller_email, EXAMPLE_INVOICE_SELLER.email)}`, { bold: true, size: 8 });
+  cell(doc, LEFT, top + sellerH, leftW, buyerH, `Buyer (Bill to)\n${clean(record.client_name ?? record.buyer_name, EXAMPLE_INVOICE_BUYER.name)}\n${clean(record.client_address ?? record.buyer_address, EXAMPLE_INVOICE_BUYER.address)}\nGSTIN/UIN: ${clean(record.client_gstin ?? record.buyer_gstin, EXAMPLE_INVOICE_BUYER.gstin)}\nState Name: ${clean(record.client_state ?? record.buyer_state, EXAMPLE_INVOICE_BUYER.state)}, Code: ${clean(record.client_state_code ?? record.buyer_state_code, EXAMPLE_INVOICE_BUYER.stateCode)}`, { size: 8 });
+  const metaRows = [["Invoice No.", invoiceNumber, "Dated", invoiceDate], ["Delivery Note", clean(record.lr_number, "Pending LR/LRN"), "LR / LRN", clean(record.lr_number, "Pending")], ["Reference No. & Date", clean(record.reference_number, ""), "Other References", clean(record.tracking_number, "")], ["Buyer's Order No.", "", "Dated", ""], ["Dispatch Doc No.", publicReference, "Delivery Note Date", ""], ["From / To", `${clean(record.origin, "Not provided")} → ${clean(record.destination, "Not provided")}`, "Boxes / Weight", `${record.pieces ?? 1} / ${record.weight_kg ?? "—"} kg`]];
   metaRows.forEach((row, index) => { const y = top + index * metaRowH; cell(doc, metaX, y, 92, metaRowH, row[0], { size: 6.5 }); cell(doc, metaX + 92, y, 72, metaRowH, row[1], { bold: index === 0, size: 7 }); cell(doc, metaX + 164, y, 58, metaRowH, row[2], { size: 6.5 }); cell(doc, metaX + 222, y, 42, metaRowH, row[3], { bold: index === 0, size: 7 }); });
 
   const tableTop = top + sellerH + 70; const widths = [34, 224, 62, 54, 58, 108]; const headers = ["Sl\nNo.", "Description of\nServices", "HSN/SAC", "Quantity", "Rate", "Amount"];
@@ -164,5 +134,5 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
 
 export function downloadInvoicePdf(record: InvoicePdfRecord) {
   const { doc, invoiceNumber } = createInvoicePdf(record);
-  doc.save(`${invoiceNumber.replace(/[^a-z0-9_-]+/gi, "_")}.pdf`);
+  doc.save(invoiceFileName(invoiceNumber));
 }

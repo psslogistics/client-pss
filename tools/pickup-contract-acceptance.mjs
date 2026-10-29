@@ -4,7 +4,7 @@ const source = await readFile(new URL("../components/block/pickupRequests.tsx", 
 const bookingSource = await readFile(new URL("../components/block/shipmentBooking.tsx", import.meta.url), "utf8");
 const checks = [
   ["canonical fields are mapped", ["row.requested_date", "row.requested_time_slot", "row.pickup_address", "row.contact_name", "row.contact_phone"].every((field) => source.includes(field))],
-  ["provider account and saved pickup location are selectable", source.includes("Courier account") && source.includes("Saved pickup location")],
+  ["available courier and saved pickup location are selectable", source.includes("Courier") && source.includes("Saved pickup location")],
   ["pickup reference uses Delhivery PUR with a muted unscheduled fallback", source.includes('reference: providerReference || "Not scheduled"') && source.includes('pickup.reference === "Not scheduled"') && source.includes('value={pickup.providerReference || "Not scheduled"}')],
   ["latest pickup requests sort first", source.includes('key: "createdAt", direction: "desc"') && source.includes("Date.parse(a.createdAt || \"\")") && source.includes("createdAt: String(row.created_at ?? \"\")")],
   ["invalid provider references remain unscheduled", source.includes('rawProviderReference && /^\\d+$/.test(rawProviderReference)') && source.includes('providerReference || "Not scheduled"')],

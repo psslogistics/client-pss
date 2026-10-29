@@ -2,6 +2,12 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+.auth-login-hero {
+  background-image: url("/auth-login-hero.png");
+  background-position: center center;
+  background-size: cover;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

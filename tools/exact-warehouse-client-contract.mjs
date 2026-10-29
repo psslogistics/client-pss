@@ -9,4 +9,5 @@ if (!source.includes("contact_name: pickupPerson.name")) throw new Error("Saved 
 if (!source.includes("contact_name") || !/contact:\s*\{\s*name:\s*pick\(row\.contact_name,\s*row\.contactName/.test(source)) throw new Error("Saved warehouses must restore the consignor name after reload");
 if (!source.includes("state: pickup.state")) throw new Error("Saved warehouses must preserve the consignor state");
 if (!source.includes("row.state") || !/state:\s*pick\(row\.state,\s*parts\.length >= 4 \? parts\[2\]/.test(source)) throw new Error("Saved warehouses must restore the consignor state after reload");
+if (!source.includes("country: delivery.country")) throw new Error("Saved consignees must preserve country when saved from Booking");
 console.log("Client exact warehouse contract passed");

@@ -1,16 +1,13 @@
 "use client";
 
 import { Download, Loader2, Tag } from "lucide-react";
-import { PDFDocument } from "pdf-lib";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
+import { expectedStickerCount, labelFileName, labelSizeLabel, labelSizes, type LabelSize } from "@/lib/label-contract";
+import { composeAssetsToA4, pdfPageCount, printableAssetCount, type ArtifactEntry } from "@/lib/label-pdf";
 
-const sizes = ["a4", "4x2", "4x2.5", "3x2"] as const;
-type LabelSize = (typeof sizes)[number];
 type LabelOption = { size: LabelSize; contentType: string; artifact: unknown; copies: number };
-type ArtifactEntry = { value: string; contentType: string };
-const sizeLabels: Record<LabelSize, string> = { a4: "A4", "4x2": "4 × 2 in", "4x2.5": "4 × 2.5 in", "3x2": "3 × 2 in" };
 
 const isPdfBase64 = (value: string) => {
   const normalized = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
@@ -58,35 +55,10 @@ const artifactContentType = (value: unknown): string => {
   for (const key of ["content_type", "contentType", "mime_type", "mimeType"]) {
     if (typeof record[key] === "string" && record[key]) return record[key];
   }
-  return Object.values(record).map(artifactContentType).find((type) => type !== "application/octet-stream") ?? "application/octet-stream";
-};
-
-const a4Points: [number, number] = [8.3 * 72, 11.7 * 72];
-const sheetLayouts: Record<LabelSize, { width: number; height: number; columns: number; rows: number; gap: number }> = {
-  a4: { width: a4Points[0] - 12, height: (a4Points[1] - 18) / 2, columns: 1, rows: 2, gap: 6 },
-  "4x2": { width: 4 * 72, height: 2 * 72, columns: 2, rows: 5, gap: 0 },
-  "4x2.5": { width: 4 * 72, height: 2.5 * 72, columns: 2, rows: 4, gap: 0 },
-  "3x2": { width: 3 * 72, height: 2 * 72, columns: 2, rows: 5, gap: 0 },
-};
-
-const pdfPageCount = (option: LabelOption) => {
-  const layout = sheetLayouts[option.size];
-  return Math.ceil(option.copies / (layout.columns * layout.rows));
-};
-
-const sheetSlot = (size: LabelSize, index: number) => {
-  const layout = sheetLayouts[size];
-  const [pageWidth, pageHeight] = a4Points;
-  const totalWidth = layout.columns * layout.width + (layout.columns - 1) * layout.gap;
-  const totalHeight = layout.rows * layout.height + (layout.rows - 1) * layout.gap;
-  const column = index % layout.columns;
-  const row = Math.floor(index / layout.columns) % layout.rows;
-  return {
-    x: (pageWidth - totalWidth) / 2 + column * (layout.width + layout.gap),
-    y: pageHeight - (pageHeight - totalHeight) / 2 - (row + 1) * layout.height - row * layout.gap,
-    width: layout.width,
-    height: layout.height,
-  };
+  // Do not recursively infer a wrapper's type from an arbitrary child. A
+  // Delhivery response may contain PDF MPS pages alongside raster box labels;
+  // each child must retain its own MIME type while traversing the wrapper.
+  return "application/octet-stream";
 };
 
 const saveBase64 = (name: string, value: string, contentType: string) => {
@@ -97,55 +69,14 @@ const saveBase64 = (name: string, value: string, contentType: string) => {
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
-const labelFileName = (reference: string, size: LabelSize) => `${reference}-LABEL-${size === "a4" ? "A4" : size}.pdf`;
-
-const imageToPdf = async (reference: string, option: LabelOption, entries: ArtifactEntry[]) => {
-  const pdf = await PDFDocument.create();
-  const layout = sheetLayouts[option.size];
-  const capacity = layout.columns * layout.rows;
-  let page = pdf.addPage(a4Points);
-  for (const [index, entry] of entries.entries()) {
-    const bytes = Uint8Array.from(atob(entry.value.replace(/^data:[^;]+;base64,/, "")), (character) => character.charCodeAt(0));
-    const entryType = entry.contentType.toLowerCase().split(";", 1)[0].trim();
-    const image = entryType === "image/png" ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
-    const slot = sheetSlot(option.size, index);
-    const scale = Math.min(slot.width / image.width, slot.height / image.height);
-    const width = image.width * scale;
-    const height = image.height * scale;
-    page.drawImage(image, { x: slot.x + (slot.width - width) / 2, y: slot.y + (slot.height - height) / 2, width, height });
-    if ((index + 1) % capacity === 0 && index < entries.length - 1) page = pdf.addPage(a4Points);
-  }
-  const pdfBytes = await pdf.save({ useObjectStreams: false });
+const assetsToA4 = async (reference: string, option: LabelOption, entries: ArtifactEntry[]) => {
+  const pdfBytes = await composeAssetsToA4(option.size, entries);
   const url = URL.createObjectURL(new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" }));
   const link = document.createElement("a"); link.href = url; link.download = labelFileName(reference, option.size); link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 };
 
-const pdfToA4 = async (reference: string, option: LabelOption, entries: ArtifactEntry[]) => {
-  const pdf = await PDFDocument.create();
-  const layout = sheetLayouts[option.size];
-  const capacity = layout.columns * layout.rows;
-  const sourcePages = [];
-  for (const entry of entries) {
-    const source = await PDFDocument.load(Uint8Array.from(atob(entry.value), (character) => character.charCodeAt(0)));
-    for (const sourcePage of source.getPages()) sourcePages.push(await pdf.embedPage(sourcePage));
-  }
-  let page = pdf.addPage(a4Points);
-  for (const [index, sourcePage] of sourcePages.entries()) {
-    const slot = sheetSlot(option.size, index);
-    const scale = Math.min(slot.width / sourcePage.width, slot.height / sourcePage.height);
-    const width = sourcePage.width * scale;
-    const height = sourcePage.height * scale;
-    page.drawPage(sourcePage, { x: slot.x + (slot.width - width) / 2, y: slot.y + (slot.height - height) / 2, width, height });
-    if ((index + 1) % capacity === 0 && index < sourcePages.length - 1) page = pdf.addPage(a4Points);
-  }
-  const pdfBytes = await pdf.save({ useObjectStreams: false });
-  const url = URL.createObjectURL(new Blob([pdfBytes as unknown as BlobPart], { type: "application/pdf" }));
-  const link = document.createElement("a"); link.href = url; link.download = labelFileName(reference, option.size); link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 500);
-};
-
-export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = true, disabled = false }: { shipmentId: string; reference: string; onNotice?: (message: string) => void; compact?: boolean; disabled?: boolean }) {
+export function DelhiveryLabelMenu({ shipmentId, reference, boxes = 1, onNotice, compact = true, disabled = false }: { shipmentId: string; reference: string; boxes?: number; onNotice?: (message: string) => void; compact?: boolean; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [downloadingSize, setDownloadingSize] = useState<LabelSize | null>(null);
@@ -160,7 +91,7 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
     // the UI wait for slow PDF fallbacks and incorrectly show “no formats”
     // even when Delhivery's order page offered Print Label. Fetch the chosen
     // artifact only when the user selects a size.
-    setOptions(sizes.map((size) => ({ size, contentType: "", artifact: undefined, copies: 1 })));
+    setOptions(labelSizes.map((size) => ({ size, contentType: "", artifact: undefined, copies: expectedStickerCount(boxes) })));
     setLoading(false);
     onNotice?.("Choose a Delhivery label size to download.");
   };
@@ -185,19 +116,18 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
         return type === "image/png" || type === "image/jpeg";
       });
       if (!entries.length) throw new Error("Delhivery did not return a label for this size.");
-      if (pdfEntries.length && (option.size === "a4" || !imageEntries.length)) {
-        // Keep the provider PDF byte-for-byte when it is the authoritative
-        // A4/MPS document. This avoids re-encoding mixed provider assets.
+      const returnedCopies = await printableAssetCount(entries);
+      const requiredCopies = expectedStickerCount(boxes);
+      if (returnedCopies < requiredCopies) throw new Error(`Delhivery returned ${returnedCopies} sticker${returnedCopies === 1 ? "" : "s"}; ${requiredCopies} were expected for ${boxes} box${boxes === 1 ? "" : "es"}, including the MPS sticker.`);
+      if (pdfEntries.length === 1 && !imageEntries.length && option.size === "a4") {
+        // Keep a single authoritative provider A4/MPS PDF byte-for-byte.
         saveBase64(labelFileName(reference, option.size), pdfEntries[0].value, "application/pdf");
-      } else if (imageEntries.length) {
-        // Delhivery's B2B label API returns PNG/JPEG assets. Embed those exact
-        // source bytes in a PDF at the selected physical size. No rasterization,
-        // JPEG recompression, sharpening, or crop is performed.
-        await imageToPdf(reference, option, imageEntries);
-      } else if (pdfEntries.length) {
-        // If Delhivery returns only PDF pages for a sticker size, impose those
-        // vector pages onto an A4 sheet without rasterizing them.
-        await pdfToA4(reference, option, pdfEntries);
+      } else if (entries.length) {
+        // For every sticker size other than a single provider A4 PDF, impose
+        // the complete provider sequence onto printable A4 sheets. Images
+        // retain their source pixels and PDF assets remain vector pages, so
+        // the MPS/document sticker is not dropped or re-encoded.
+        await assetsToA4(reference, option, entries);
       } else {
         throw new Error("Delhivery did not return a usable label for this size.");
       }
@@ -210,7 +140,7 @@ export function DelhiveryLabelMenu({ shipmentId, reference, onNotice, compact = 
     <button type="button" aria-label={unavailable ? `Label unavailable for ${reference}` : `Download label for ${reference}`} aria-expanded={open} disabled={unavailable} onClick={() => { if (unavailable) { onNotice?.("Label unavailable until Delhivery publishes an LR/AWB."); return; } if (open) setOpen(false); else void loadOptions(); }} className={cn("inline-flex items-center justify-center rounded-md border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50", compact ? "size-8" : "gap-1.5 px-2.5 py-2 text-xs font-semibold")} title={unavailable ? "Label unavailable until Delhivery publishes an LR/AWB" : "Download Delhivery label"}><Tag className="size-3.5" />{!compact && <span>Label</span>}</button>
     {open && <div className="absolute right-0 top-full z-40 mt-2 w-56 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl">
       <p className="px-3 py-2 text-[11px] font-semibold text-muted-foreground">Delhivery label size</p>
-      {loading ? <p className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading formats…</p> : options.length ? options.map((option) => <button key={option.size} type="button" disabled={downloadingSize !== null} onClick={() => void download(option)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-accent disabled:cursor-wait disabled:opacity-60">{downloadingSize === option.size ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}{downloadingSize === option.size ? "Preparing…" : sizeLabels[option.size]}{pdfPageCount(option) > 1 ? ` · ${pdfPageCount(option)} pages` : ""}</button>) : <p className="px-3 py-2 text-xs text-muted-foreground">No label formats available.</p>}
+      {loading ? <p className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading formats…</p> : options.length ? options.map((option) => <button key={option.size} type="button" disabled={downloadingSize !== null} onClick={() => void download(option)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-accent disabled:cursor-wait disabled:opacity-60">{downloadingSize === option.size ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}{downloadingSize === option.size ? "Preparing…" : labelSizeLabel[option.size]}{pdfPageCount(option.size, option.copies) > 1 ? ` · ${pdfPageCount(option.size, option.copies)} pages` : ""}</button>) : <p className="px-3 py-2 text-xs text-muted-foreground">No label formats available.</p>}
     </div>}
   </div>;
 }

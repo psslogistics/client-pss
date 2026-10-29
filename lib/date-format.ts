@@ -1,5 +1,16 @@
 const dateOnlyPattern = /^(\d{4})-(\d{2})-(\d{2})/;
 
+/** Return a local calendar date without allowing UTC conversion to change the day. */
+export function localDateInput(value = new Date()) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
+export function shiftLocalDays(value: Date, days: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return localDateInput(next);
+}
+
 /** Client-facing calendar dates are always rendered as DD-MM-YYYY. */
 export function formatDate(value: unknown, fallback = "Not provided") {
   const raw = String(value ?? "").trim();

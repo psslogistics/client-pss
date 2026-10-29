@@ -82,7 +82,7 @@ const expireAuthSession = () => {
   return authExpiryInFlight;
 };
 let sessionInFlight: ReturnType<ReturnType<typeof createClient>["auth"]["getSession"]> | null = null;
-const isSessionCachedRead = (path: string) => path.startsWith("/v1/dashboard/summary") || path.startsWith("/v1/reports/client-complete") || path === "/v1/provider-capabilities" || path === "/v1/provider-account-policies";
+const isSessionCachedRead = (path: string) => path.startsWith("/v1/dashboard/summary") || path.startsWith("/v1/reports/client-complete") || path === "/v1/provider-capabilities" || path === "/v1/provider-account-policies" || path === "/v1/client-courier-capabilities";
 const sessionKey = (userId: string, path: string) => `pss-api:${userId}:${path}`;
 
 export class PssApiError extends Error {

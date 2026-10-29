@@ -7,6 +7,7 @@ import { formatINR } from "@/lib/client-finance-data";
 
 type DelayedRow = {
   id: string;
+  trackingQuery: string;
   trackingId: string;
   origin: string;
   destination: string;
@@ -53,7 +54,7 @@ export default function ClientDashboardOperations({
         </div>
         <div className="min-h-0 flex-1 divide-y divide-border/60 overflow-y-auto custom-scrollbar">
           {delayedRows.map((shp) => (
-            <Link key={shp.id} href={`/dashboard/shipmentTracking?id=${shp.id}`} className="flex items-center gap-3 px-5 py-3.5 transition-all duration-200 hover:bg-amber-500/5 hover:-translate-y-0.5 group">
+            <Link key={shp.id} href={`/dashboard/shipmentTracking?id=${encodeURIComponent(shp.trackingQuery)}`} className="flex items-center gap-3 px-5 py-3.5 transition-all duration-200 hover:bg-amber-500/5 hover:-translate-y-0.5 group">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-bold text-foreground group-hover:text-primary transition-colors">{shp.trackingId}</span>
