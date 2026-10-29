@@ -367,6 +367,14 @@ export default function ShipmentBooking() {
     }, 250);
   }, []);
 
+  const reloadSavedAddressList = useCallback(async (kind: "pickup" | "consignee") => {
+    const path = kind === "pickup" ? "/v1/warehouses?limit=50&offset=0" : "/v1/addresses?limit=50&offset=0&active_only=true&address_kind=consignee";
+    const result = await pssApi<{ data: Array<Record<string, string>> }>(path, { cache: "no-store" });
+    const mapped = dedupeSavedAddresses((result.data ?? []).map(savedAddressRecord));
+    if (kind === "pickup") setSavedPickups(mapped); else setSavedConsignees(mapped);
+    return mapped;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void pssApi<{ data: { approved: boolean; status: string; missing_fields: string[] } }>("/v1/kyc-status")
@@ -592,12 +600,13 @@ export default function ShipmentBooking() {
 
   const savePickup = () => {
     const saved = { id: `${Date.now()}-${savedPickups.length}`, name: [pickupPerson.name || "Pickup", pickup.city, pickup.state, pickup.pincode].filter(Boolean).join(" · "), address: pickup, contact: pickupPerson };
-    void pssApi<{ data: { id: string } }>("/v1/warehouses", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ name: saved.name, contact_name: pickupPerson.name, address: pickup.line, city: pickup.city, state: pickup.state, pincode: pickup.pincode, contact: pickupPerson.phone }) }).then((result) => { const persisted = { ...saved, id: result.data.id }; const next = [...savedPickups, persisted]; setSavedPickups(next); setSelectedSavedPickupId(persisted.id); setSavedName(persisted.name); setIsRenamingSaved(false); setNotice("Pickup address saved"); setToast({ message: "Consignor address saved for reuse", tone: "success" }); }).catch((error) => { const details = getPssErrorDetails(error, "The pickup address could not be saved."); setToast({ message: `Pickup address could not be saved: ${details.message}`, tone: "error" }); });
+    const selectedCourierConfig = couriers.find((item) => item.id === selectedCourier) || couriers[0];
+    void pssApi<{ data: { id: string } }>("/v1/warehouses", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ name: saved.name, provider_account_id: selectedCourierConfig?.accountId || undefined, contact_name: pickupPerson.name, address: pickup.line, city: pickup.city, state: pickup.state, pincode: pickup.pincode, contact: pickupPerson.phone }) }).then(async (result) => { const fallback = { ...saved, id: result.data.id }; let persisted = fallback; try { persisted = (await reloadSavedAddressList("pickup")).find((item) => item.id === result.data.id) ?? fallback; } catch { /* The POST already persisted; keep the returned record if the follow-up read is unavailable. */ } setSelectedSavedPickupId(persisted.id); setSavedName(persisted.name); setIsRenamingSaved(false); setNotice("Pickup address saved"); setToast({ message: "Consignor address saved for reuse", tone: "success" }); }).catch((error) => { const details = getPssErrorDetails(error, "The pickup address could not be saved."); setToast({ message: `Pickup address could not be saved: ${details.message}`, tone: "error" }); });
   };
 
   const saveConsignee = () => {
     const saved = { id: `${Date.now()}-${savedConsignees.length}`, name: [deliveryPerson.name || "Consignee", delivery.city, delivery.state, delivery.pincode].filter(Boolean).join(" · "), address: delivery, contact: deliveryPerson };
-    void pssApi<{ data: { id: string } }>("/v1/addresses", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ label: saved.name, address_kind: "consignee", address: delivery.line, city: delivery.city, state: delivery.state, country: delivery.country, pincode: delivery.pincode, contact_name: deliveryPerson.name, phone: deliveryPerson.phone }) }).then((result) => { const persisted = { ...saved, id: result.data.id }; const next = [...savedConsignees, persisted]; setSavedConsignees(next); setSelectedSavedConsigneeId(persisted.id); setSavedConsigneeName(persisted.name); setIsRenamingConsignee(false); setNotice("Consignee address saved"); setToast({ message: "Consignee address saved for reuse", tone: "success" }); }).catch((error) => { const details = getPssErrorDetails(error, "The consignee address could not be saved."); setToast({ message: `Consignee address could not be saved: ${details.message}`, tone: "error" }); });
+    void pssApi<{ data: { id: string } }>("/v1/addresses", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ label: saved.name, address_kind: "consignee", address: delivery.line, city: delivery.city, state: delivery.state, country: delivery.country, pincode: delivery.pincode, contact_name: deliveryPerson.name, phone: deliveryPerson.phone }) }).then(async (result) => { const fallback = { ...saved, id: result.data.id }; let persisted = fallback; try { persisted = (await reloadSavedAddressList("consignee")).find((item) => item.id === result.data.id) ?? fallback; } catch { /* The POST already persisted; keep the returned record if the follow-up read is unavailable. */ } setSelectedSavedConsigneeId(persisted.id); setSavedConsigneeName(persisted.name); setIsRenamingConsignee(false); setNotice("Consignee address saved"); setToast({ message: "Consignee address saved for reuse", tone: "success" }); }).catch((error) => { const details = getPssErrorDetails(error, "The consignee address could not be saved."); setToast({ message: `Consignee address could not be saved: ${details.message}`, tone: "error" }); });
   };
 
   const reuseSavedPickup = (id: string) => { const saved = savedPickups.find((item) => item.id === id); if (!saved) return; setSelectedSavedPickupId(id); setSavedName(saved.name); setPickup(saved.address); setPickupPerson(saved.contact); setPickupPinStatus({ state: "idle", message: "" }); if (saved.address.pincode && (!saved.address.city || !saved.address.state)) void lookupPincode("pickup", saved.address.pincode); setBookingNotice(""); setBookingDiagnostic(null); };
