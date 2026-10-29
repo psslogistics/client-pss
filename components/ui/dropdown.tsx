@@ -14,6 +14,9 @@ type DropdownProps = {
   searchable?: boolean;
   onSearchChange?: (query: string) => void;
   searchLoading?: boolean;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
   searchPlaceholder?: string;
 };
 
@@ -28,6 +31,9 @@ export default function Dropdown({
   searchable = label === "Reuse saved",
   onSearchChange,
   searchLoading = false,
+  onLoadMore,
+  hasMore = false,
+  loadingMore = false,
   searchPlaceholder = "Search saved addresses…",
 }: DropdownProps) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -52,6 +58,7 @@ export default function Dropdown({
       {searchable && <div className="sticky top-0 z-10 mb-1 flex items-center gap-2 rounded-lg border border-input bg-background px-2.5"><Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><input autoFocus aria-label={`Search ${label.toLowerCase()}`} value={query} onChange={(event) => { setQuery(event.target.value); onSearchChange?.(event.target.value); }} placeholder={searchPlaceholder} className="h-8 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground" />{searchLoading && <span className="text-[10px] text-muted-foreground">Searching…</span>}</div>}
       {!query.trim() && <button type="button" role="option" aria-selected={!value} onClick={() => { onChange(""); setOpen(false); clearSearch(); }} className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition ${!value ? "bg-primary/10 font-semibold text-primary" : "hover:bg-accent"}`}>{label}{!value && <Check className="h-3.5 w-3.5" />}</button>}
       {filteredOptions.map((option, index) => { const optionValue = typeof option === "string" ? option : option.value; const optionLabel = typeof option === "string" ? option : option.label; return <button key={`${optionValue}-${index}`} title={optionLabel} type="button" role="option" aria-selected={value === optionValue} onClick={() => { onChange(optionValue); setOpen(false); clearSearch(); }} className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs transition ${value === optionValue ? "bg-primary/10 font-semibold text-primary" : "hover:bg-accent"}`}><span className="min-w-0 flex-1 truncate">{optionLabel || label}</span>{value === optionValue && <Check className="h-3.5 w-3.5 shrink-0" />}</button>; })}
+      {onLoadMore && hasMore && <button type="button" onClick={onLoadMore} disabled={loadingMore} className="mt-1 flex w-full items-center justify-center rounded-lg border border-dashed border-border px-2.5 py-2 text-[11px] font-semibold text-primary transition hover:bg-accent disabled:cursor-wait disabled:opacity-60">{loadingMore ? "Loading more…" : "Load more saved addresses"}</button>}
       {searchable && !filteredOptions.length && <p className="px-2.5 py-3 text-xs text-muted-foreground">No saved addresses match.</p>}
     </div>}
   </div>;

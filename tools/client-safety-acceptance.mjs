@@ -67,5 +67,9 @@ assert.match(booking, /savedPickups\.map\(\(saved\) => \(\{ value: saved\.id, la
 assert.match(booking, /reloadSavedAddressList/);
 assert.match(booking, /cache: "no-store"/);
 assert.match(booking, /address_kind: "consignee"/);
+assert.match(booking, /loadMoreSavedAddresses/);
+assert.match(booking, /savedAddressHasMore/);
+assert.match(booking, /pagination\?\.has_more/);
+assert.match(booking, /active_only=true&address_kind=consignee/);
 
-console.log("Client safety contract checks passed (45 checks).");
+console.log("Client safety contract checks passed (49 checks).");
