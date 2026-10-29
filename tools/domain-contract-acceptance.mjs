@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  countActiveShipmentStatuses,
   isActiveShipmentStatus,
   isDelayedShipment,
   normalizeShipmentStatus,
@@ -15,6 +16,7 @@ assert.equal(toClientShipmentStatus("manifested"), "Booked");
 assert.equal(toClientShipmentStatus("out_for_delivery"), "Out for Delivery");
 assert.equal(isActiveShipmentStatus("provider_pending"), true);
 assert.equal(isActiveShipmentStatus("delivered"), false);
+assert.equal(countActiveShipmentStatuses(124, { booked: 47, cancelled: 2, delivered: 18, exception: 35, in_transit: 11, out_for_delivery: 11, delayed: 69 }), 104);
 assert.equal(isDelayedShipment("2026-10-01", "booked", new Date("2026-10-28T12:00:00+05:30")), true);
 assert.equal(isDelayedShipment("2026-10-01", "delivered", new Date("2026-10-28T12:00:00+05:30")), false);
 assert.equal(shipmentStatusPolicy("provider_pending").labelDownload, false);

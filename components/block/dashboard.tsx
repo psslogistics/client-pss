@@ -26,6 +26,7 @@ import {
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import { formatStatusLabel } from "@/lib/display";
+import { countActiveShipmentStatuses } from "@/lib/shipment-status";
 import type { ClientFinancialSnapshot } from "@/lib/client-dashboard-data";
 const ClientDashboardOperations = dynamic(() => import("./client-dashboard-operations"), {
   ssr: false,
@@ -247,7 +248,7 @@ export default function Dashboard() {
     const status = rawStatus.toLowerCase() === "picked_up" ? "in_transit" : rawStatus.toLowerCase() === "rto" ? "returned" : rawStatus.toLowerCase();
     statusCounts.set(status, (statusCounts.get(status) ?? 0) + count);
   }
-  const activeShipments = [...statusCounts.entries()].reduce((total, [status, count]) => total + (["delivered", "cancelled", "returned"].includes(status) ? 0 : count), 0);
+  const activeShipments = countActiveShipmentStatuses(production.shipmentStats.total, production.shipmentStats.statuses);
   const liveKpiMetrics: KpiMetric[] = [
     { id: "shipments", title: "Total shipments", value: metricValue(production.shipmentStats.total), change: metricState, isPositive: true, sparklinePoints: "0,20 15,18 30,22 45,14 60,16 75,8", category: "Operations", description: "All shipment records" },
     { id: "active", title: "Active shipments", value: metricValue(activeShipments), change: metricState, isPositive: true, sparklinePoints: "0,22 15,20 30,18 45,20 60,12 75,10", category: "Operations", description: "All shipments not delivered, cancelled, or returned" },

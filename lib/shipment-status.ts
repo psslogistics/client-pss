@@ -83,3 +83,16 @@ export function isDelayedShipment(edd: unknown, value: unknown, now = new Date()
 export function isActiveShipmentStatus(value: unknown) {
   return shipmentStatusPolicy(value).active;
 }
+
+/**
+ * Counts the active roll-up from a mutually exclusive total and raw status
+ * counts. Delayed is also exposed as a derived due-date view, so it must not
+ * be added as a second bucket on top of the raw statuses.
+ */
+export function countActiveShipmentStatuses(total: number, counts: Record<string, number>) {
+  const closed = Object.entries(counts).reduce((sum, [status, count]) => {
+    const normalized = normalizeShipmentStatus(status);
+    return sum + (isTerminalShipmentStatus(normalized) ? Number(count ?? 0) : 0);
+  }, 0);
+  return Math.max(0, Number(total || 0) - closed);
+}
