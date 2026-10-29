@@ -39,7 +39,7 @@ assert.match(labelPdfSource, /pdf\.embedPng/);
 assert.match(labelPdfSource, /pdf\.embedPage/);
 assert.match(labelPdfSource, /595\.28, 841\.89/);
 assert.match(labelPdfSource, /a4: \{ width: a4Points\[0\] - 12, height: a4Points\[1\] - 18, columns: 1, rows: 1/);
-assert.match(trackingSource, /row\.invoice_number/);
+assert.match(trackingSource, /invoiceNumberForLr\(lrn\)/);
 assert.match(trackingSource, /dashboard\/supportTicketCreation/);
 assert.match(trackingSource, /dashboard\/weightReconciliation/);
 assert.match(trackingSource, /dashboard\/ndrExceptions/);
