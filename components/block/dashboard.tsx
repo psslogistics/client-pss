@@ -27,6 +27,7 @@ import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import { formatStatusLabel } from "@/lib/display";
 import { countActiveShipmentStatuses } from "@/lib/shipment-status";
+import { billingTotals, codTotals } from "@/lib/finance-contract";
 import type { ClientFinancialSnapshot } from "@/lib/client-dashboard-data";
 const ClientDashboardOperations = dynamic(() => import("./client-dashboard-operations"), {
   ssr: false,
@@ -289,9 +290,9 @@ export default function Dashboard() {
   const shipmentStatusData = [...statusCounts.entries()].map(([status, count]) => ({ status, count, percentage: totalShipments ? Math.round((count / totalShipments) * 100) : 0, badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary", barClass: "bg-primary" }));
   const transportCounts = new Map<string, number>(Object.entries(production.shipmentStats.providers).map(([provider, count]) => [publicCourierName(provider, ""), count]));
   const transportModes = [...transportCounts.entries()].map(([name, shipments]) => ({ name, shipments, percentage: totalShipments ? Math.round((shipments / totalShipments) * 100) : 0, color: "var(--primary)" }));
-  const unsettledCodStatuses = new Set(["paid", "settled", "completed", "failed", "rejected", "cancelled", "canceled"]);
-  const codExposure = production.cod.filter((item) => !unsettledCodStatuses.has(String(item.status ?? "").toLowerCase())).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
-  const financialSnapshot: ClientFinancialSnapshot = { balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null, pendingCharges: production.billing.filter((item) => String(item.status).toLowerCase() === "pending").reduce((sum, item) => sum + Number(item.amount ?? 0), 0) || null, codExposure: codExposure || null, recentTransactions: [] };
+  const billingSummary = billingTotals(production.billing);
+  const codSummary = codTotals(production.cod);
+  const financialSnapshot: ClientFinancialSnapshot = { balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null, pendingCharges: billingSummary.pendingAmount || null, codExposure: codSummary.exposure || null, recentTransactions: [] };
   const todayIso = new Date().toISOString().slice(0, 10);
   const closedPickupStatuses = new Set(["completed", "cancelled", "failed"]);
   const todayPickupRows = production.pickups

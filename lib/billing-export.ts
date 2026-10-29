@@ -4,6 +4,7 @@ import { zipSync } from "fflate";
 import { formatDate, localDateInput, shiftLocalDays } from "@/lib/date-format";
 import { buildWorkbook, type WorkbookCell } from "@/lib/xlsx";
 import { EXAMPLE_INVOICE_BUYER, EXAMPLE_INVOICE_SELLER, amountInWords, cycleInvoiceNumber, invoiceNumberForLr } from "@/lib/invoice-contract";
+import { billingTotals, isExcludedFinanceRecord } from "@/lib/finance-contract";
 
 export type BillingExportRecord = {
   id: string;
@@ -48,7 +49,7 @@ const dimensionsText = (value: BillingExportRecord["dimensions"]) => {
 const linesFor = (record: BillingExportRecord) => record.line_items?.length ? [...record.line_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)) : record.pricing?.lines ?? [];
 const taxFor = (record: BillingExportRecord) => linesFor(record).filter((line) => line.code.toLowerCase().includes("gst") || line.code.toLowerCase().includes("tax")).reduce((sum, line) => sum + Number(line.amount || 0), 0);
 const breakupText = (record: BillingExportRecord) => linesFor(record).map((line) => `${line.label}${line.marker ?? ""}: Rs. ${money(line.amount)}`).join(" | ");
-const isExcluded = (record: BillingExportRecord) => ["void", "cancelled", "canceled"].includes(text(record.status).toLowerCase());
+const isExcluded = isExcludedFinanceRecord;
 const downloadBytes = (bytes: ArrayBuffer, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([bytes], { type })); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
 const exampleSeller = `${EXAMPLE_INVOICE_SELLER.name}\n${EXAMPLE_INVOICE_SELLER.address}\nGSTIN: ${EXAMPLE_INVOICE_SELLER.gstin}\nEmail: ${EXAMPLE_INVOICE_SELLER.email}`;
 const exampleBuyer = `${EXAMPLE_INVOICE_BUYER.name}\n${EXAMPLE_INVOICE_BUYER.address}\nGSTIN: ${EXAMPLE_INVOICE_BUYER.gstin}`;
@@ -67,7 +68,7 @@ function makeXlsx(records: BillingExportRecord[], days: number, now: Date) {
     breakupText(record), taxFor(record), record.adjustments?.map((item) => `${item.component_code}: ${money(item.previous_amount)} -> ${money(item.new_amount)} (${item.reason})`).join(" | "),
     record.amendments?.map((item) => `${item.amendment_type}: ${money(item.previous_amount)} -> ${money(item.new_amount)} (${item.reason})`).join(" | "), record.amount,
   ] as WorkbookCell[]);
-  const billableTotal = records.filter((record) => !isExcluded(record)).reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  const billableTotal = billingTotals(records).total;
   return buildWorkbook([
     { name: "Billing summary", headers: ["Field", "Value"], rows: [["Period", `${period.start} to ${period.end}`], ["Generated at", localDateInput()], ["Records exported", records.length], ["Billable records", records.filter((record) => !isExcluded(record)).length], ["Excluded records", records.filter(isExcluded).length], ["Final billed total", billableTotal]], columnWidths: [24, 34], currencyColumns: [1], autoFilter: false },
     { name: `Billing ${days} days`, headers, rows, columnWidths: [18, 22, 18, 16, 18, 20, 20, 20, 22, 34, 34, 10, 14, 20, 24, 16, 22, 14, 22, 42, 14, 42, 42, 16], numericColumns: [11, 12, 13], currencyColumns: [15, 20, 23], dateColumns: [16, 18] },
