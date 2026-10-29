@@ -70,7 +70,7 @@ assert.match(booking, /address_kind: "consignee"/);
 assert.match(booking, /loadMoreSavedAddresses/);
 assert.match(booking, /savedAddressHasMore/);
 assert.match(booking, /pagination\?\.has_more/);
-assert.match(booking, /active_only=true&address_kind=consignee/);
+assert.match(booking, /active_only=true\$\{search\}/);
 assert.match(booking, /fetchConsigneeAddresses/);
 assert.match(booking, /consigneeAddressRows/);
 assert.match(booking, /const explicitConsignees = rows\.filter/);
