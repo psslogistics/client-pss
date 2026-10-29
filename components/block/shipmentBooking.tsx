@@ -81,6 +81,18 @@ const savedAddressRecord = (row: Record<string, string>): SavedPickup => {
   const pick = (...values: unknown[]) => values.map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
   return { id: String(row.id ?? ""), name: label, address: { line: cleanSavedAddressLine(row.address), city: pick(row.city, parts.length >= 4 ? parts[1] : ""), state: pick(row.state, parts.length >= 4 ? parts[2] : ""), pincode: pick(row.pincode, parts.length >= 4 ? parts[3] : ""), country: pick(row.country, "India") }, contact: { name: pick(row.contact_name, row.contactName, parts.length >= 4 ? parts[0] : ""), phone: pick(row.phone, row.contact), email: pick(row.email) } };
 };
+const consigneeAddressRows = (rows: Array<Record<string, string>>) => {
+  const explicitConsignees = rows.filter((row) => String(row.address_kind ?? "").trim().toLowerCase() === "consignee");
+  if (explicitConsignees.length) return explicitConsignees;
+  return rows.filter((row) => !String(row.address_kind ?? "").trim());
+};
+const fetchConsigneeAddresses = async (limit: number, offset: number, query = "", init: RequestInit = {}) => {
+  const search = query ? `&search=${encodeURIComponent(query)}` : "";
+  const typed = await pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/addresses?limit=${limit}&offset=${offset}&active_only=true&address_kind=consignee${search}`, init);
+  if ((typed.data ?? []).length || typed.pagination?.has_more) return typed;
+  const legacy = await pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/addresses?limit=${limit}&offset=${offset}&active_only=true${search}`, init);
+  return { ...legacy, data: consigneeAddressRows(legacy.data ?? []) };
+};
 const savedAddressIdentity = (row: SavedPickup) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 const dedupeSavedAddresses = (rows: SavedPickup[]) => { const seen = new Set<string>(); return rows.filter((row) => { const key = savedAddressIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; }); };
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
@@ -335,7 +347,7 @@ export default function ShipmentBooking() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.allSettled([pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>("/v1/warehouses?limit=50&offset=0"), pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>("/v1/addresses?limit=50&offset=0&active_only=true&address_kind=consignee")]).then(([warehouseResult, addressResult]) => {
+    void Promise.allSettled([pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>("/v1/warehouses?limit=50&offset=0"), fetchConsigneeAddresses(50, 0)]).then(([warehouseResult, addressResult]) => {
       if (cancelled) return;
       const errors: string[] = [];
       if (warehouseResult.status === "fulfilled") { const rows = warehouseResult.value.data ?? []; setSavedPickups(dedupeSavedAddresses(rows.map(savedAddressRecord))); savedAddressPaging.current.pickup = { query: "", offset: rows.length }; setSavedAddressHasMore((current) => ({ ...current, pickup: warehouseResult.value.pagination?.has_more === true })); }
@@ -355,8 +367,8 @@ export default function ShipmentBooking() {
     if (savedAddressSearchTimers.current[kind]) window.clearTimeout(savedAddressSearchTimers.current[kind]);
     if (kind === "pickup") setSavedPickupSearchLoading(true); else setSavedConsigneeSearchLoading(true);
     savedAddressSearchTimers.current[kind] = window.setTimeout(() => {
-      const path = kind === "pickup" ? `/v1/warehouses?limit=50&offset=0&search=${encodeURIComponent(normalized)}` : `/v1/addresses?limit=50&offset=0&active_only=true&address_kind=consignee&search=${encodeURIComponent(normalized)}`;
-      void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(path).then((result) => {
+      const request = kind === "pickup" ? pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=0&search=${encodeURIComponent(normalized)}`) : fetchConsigneeAddresses(50, 0, normalized);
+      void request.then((result) => {
         if (sequence !== savedAddressSearchSequence.current[kind]) return;
         const rows = result.data ?? [];
         const mapped = dedupeSavedAddresses(rows.map(savedAddressRecord));
@@ -377,11 +389,11 @@ export default function ShipmentBooking() {
     if (savedAddressLoadingMore[kind] || !savedAddressHasMore[kind]) return;
     const sequence = savedAddressSearchSequence.current[kind];
     const { query, offset } = savedAddressPaging.current[kind];
-    const params = kind === "pickup"
-      ? `/v1/warehouses?limit=50&offset=${offset}&search=${encodeURIComponent(query)}`
-      : `/v1/addresses?limit=50&offset=${offset}&active_only=true&address_kind=consignee&search=${encodeURIComponent(query)}`;
     setSavedAddressLoadingMore((current) => ({ ...current, [kind]: true }));
-    void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(params).then((result) => {
+    const request = kind === "pickup"
+      ? pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=${offset}&search=${encodeURIComponent(query)}`)
+      : fetchConsigneeAddresses(50, offset, query);
+    void request.then((result) => {
       if (sequence !== savedAddressSearchSequence.current[kind]) return;
       const rows = result.data ?? [];
       savedAddressPaging.current[kind] = { query, offset: offset + rows.length };
@@ -394,8 +406,7 @@ export default function ShipmentBooking() {
   }, [savedAddressHasMore, savedAddressLoadingMore]);
 
   const reloadSavedAddressList = useCallback(async (kind: "pickup" | "consignee") => {
-    const path = kind === "pickup" ? "/v1/warehouses?limit=50&offset=0" : "/v1/addresses?limit=50&offset=0&active_only=true&address_kind=consignee";
-    const result = await pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(path, { cache: "no-store" });
+    const result = kind === "pickup" ? await pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>("/v1/warehouses?limit=50&offset=0", { cache: "no-store" }) : await fetchConsigneeAddresses(50, 0, "", { cache: "no-store" });
     const mapped = dedupeSavedAddresses((result.data ?? []).map(savedAddressRecord));
     savedAddressPaging.current[kind] = { query: "", offset: (result.data ?? []).length };
     setSavedAddressHasMore((current) => ({ ...current, [kind]: result.pagination?.has_more === true }));
