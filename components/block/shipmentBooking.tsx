@@ -84,7 +84,8 @@ const savedAddressRecord = (row: Record<string, string>): SavedPickup => {
 const consigneeAddressRows = (rows: Array<Record<string, string>>) => {
   const explicitConsignees = rows.filter((row) => String(row.address_kind ?? "").trim().toLowerCase() === "consignee");
   if (explicitConsignees.length) return explicitConsignees;
-  return rows.filter((row) => !String(row.address_kind ?? "").trim());
+  const legacyRows = rows.filter((row) => !String(row.address_kind ?? "").trim());
+  return legacyRows.length ? legacyRows : rows;
 };
 const fetchConsigneeAddresses = async (limit: number, offset: number, query = "", init: RequestInit = {}) => {
   const search = query ? `&search=${encodeURIComponent(query)}` : "";
