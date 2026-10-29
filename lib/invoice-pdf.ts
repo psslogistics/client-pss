@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { formatDate } from "@/lib/date-format";
 import { EXAMPLE_INVOICE_BUYER, EXAMPLE_INVOICE_SELLER, amountInWords, invoiceFileName, invoiceNumberForLr } from "@/lib/invoice-contract";
 
@@ -89,6 +90,26 @@ function cell(doc: jsPDF, x: number, y: number, w: number, h: number, text: stri
   const lines = doc.splitTextToSize(text, Math.max(w - 10, 10)); doc.text(lines, tx, y + 13, { align, baseline: "alphabetic" });
 }
 
+function clientChargeLabel(label: string) {
+  return label
+    .replace(/carrier\s+risk\s+fee/gi, "Risk coverage fee")
+    .replace(/carrier\s+risk/gi, "Risk coverage")
+    .replace(/\bFOV\b/g, "Freight value protection");
+}
+
+function dimensionsText(value: InvoicePdfRecord["dimensions"]) {
+  if (!value) return "Not provided";
+  const list = Array.isArray(value) ? value : [value];
+  const text = list.map((item) => {
+    const length = String(item.length ?? "").trim();
+    const width = String(item.width ?? item.breadth ?? "").trim();
+    const height = String(item.height ?? "").trim();
+    const unit = String(item.unit ?? "").trim();
+    return [length, width, height].every(Boolean) ? `${length} × ${width} × ${height}${unit ? ` ${unit}` : ""}` : "";
+  }).filter(Boolean).join("; ");
+  return text || "Not provided";
+}
+
 export function createInvoicePdf(record: InvoicePdfRecord) {
   const doc = new jsPDF({ unit: "pt", format: [PAGE_W, PAGE_H] });
   const total = Number(record.amount || 0);
@@ -103,32 +124,34 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
   const publicReference = clean(record.lr_number ?? record.tracking_number ?? record.reference_number, "Pending reference");
   const invoiceDate = date(record.created_at);
 
-  doc.setTextColor(...INK); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text("Tax Invoice", 174, 34);
-  doc.setFontSize(11); doc.text("e-Invoice", 416, 34);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text(record.irn ? `IRN: ${record.irn}` : "IRN: Not available", 38, 83);
-  doc.text(record.ack_number ? `Ack No. : ${record.ack_number}` : "Ack No. : Not available", 38, 101);
-  doc.text(record.ack_date ? `Ack Date : ${date(record.ack_date)}` : "Ack Date : Not available", 38, 119);
-  line(doc, 392, 44, 532, 44, 0.4); line(doc, 532, 44, 532, 164, 0.4); line(doc, 532, 164, 392, 164, 0.4); line(doc, 392, 164, 392, 44, 0.4);
-  doc.setFontSize(7); doc.text(record.irn ? "IRN QR data available" : "E-invoice QR data unavailable", 462, 106, { align: "center" });
+  doc.setTextColor(...INK); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text("Tax Invoice", LEFT, 38);
+  doc.setFontSize(10); doc.text("PSS LOGISTICS", PAGE_W - LEFT, 38, { align: "right" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text(`Invoice No.: ${invoiceNumber}`, LEFT, 56); doc.text(`Invoice date: ${invoiceDate}`, PAGE_W - LEFT, 56, { align: "right" });
+  line(doc, LEFT, 66, PAGE_W - LEFT, 66, 0.8);
 
-  const top = 164; const sellerH = 84; const buyerH = 70; const metaX = 276; const leftW = 240; const metaRowH = (sellerH + buyerH) / 6;
-  cell(doc, LEFT, top, leftW, sellerH, `${clean(record.seller_name, EXAMPLE_INVOICE_SELLER.name)}\n${clean(record.seller_address, EXAMPLE_INVOICE_SELLER.address)}\nGSTIN/UIN: ${clean(record.seller_gstin, EXAMPLE_INVOICE_SELLER.gstin)}\nState Name: ${clean(record.seller_state, EXAMPLE_INVOICE_SELLER.state)}, Code: ${clean(record.seller_state_code, EXAMPLE_INVOICE_SELLER.stateCode)}\nContact: ${clean(record.seller_contact, EXAMPLE_INVOICE_SELLER.contact)}\nE-Mail: ${clean(record.seller_email, EXAMPLE_INVOICE_SELLER.email)}`, { bold: true, size: 8 });
-  cell(doc, LEFT, top + sellerH, leftW, buyerH, `Buyer (Bill to)\n${clean(record.client_name ?? record.buyer_name, EXAMPLE_INVOICE_BUYER.name)}\n${clean(record.client_address ?? record.buyer_address, EXAMPLE_INVOICE_BUYER.address)}\nGSTIN/UIN: ${clean(record.client_gstin ?? record.buyer_gstin, EXAMPLE_INVOICE_BUYER.gstin)}\nState Name: ${clean(record.client_state ?? record.buyer_state, EXAMPLE_INVOICE_BUYER.state)}, Code: ${clean(record.client_state_code ?? record.buyer_state_code, EXAMPLE_INVOICE_BUYER.stateCode)}`, { size: 8 });
-  const metaRows = [["Invoice No.", invoiceNumber, "Dated", invoiceDate], ["Delivery Note", clean(record.lr_number, "Pending LR/LRN"), "LR / LRN", clean(record.lr_number, "Pending")], ["Reference No. & Date", clean(record.reference_number, ""), "Other References", clean(record.tracking_number, "")], ["Buyer's Order No.", "", "Dated", ""], ["Dispatch Doc No.", publicReference, "Delivery Note Date", ""], ["From / To", `${clean(record.origin, "Not provided")} → ${clean(record.destination, "Not provided")}`, "Boxes / Weight", `${record.pieces ?? 1} / ${record.weight_kg ?? "—"} kg`]];
-  metaRows.forEach((row, index) => { const y = top + index * metaRowH; cell(doc, metaX, y, 92, metaRowH, row[0], { size: 6.5 }); cell(doc, metaX + 92, y, 72, metaRowH, row[1], { bold: index === 0, size: 7 }); cell(doc, metaX + 164, y, 58, metaRowH, row[2], { size: 6.5 }); cell(doc, metaX + 222, y, 42, metaRowH, row[3], { bold: index === 0, size: 7 }); });
+  const boxY = 78; const boxH = 94; const boxW = 261;
+  cell(doc, LEFT, boxY, boxW, boxH, `From\n${clean(record.seller_name, EXAMPLE_INVOICE_SELLER.name)}\n${clean(record.seller_address, EXAMPLE_INVOICE_SELLER.address)}\nGSTIN: ${clean(record.seller_gstin, EXAMPLE_INVOICE_SELLER.gstin)}\n${clean(record.seller_contact, EXAMPLE_INVOICE_SELLER.contact)} · ${clean(record.seller_email, EXAMPLE_INVOICE_SELLER.email)}`, { bold: true, size: 8 });
+  cell(doc, LEFT + boxW + 18, boxY, boxW, boxH, `Buyer (Bill to)\n${clean(record.client_name ?? record.buyer_name, EXAMPLE_INVOICE_BUYER.name)}\n${clean(record.client_address ?? record.buyer_address, EXAMPLE_INVOICE_BUYER.address)}\nGSTIN: ${clean(record.client_gstin ?? record.buyer_gstin, EXAMPLE_INVOICE_BUYER.gstin)}\n${clean(record.client_state ?? record.buyer_state, EXAMPLE_INVOICE_BUYER.state)}`, { bold: true, size: 8 });
 
-  const tableTop = top + sellerH + 70; const widths = [34, 224, 62, 54, 58, 108]; const headers = ["Sl\nNo.", "Description of\nServices", "HSN/SAC", "Quantity", "Rate", "Amount"];
-  let x = LEFT; headers.forEach((header, index) => { cell(doc, x, tableTop, widths[index], 31, header, { bold: true, align: index === 0 ? "center" : "center", size: 7, fill: true }); x += widths[index]; });
-  x = LEFT; const invoiceLines = (record.line_items?.length ? [...record.line_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)) : record.pricing?.lines ?? []); const pricingDescription = invoiceLines.map((line) => `${line.label}${line.marker ?? ""}: ₹${money(line.amount)}`).join("\n"); const adjustmentDescription = record.adjustments?.map((adjustment) => `Adjustment ${adjustment.component_code}: ₹${money(adjustment.previous_amount)} → ₹${money(adjustment.new_amount)}\nReason: ${adjustment.reason}\nRecorded: ${date(adjustment.created_at)}`).join("\n") ?? ""; const amendmentDescription = record.amendments?.map((amendment) => `Invoice amendment (${amendment.amendment_type}): ₹${money(amendment.previous_amount)} → ₹${money(amendment.new_amount)}\nReason: ${amendment.reason}\nRecorded: ${date(amendment.created_at)}`).join("\n") ?? ""; const weightNote = record.provider_weight_received_at ? `Courier weight received: ${date(record.provider_weight_received_at)}\nWeight ticket deadline: ${record.client_dispute_deadline_at ? date(record.client_dispute_deadline_at) : "Not available"}\nClient had 24 hours to raise a weight query.` : ""; const shipmentNote = `Consignor: ${clean(record.consignor, "Not provided")}\nConsignee: ${clean(record.consignee, "Not provided")}\nDimensions: ${record.dimensions ? JSON.stringify(record.dimensions) : "Not provided"}`; const description = [clean(record.service_description, "B2B COURIER SERVICE"), shipmentNote, pricingDescription, adjustmentDescription, amendmentDescription, weightNote].filter(Boolean).join("\n"); const item = ["1", description, clean(record.hsn_sac, "996812"), String(quantity), money(rate), money(base)]; item.forEach((value, index) => { cell(doc, x, tableTop + 31, widths[index], 176, value, { bold: index === 1, align: index === 0 || index > 1 ? "right" : "left", size: 8 }); x += widths[index]; });
-  const subtotalY = tableTop + 207; cell(doc, LEFT, subtotalY, 456, 22, "Total", { align: "right", size: 8 }); cell(doc, LEFT + 456, subtotalY, 84, 22, money(total), { bold: true, align: "right", size: 11 });
-  if (tax) { cell(doc, LEFT, tableTop + 64, 258, 21, `OUTPUT GST @ ${taxRate || "applicable"}%`, { bold: true, italic: true, align: "right", size: 8, fill: true }); cell(doc, LEFT + 456, tableTop + 64, 84, 21, money(tax), { bold: true, align: "right", size: 9, fill: true }); }
-  if (roundOff) { cell(doc, LEFT, tableTop + 85, 258, 21, "ROUND OFF", { bold: true, italic: true, align: "right", size: 8 }); cell(doc, LEFT + 456, tableTop + 85, 84, 21, money(roundOff), { bold: true, align: "right", size: 9 }); }
+  const metaY = 190;
+  autoTable(doc, { startY: metaY, head: [["LR / LRN", "Shipment reference", "Route", "Boxes / weight"]], body: [[clean(record.lr_number, "Pending"), publicReference, `${clean(record.origin, "Not provided")} → ${clean(record.destination, "Not provided")}`, `${record.pieces ?? 1} / ${record.weight_kg ?? "—"} kg`]], margin: { left: LEFT, right: LEFT }, tableWidth: PAGE_W - LEFT * 2, styles: { font: "helvetica", fontSize: 8, cellPadding: 6, overflow: "linebreak", minCellHeight: 26, valign: "middle", lineColor: [203, 213, 225], lineWidth: 0.4, textColor: [...INK] }, headStyles: { fillColor: [238, 238, 238], textColor: [...INK], fontStyle: "bold" }, columnStyles: { 0: { cellWidth: 82 }, 1: { cellWidth: 122 }, 2: { cellWidth: 232 }, 3: { cellWidth: 68, halign: "right" } } });
 
-  const wordsY = subtotalY + 22; cell(doc, LEFT, wordsY, 540, 52, `Amount Chargeable (in words)\nINR ${amountInWords(total)}`, { bold: true, size: 9 });
-  const lowerY = wordsY + 52; cell(doc, LEFT, lowerY, 270, 65, `Company's PAN       : ${clean(record.seller_pan, "Not provided")}\n\nDeclaration\nWe declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.`, { size: 8 });
-  cell(doc, LEFT + 270, lowerY, 270, 65, `Company's Bank Details\nA/c Holder's Name : ${clean(record.bank_account_name, "PSS LOGISTICS")}\nBank Name          : ${clean(record.bank_name, "Not configured")}\nA/c No.             : ${clean(record.bank_account_number, "Not configured")}\nBranch & IFS Code  : ${clean(record.bank_branch_ifsc, "Not configured")}`, { size: 8 });
-  cell(doc, LEFT, lowerY + 65, 240, 44, "Customer's Seal and Signature", { size: 8 }); cell(doc, LEFT + 240, lowerY + 65, 300, 44, "for PSS LOGISTICS\n\nAuthorised Signatory", { bold: true, align: "right", size: 8 });
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text("This is a Computer Generated Invoice", PAGE_W / 2, lowerY + 126, { align: "center" });
+  const invoiceLines = (record.line_items?.length ? [...record.line_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)) : record.pricing?.lines ?? []);
+  const chargeBreakup = invoiceLines.map((item) => `${clientChargeLabel(item.label)}${item.marker ?? ""}: ₹${money(item.amount)}`).join("\n");
+  const shipmentDetails = [`Service: ${clean(record.service_description, "B2B COURIER SERVICE")}`, `Consignor: ${clean(record.consignor, "Not provided")}`, `Consignee: ${clean(record.consignee, "Not provided")}`, `Dimensions: ${dimensionsText(record.dimensions)}`].join("\n");
+  const itemDescription = [shipmentDetails, chargeBreakup].filter(Boolean).join("\n\n");
+  const tableY = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? metaY + 50) + 14;
+  autoTable(doc, { startY: tableY, head: [["#", "Description of services", "HSN/SAC", "Qty", "Rate", "Amount"]], body: [["1", itemDescription, clean(record.hsn_sac, "996812"), String(quantity), `₹${money(rate)}`, `₹${money(base)}`]], margin: { left: LEFT, right: LEFT }, tableWidth: PAGE_W - LEFT * 2, rowPageBreak: "avoid", styles: { font: "helvetica", fontSize: 8, cellPadding: 7, overflow: "linebreak", minCellHeight: 42, valign: "top", lineColor: [203, 213, 225], lineWidth: 0.4, textColor: [...INK] }, headStyles: { fillColor: [24, 24, 24], textColor: 255, fontStyle: "bold", halign: "center" }, columnStyles: { 0: { cellWidth: 24, halign: "center" }, 1: { cellWidth: 247 }, 2: { cellWidth: 58, halign: "center" }, 3: { cellWidth: 46, halign: "right" }, 4: { cellWidth: 68, halign: "right" }, 5: { cellWidth: 80, halign: "right" } } });
+  const subtotalY = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? tableY + 90) + 10;
+  const totals = [["Subtotal", `₹${money(base)}`], ...(tax ? [[`GST @ ${taxRate || "applicable"}%`, `₹${money(tax)}`]] : []), ...(roundOff ? [["Round off", `₹${money(roundOff)}`]] : []), ["Total", `₹${money(total)}`]];
+  autoTable(doc, { startY: subtotalY, body: totals, margin: { left: 330, right: LEFT }, tableWidth: PAGE_W - LEFT - 330, styles: { font: "helvetica", fontSize: 8, cellPadding: 5, lineColor: [203, 213, 225], lineWidth: 0.4, textColor: [...INK] }, columnStyles: { 0: { cellWidth: 100, fontStyle: "bold" }, 1: { cellWidth: 94, halign: "right" } }, didParseCell: (hook) => { if (hook.row.index === totals.length - 1) hook.cell.styles.fontStyle = "bold"; } });
+  const totalsBottom = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? subtotalY + 80);
+  const lowerY = totalsBottom + 12;
+  cell(doc, LEFT, lowerY, 540, 46, `Amount chargeable in words\nINR ${amountInWords(total)}`, { bold: true, size: 8 });
+  cell(doc, LEFT, lowerY + 58, 260, 68, `Company's PAN: ${clean(record.seller_pan, "Not provided")}\n\nDeclaration\nComputer-generated invoice.`, { size: 8 });
+  cell(doc, LEFT + 280, lowerY + 58, 260, 68, `Payment details\nBank: ${clean(record.bank_name, "Not configured")}\nAccount: ${clean(record.bank_account_number, "Not configured")}\nIFSC: ${clean(record.bank_branch_ifsc, "Not configured")}`, { size: 8 });
+  cell(doc, LEFT, lowerY + 136, 240, 38, "Customer's Seal and Signature", { size: 8 }); cell(doc, LEFT + 240, lowerY + 136, 300, 38, "for PSS LOGISTICS\nAuthorised Signatory", { bold: true, align: "right", size: 8 });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text("This is a Computer Generated Invoice", PAGE_W / 2, lowerY + 194, { align: "center" });
   return { doc, invoiceNumber };
 }
 
