@@ -11,7 +11,7 @@ const checks = [
   ["consolidated cycle identifiers are stable", source.includes("cycleInvoiceNumber(period.start, period.end)")],
   ["supported export ranges are present", block.includes("[15, 30, 60, 90]")],
   ["invoice contains both address blocks", source.includes("exampleSeller") && source.includes("exampleBuyer") && source.includes('pdf.text("From"') && source.includes('pdf.text("Bill to"')],
-  ["invoice contains shipment article fields", ["LR / LRN", "Route and consignee", "Boxes / weight", "Amount"].every((field) => source.includes(field))],
+  ["invoice contains shipment article fields", ["LR / LRN", "Route and consignee", "Boxes / weight", "Charge breakup", "Amount"].every((field) => source.includes(field))],
   ["cancelled records are excluded from totals", source.includes("isExcluded") && source.includes("billableTotal") && source.includes("!isExcluded(record)")],
   ["PDF and XLSX are delivered together", source.includes("application/zip") && source.includes(".xlsx") && source.includes(".pdf")],
   ["billing dates are local-date safe", source.includes("billingPeriod") && source.includes("shiftLocalDays") && source.includes("localDateInput")],

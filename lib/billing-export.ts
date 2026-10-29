@@ -106,11 +106,11 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number, now: Date)
   pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(30, 41, 59); pdf.text(`Invoice number: ${cycleNumber}`, margin, 230); pdf.text(`Invoice date: ${generated}`, margin, 244); pdf.text(`Shipments included: ${billable.length}`, pageWidth / 2 + 8, 230); pdf.text(`Excluded records: ${excluded}`, pageWidth / 2 + 8, 244);
   autoTable(pdf, {
     startY: 264,
-    head: [["#", "Shipment / invoice", "Route and consignee", "Boxes / weight", "Amount"]],
+    head: [["#", "Shipment / invoice", "Route and consignee", "Boxes / weight", "Charge breakup", "Amount"]],
     body: billable.map((record, index) => {
       const lr = text(record.lr_number ?? "Not available");
       const invoice = shipmentInvoiceNumber(record);
-      return [String(index + 1), `${invoice}\nLR / LRN: ${lr}\nDate: ${formatDate(record.shipment_created_at ?? record.created_at)}`, `${text(record.shipment_origin) || "Not provided"} -> ${text(record.shipment_destination) || "Not provided"}\nConsignee: ${text(record.shipment_consignee) || "Not provided"}`, `${text(record.pieces ?? 1)} boxes\n${text(record.total_weight_kg ?? "Not recorded")} kg`, `Rs. ${money(record.amount)}`];
+      return [String(index + 1), `${invoice}\nLR / LRN: ${lr}\nDate: ${formatDate(record.shipment_created_at ?? record.created_at)}`, `${text(record.shipment_origin) || "Not provided"} -> ${text(record.shipment_destination) || "Not provided"}\nConsignee: ${text(record.shipment_consignee) || "Not provided"}`, `${text(record.pieces ?? 1)} boxes\n${text(record.total_weight_kg ?? "Not recorded")} kg`, breakupText(record) || "Included in shipment total", `Rs. ${money(record.amount)}`];
     }),
     margin: { left: margin, right: margin, top: 74, bottom: 54 },
     tableWidth: pageWidth - margin * 2,
@@ -118,7 +118,7 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number, now: Date)
     styles: { font: "helvetica", fontSize: 7.5, cellPadding: 6, minCellHeight: 34, overflow: "linebreak", lineColor: [203, 213, 225], lineWidth: 0.35, textColor: [30, 41, 59], valign: "middle" },
     headStyles: { fillColor: [15, 57, 88], textColor: 255, fontStyle: "bold", halign: "left" },
     alternateRowStyles: { fillColor: [245, 248, 252] },
-    columnStyles: { 0: { cellWidth: 24, halign: "center" }, 1: { cellWidth: 140 }, 2: { cellWidth: 170 }, 3: { cellWidth: 64, halign: "right" }, 4: { cellWidth: 76, halign: "right" } },
+    columnStyles: { 0: { cellWidth: 24, halign: "center" }, 1: { cellWidth: 125 }, 2: { cellWidth: 150 }, 3: { cellWidth: 55, halign: "right" }, 4: { cellWidth: 100 }, 5: { cellWidth: 70, halign: "right" } },
     didDrawPage: (hookData) => {
       if (hookData.pageNumber > 1) drawHeader();
       pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(100, 116, 139); pdf.text("PSS Logistics | Computer generated invoice | Example addresses pending configuration", margin, pageHeight - 24); pdf.text(`Page ${hookData.pageNumber}`, pageWidth - margin, pageHeight - 24, { align: "right" });
