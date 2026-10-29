@@ -57,5 +57,5 @@ assert.doesNotMatch(dashboardSource, /trackingId: String\(shipment\.tracking_num
 assert.match(dashboardOperationsSource, /trackingQuery/);
 assert.doesNotMatch(dashboardOperationsSource, /shipmentTracking\?id=\$\{encodeURIComponent\(shp\.id\)\}/);
 assert.match(workerSource, /client_addresses \(id, client_id, label, address_kind, contact_name, phone, address, city, state, country, pincode\)/);
-assert.match(workerSource, /entityUpdate\[1\] === "addresses" \? \["label", "address_kind", "contact_name", "phone", "address", "city", "state", "country", "pincode"\]/);
+assert.match(workerSource, /entityUpdate\[1\] === "addresses" \? \["label", "address_kind", "contact_name", "phone", "address", "city", "state", "country", "pincode", "is_test"\]/);
 console.log("Shipment, dashboard, address, and label domain contract checks passed (37 checks).");

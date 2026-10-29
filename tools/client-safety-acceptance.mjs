@@ -12,6 +12,7 @@ const report = await readFile(new URL("../components/block/client-report-preview
 const dashboard = await readFile(new URL("../components/block/dashboard.tsx", import.meta.url), "utf8");
 const invoicePdf = await readFile(new URL("../lib/invoice-pdf.ts", import.meta.url), "utf8");
 const worker = await readFile(new URL("../../admin-pss/worker/src/index.ts", import.meta.url), "utf8");
+const classificationMigration = await readFile(new URL("../../admin-pss/worker/migrations/20261029_client_test_classification.sql", import.meta.url), "utf8");
 
 assert.match(operations, /shipment_pss_reference/);
 assert.match(operations, /Select shipment/);
@@ -50,5 +51,9 @@ assert.doesNotMatch(pickup, /candidate\.pss_reference \|\| candidate\.id/);
 assert.match(invoicePdf, /const publicReference = clean\(record\.lr_number \?\? record\.tracking_number \?\? record\.reference_number/);
 assert.doesNotMatch(invoicePdf, /invoiceNumberForLr\(undefined, record\.id\)/);
 assert.doesNotMatch(invoicePdf, /\["Dispatch Doc No\."\s*,\s*clean\(record\.shipment_id/);
+assert.match(classificationMigration, /ALTER TABLE shipments ADD COLUMN is_test/);
+assert.match(classificationMigration, /ALTER TABLE client_addresses ADD COLUMN is_test/);
+assert.match(worker, /Only administrators may classify test shipments/);
+assert.match(worker, /Only administrators may classify test data/);
 
-console.log("Client safety contract checks passed (36 checks).");
+console.log("Client safety contract checks passed (40 checks).");
