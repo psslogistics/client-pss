@@ -6,6 +6,7 @@ import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { downloadWorkbook } from "@/lib/xlsx";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import { localDateInput, shiftLocalDays } from "@/lib/date-format";
+import { clientShipmentReference } from "@/lib/client-shipment-reference";
 
 type Shipment = Record<string, unknown>;
 type Pickup = Record<string, unknown>;
@@ -13,7 +14,7 @@ type ShipmentPage = { data: Shipment[]; pagination?: { next_offset?: number; has
 type PreferenceResponse = { data?: { preferences?: { reportRange?: string } } };
 const cell = (value: unknown) => value == null ? "" : String(value);
 const date = (value: unknown) => typeof value === "string" ? value.slice(0, 10) : "";
-const shipmentReference = (row: Shipment) => cell(row.pss_reference) || cell(row.lr_number) || cell(row.master_awb) || cell(row.tracking_number) || "Pending reference";
+const shipmentReference = (row: Shipment) => clientShipmentReference(row, "Pending reference");
 const pickupReference = (row: Pickup) => cell(row.reference) || cell(row.provider_reference) || cell(row.shipment_reference) || "Pending reference";
 const today = () => localDateInput();
 const generatedAt = () => new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date());

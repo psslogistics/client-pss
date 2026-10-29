@@ -8,6 +8,7 @@ import type { AddressKind, SavedAddressRecord } from "@/lib/client-operations-da
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 import { DelhiveryTabs } from "@/components/ui/delhivery-surface";
+import { clientShipmentReference } from "@/lib/client-shipment-reference";
 
 type Mode = "warehouses" | "ndr" | "exceptions";
 const input = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
@@ -38,7 +39,7 @@ function LiveCaseQueue({ mode }: { mode: "ndr" | "exceptions" }) {
       if (shipmentsResult.status === "fulfilled") {
         setShipments((shipmentsResult.value.data ?? []).map((row) => ({
           id: String(row.id ?? ""),
-          reference: String(row.pss_reference ?? row.lr_number ?? row.master_awb ?? row.tracking_number ?? "Shipment reference unavailable"),
+          reference: clientShipmentReference(row),
         })).filter((row) => row.id));
       }
     });

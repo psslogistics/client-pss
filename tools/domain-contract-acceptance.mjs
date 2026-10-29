@@ -10,6 +10,7 @@ import {
 } from "../lib/shipment-status.ts";
 import { expectedStickerCount, labelFileName } from "../lib/label-contract.ts";
 import { cleanClientAddress, clientAddressDetails } from "../lib/address-display.ts";
+import { clientShipmentReference } from "../lib/client-shipment-reference.ts";
 
 assert.equal(normalizeShipmentStatus("Ready to Ship"), "manifested");
 assert.equal(normalizeShipmentStatus("picked_up"), "in_transit");
@@ -26,6 +27,10 @@ assert.equal(labelFileName("321964753", "4x2.5"), "321964753-LABEL-4x2.5.pdf");
 assert.equal(labelFileName("LR 123/456", "a4"), "LR-123-456-LABEL-A4.pdf");
 assert.equal(expectedStickerCount(1), 2);
 assert.equal(expectedStickerCount(3), 4);
+assert.equal(clientShipmentReference({ lr_number: "LR-123", order_id: "ORDER-1", pss_reference: "PSS-1" }), "LR-123");
+assert.equal(clientShipmentReference({ order_id: "ORDER-1", pss_reference: "PSS-1" }), "ORDER-1");
+assert.equal(clientShipmentReference({ pss_reference: "PSS-1" }), "PSS-1");
+assert.equal(clientShipmentReference({ id: "12345678-aaaa-bbbb-cccc-ddddeeeeffff" }), "PSS-12345678");
 assert.equal(cleanClientAddress("RISHIKESH PAL || 7084685756 Address: FUJIYAMA POWER SYSTEMS LIMITED-NOIDA 51,52 State: Uttar Pradesh (Code: 09) GSTIN / Unique ID: 09AADCF2634F1ZU"), "FUJIYAMA POWER SYSTEMS LIMITED-NOIDA 51,52");
 assert.deepEqual(clientAddressDetails(JSON.stringify({ name: "PSS Client", address: "Address: 12 Main Road", city: "Jaipur", state: "Rajasthan", pincode: "302001", country: "India" }), "Fallback"), { name: "PSS Client", address: "12 Main Road, Jaipur, Rajasthan, 302001, India" });
 const labelSource = await readFile(new URL("../components/block/delhiveryLabelMenu.tsx", import.meta.url), "utf8");
@@ -61,4 +66,4 @@ assert.match(dashboardOperationsSource, /trackingQuery/);
 assert.doesNotMatch(dashboardOperationsSource, /shipmentTracking\?id=\$\{encodeURIComponent\(shp\.id\)\}/);
 assert.match(workerSource, /client_addresses \(id, client_id, label, address_kind, contact_name, phone, address, city, state, country, pincode\)/);
 assert.match(workerSource, /entityUpdate\[1\] === "addresses" \? \["label", "address_kind", "contact_name", "phone", "address", "city", "state", "country", "pincode", "is_test"\]/);
-console.log("Shipment, dashboard, address, and label domain contract checks passed (37 checks).");
+console.log("Shipment, dashboard, address, and label domain contract checks passed (41 checks).");
