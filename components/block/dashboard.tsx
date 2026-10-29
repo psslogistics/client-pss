@@ -299,6 +299,7 @@ export default function Dashboard() {
     // made an available, settled/empty metric appear as "Not available".
     pendingCharges: production.billing.length ? billingSummary.pendingAmount : null,
     codExposure: production.cod.length ? codSummary.exposure : null,
+    financeLoaded: productionReady,
     recentTransactions: [],
   };
   const todayIso = new Date().toISOString().slice(0, 10);
