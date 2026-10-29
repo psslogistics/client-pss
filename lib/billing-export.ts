@@ -109,7 +109,7 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number, now: Date)
     startY: 264,
     head: [["#", "Shipment / invoice", "Route and consignee", "Boxes / weight", "Charge breakup", "Amount"]],
     body: billable.map((record, index) => {
-      const lr = text(record.lr_number ?? "Not available");
+      const lr = clientShipmentReference(record, "Reference pending");
       const invoice = shipmentInvoiceNumber(record);
       return [String(index + 1), `${invoice}\nLR / LRN: ${lr}\nDate: ${formatDate(record.shipment_created_at ?? record.created_at)}`, `${text(record.shipment_origin) || "Not provided"} -> ${text(record.shipment_destination) || "Not provided"}\nConsignee: ${text(record.shipment_consignee) || "Not provided"}`, `${text(record.pieces ?? 1)} boxes\n${text(record.total_weight_kg ?? "Not recorded")} kg`, breakupText(record) || "Included in shipment total", `Rs. ${money(record.amount)}`];
     }),

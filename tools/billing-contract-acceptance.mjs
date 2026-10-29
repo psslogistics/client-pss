@@ -7,7 +7,7 @@ const worker = await readFile(new URL("../../admin-pss/worker/src/index.ts", imp
 const checks = [
   ["shipment invoice numbers use LR", source.includes("invoiceNumberForLr(record.lr_number)") && block.includes("invoiceNumberForLr(row.lr_number)")],
   ["legacy invoice values are not rendered as current invoice numbers", source.includes("record.lr_number ? invoiceNumberForLr(record.lr_number) : invoiceNumberForLr(undefined)") && block.includes("row.lr_number ? invoiceNumberForLr(row.lr_number) : invoiceNumberForLr(undefined)")],
-  ["billing shipment reference has a client-safe fallback", block.includes('row.shipment_pss_reference || "Pending reference"')],
+  ["billing shipment reference has a client-safe fallback", source.includes("clientShipmentReference(record, \"Pending reference\")") && block.includes("clientShipmentReference(row, \"Pending reference\")")],
   ["consolidated cycle identifiers are stable", source.includes("cycleInvoiceNumber(period.start, period.end)")],
   ["supported export ranges are present", block.includes("[15, 30, 60, 90]")],
   ["invoice contains both address blocks", source.includes("exampleSeller") && source.includes("exampleBuyer") && source.includes('pdf.text("From"') && source.includes('pdf.text("Bill to"')],
