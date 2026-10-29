@@ -46,6 +46,8 @@ assert.doesNotMatch(report, /asText\(row\.tracking_number \?\? row\.id/);
 assert.doesNotMatch(report, /client: asText\(row\.client_id\)/);
 assert.match(worker, /s\.pss_reference AS shipment_pss_reference/);
 assert.match(dashboard, /shipment_pss_reference/);
+assert.match(dashboard, /codExposure/);
+assert.match(dashboard, /unsettledCodStatuses/);
 assert.doesNotMatch(dashboard, /description: `\$\{String\(row\.entity_type.*row\.entity_id/);
 assert.doesNotMatch(dashboard, /company: String\(pickup\.client_id/);
 assert.doesNotMatch(pickup, /driver: String\(row\.assigned_to_user_id/);

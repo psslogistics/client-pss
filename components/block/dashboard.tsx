@@ -120,17 +120,17 @@ export default function Dashboard() {
   const [productionRequestId, setProductionRequestId] = useState("");
   const [productionLoading, setProductionLoading] = useState(true);
   const [showDashboardModals, setShowDashboardModals] = useState(false);
-  const [production, setProduction] = useState<{ shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; shipmentStats: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } }>({ shipments: [], pickups: [], billing: [], wallet: [], exceptions: [], ndr: [], shipmentStats: { total: 0, delayed: 0, statuses: {}, providers: {} } });
+  const [production, setProduction] = useState<{ shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; cod: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; shipmentStats: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } }>({ shipments: [], pickups: [], billing: [], wallet: [], cod: [], exceptions: [], ndr: [], shipmentStats: { total: 0, delayed: 0, statuses: {}, providers: {} } });
 
   const loadProduction = (signal?: AbortSignal, forceRefresh = false) => {
     const requestOptions = { signal, ...(forceRefresh ? { cache: "no-store" as RequestCache } : {}) };
-    const primary = pssApi<{ stale_data?: boolean; data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>>; shipment_stats?: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } } }>("/v1/dashboard/summary?view=overview", requestOptions).then((response) => {
+    const primary = pssApi<{ stale_data?: boolean; data: { shipments: Array<Record<string, unknown>>; pickups: Array<Record<string, unknown>>; billing: Array<Record<string, unknown>>; wallet: Array<Record<string, unknown>>; cod: Array<Record<string, unknown>>; exceptions: Array<Record<string, unknown>>; ndr: Array<Record<string, unknown>>; activity: Array<Record<string, unknown>>; shipment_stats?: { total: number; delayed: number; statuses: Record<string, number>; providers: Record<string, number> } } }>("/v1/dashboard/summary?view=overview", requestOptions).then((response) => {
       const { data } = response;
       if (signal?.aborted) return;
       setProductionError(response.stale_data ? "Live dashboard refresh is unavailable. Showing the last successful dashboard data." : "");
       setProductionTechnicalError("");
       setProductionRequestId("");
-       setProduction((current) => ({ ...current, shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, exceptions: data.exceptions, ndr: data.ndr, shipmentStats: data.shipment_stats ?? { total: data.shipments.length, delayed: 0, statuses: {}, providers: {} } }));
+       setProduction((current) => ({ ...current, shipments: data.shipments, pickups: data.pickups, billing: data.billing, wallet: data.wallet, cod: data.cod ?? [], exceptions: data.exceptions, ndr: data.ndr, shipmentStats: data.shipment_stats ?? { total: data.shipments.length, delayed: 0, statuses: {}, providers: {} } }));
        setActivities(data.activity.slice(0, 12).map((row) => ({ id: String(row.id), title: clientActivityTitle(row.action), description: row.shipment_pss_reference || row.lr_number || row.master_awb ? `Shipment ${String(row.shipment_pss_reference ?? row.lr_number ?? row.master_awb)}` : String(row.entity_type ?? "PSS activity"), timeAgo: relativeTime(String(row.created_at ?? "")), iconType: activityIconType(String(row.action ?? "")), iconName: activityIconName(String(row.action ?? "")) })));
        setAlerts([...data.exceptions, ...data.ndr].filter((row) => !["resolved", "closed", "delivered", "cancelled"].includes(String(row.status ?? "").toLowerCase())).slice(0, 8).map((row) => ({ id: String(row.id), title: String(row.title ?? row.reason ?? "Operational exception"), description: String(row.details ?? row.notes ?? "Requires operational review"), timeAgo: relativeTime(String(row.created_at ?? "")), refId: String(row.shipment_pss_reference ?? row.lr_number ?? row.master_awb ?? "Shipment reference unavailable"), type: "warning", dotColor: "bg-amber-500" })));
      }).catch((error) => {
@@ -237,7 +237,7 @@ export default function Dashboard() {
   };
 
   const productionReady = !productionError && !productionLoading;
-  const hasLastKnownProduction = production.shipmentStats.total > 0 || [production.shipments, production.pickups, production.billing, production.wallet, production.exceptions, production.ndr].some((collection) => collection.length > 0);
+  const hasLastKnownProduction = production.shipmentStats.total > 0 || [production.shipments, production.pickups, production.billing, production.wallet, production.cod, production.exceptions, production.ndr].some((collection) => collection.length > 0);
   const metricValue = (value: number) => productionReady || hasLastKnownProduction ? String(value) : "—";
   const metricState = productionReady ? "Live" : hasLastKnownProduction ? "Stale" : "Unavailable";
   // Keep dashboard KPIs and the shipment list on the same client-facing
@@ -289,7 +289,9 @@ export default function Dashboard() {
   const shipmentStatusData = [...statusCounts.entries()].map(([status, count]) => ({ status, count, percentage: totalShipments ? Math.round((count / totalShipments) * 100) : 0, badgeClass: "border-primary/20 bg-primary/10 text-primary", dotClass: "bg-primary", barClass: "bg-primary" }));
   const transportCounts = new Map<string, number>(Object.entries(production.shipmentStats.providers).map(([provider, count]) => [publicCourierName(provider, ""), count]));
   const transportModes = [...transportCounts.entries()].map(([name, shipments]) => ({ name, shipments, percentage: totalShipments ? Math.round((shipments / totalShipments) * 100) : 0, color: "var(--primary)" }));
-  const financialSnapshot: ClientFinancialSnapshot = { balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null, pendingCharges: production.billing.filter((item) => String(item.status).toLowerCase() === "pending").reduce((sum, item) => sum + Number(item.amount ?? 0), 0) || null, codExposure: null, recentTransactions: [] };
+  const unsettledCodStatuses = new Set(["paid", "settled", "completed", "failed", "rejected", "cancelled", "canceled"]);
+  const codExposure = production.cod.filter((item) => !unsettledCodStatuses.has(String(item.status ?? "").toLowerCase())).reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const financialSnapshot: ClientFinancialSnapshot = { balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null, pendingCharges: production.billing.filter((item) => String(item.status).toLowerCase() === "pending").reduce((sum, item) => sum + Number(item.amount ?? 0), 0) || null, codExposure: codExposure || null, recentTransactions: [] };
   const todayIso = new Date().toISOString().slice(0, 10);
   const closedPickupStatuses = new Set(["completed", "cancelled", "failed"]);
   const todayPickupRows = production.pickups
