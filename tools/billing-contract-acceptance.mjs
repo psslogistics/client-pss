@@ -14,6 +14,7 @@ const checks = [
   ["cancelled records are excluded from totals", source.includes("isExcluded") && source.includes("billableTotal") && source.includes("!isExcluded(record)")],
   ["PDF and XLSX are delivered together", source.includes("application/zip") && source.includes(".xlsx") && source.includes(".pdf")],
   ["billing dates are local-date safe", source.includes("billingPeriod") && source.includes("shiftLocalDays") && source.includes("localDateInput")],
+  ["billing cycles are inclusive local days", source.includes("-(days - 1)")],
   ["consolidated PDF shows separate subtotal and taxes", source.includes("const taxTotal") && source.includes("const subtotal") && source.includes('pdf.text(`Rs. ${money(taxTotal)}`')],
   ["invoice amount is rendered in words", source.includes("amountInWords(total)")],
   ["shipment invoice maps client bill-to address", block.includes("client_address") && block.includes("EXAMPLE_INVOICE_BUYER.address") && invoice.includes("client_address") && invoice.includes("Buyer (Bill to)")],

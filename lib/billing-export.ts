@@ -52,7 +52,9 @@ const isExcluded = (record: BillingExportRecord) => ["void", "cancelled", "cance
 const downloadBytes = (bytes: ArrayBuffer, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([bytes], { type })); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
 const exampleSeller = `${EXAMPLE_INVOICE_SELLER.name}\n${EXAMPLE_INVOICE_SELLER.address}\nGSTIN: ${EXAMPLE_INVOICE_SELLER.gstin}\nEmail: ${EXAMPLE_INVOICE_SELLER.email}`;
 const exampleBuyer = `${EXAMPLE_INVOICE_BUYER.name}\n${EXAMPLE_INVOICE_BUYER.address}\nGSTIN: ${EXAMPLE_INVOICE_BUYER.gstin}`;
-const billingPeriod = (days: number, now = new Date()) => ({ start: shiftLocalDays(now, -days), end: localDateInput(now) });
+// Billing cycles are inclusive: a 30-day cycle contains today plus the prior
+// 29 local calendar days, matching the Reports date-range semantics.
+const billingPeriod = (days: number, now = new Date()) => ({ start: shiftLocalDays(now, -(days - 1)), end: localDateInput(now) });
 
 function makeXlsx(records: BillingExportRecord[], days: number) {
   const period = billingPeriod(days);
