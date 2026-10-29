@@ -56,8 +56,8 @@ const exampleBuyer = `${EXAMPLE_INVOICE_BUYER.name}\n${EXAMPLE_INVOICE_BUYER.add
 // 29 local calendar days, matching the Reports date-range semantics.
 const billingPeriod = (days: number, now = new Date()) => ({ start: shiftLocalDays(now, -(days - 1)), end: localDateInput(now) });
 
-function makeXlsx(records: BillingExportRecord[], days: number) {
-  const period = billingPeriod(days);
+function makeXlsx(records: BillingExportRecord[], days: number, now: Date) {
+  const period = billingPeriod(days, now);
   const headers = ["Invoice", "Shipment ID", "PSS Reference", "LR / LRN", "Tracking", "From", "To", "Consignor", "Consignee", "Origin address", "Destination address", "Pieces", "Weight (kg)", "Chargeable weight (kg)", "Dimensions", "Declared value", "Billing date", "Status", "Due date", "Charge breakup", "Tax", "Adjustments", "Amendments", "Total"];
   const rows: WorkbookCell[][] = records.map((record) => [
     shipmentInvoiceNumber(record), record.shipment_pss_reference || "Pending reference", record.shipment_pss_reference, record.lr_number, record.tracking_number,
@@ -74,7 +74,7 @@ function makeXlsx(records: BillingExportRecord[], days: number) {
   ]);
 }
 
-function makeSummaryPdf(records: BillingExportRecord[], days: number) {
+function makeSummaryPdf(records: BillingExportRecord[], days: number, now: Date) {
   const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait" });
   const margin = 34;
   const pageWidth = pdf.internal.pageSize.getWidth();
@@ -84,7 +84,7 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number) {
   const total = billable.reduce((sum, record) => sum + Number(record.amount || 0), 0);
   const taxTotal = billable.reduce((sum, record) => sum + taxFor(record), 0);
   const subtotal = Math.max(0, total - taxTotal);
-  const generatedAt = new Date();
+  const generatedAt = now;
   const period = billingPeriod(days, generatedAt);
   const generated = formatDate(generatedAt.toISOString());
   const cycleNumber = cycleInvoiceNumber(period.start, period.end);
@@ -135,10 +135,10 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number) {
   return pdf.output("arraybuffer");
 }
 
-export function downloadBillingExport(records: BillingExportRecord[], days: number) {
-  const xlsx = makeXlsx(records, days);
-  const pdf = new Uint8Array(makeSummaryPdf(records, days));
-  const period = billingPeriod(days);
+export function downloadBillingExport(records: BillingExportRecord[], days: number, now = new Date()) {
+  const xlsx = makeXlsx(records, days, now);
+  const pdf = new Uint8Array(makeSummaryPdf(records, days, now));
+  const period = billingPeriod(days, now);
   const archive = zipSync({
     [`PSS-BILL-${period.start}-to-${period.end}.xlsx`]: xlsx,
     [`PSS-BILL-${period.start}-to-${period.end}.pdf`]: pdf,

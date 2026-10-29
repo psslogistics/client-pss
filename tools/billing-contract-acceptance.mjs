@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("../lib/billing-export.ts", import.meta.url), "utf8");
 const block = await readFile(new URL("../components/block/billingInvoiceManagement.tsx", import.meta.url), "utf8");
 const invoice = await readFile(new URL("../lib/invoice-pdf.ts", import.meta.url), "utf8");
+const worker = await readFile(new URL("../../admin-pss/worker/src/index.ts", import.meta.url), "utf8");
 const checks = [
   ["shipment invoice numbers use LR", source.includes("invoiceNumberForLr(record.lr_number)") && block.includes("invoiceNumberForLr(row.lr_number)")],
   ["legacy invoice values are not rendered as current invoice numbers", source.includes("record.lr_number ? invoiceNumberForLr(record.lr_number) : invoiceNumberForLr(undefined)") && block.includes("row.lr_number ? invoiceNumberForLr(row.lr_number) : invoiceNumberForLr(undefined)")],
@@ -18,6 +19,8 @@ const checks = [
   ["consolidated PDF shows separate subtotal and taxes", source.includes("const taxTotal") && source.includes("const subtotal") && source.includes('pdf.text(`Rs. ${money(taxTotal)}`')],
   ["invoice amount is rendered in words", source.includes("amountInWords(total)")],
   ["shipment invoice maps client bill-to address", block.includes("client_address") && block.includes("EXAMPLE_INVOICE_BUYER.address") && invoice.includes("client_address") && invoice.includes("Buyer (Bill to)")],
+  ["billing export uses one captured local date", block.includes("const now = new Date()") && block.includes("downloadBillingExport(rows, days, now)") && source.includes("billingPeriod(days, now)")],
+  ["billing API accepts explicit calendar date bounds", block.includes("start_date: period.start") && worker.includes("start_date") && worker.includes("date(b.created_at) >= date(?)")],
 ];
 
 const failed = checks.filter(([, passed]) => !passed).map(([name]) => name);
