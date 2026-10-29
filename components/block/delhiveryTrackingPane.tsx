@@ -225,6 +225,7 @@ function mapShipment(row: Record<string, unknown>): Shipment {
 const statusLabel = (shipment: Shipment) => {
   if (shipment.providerSyncStatus?.toLowerCase() === "failed" && shipment.status === "Exception") return "Provider booking failed";
   if (shipment.status === "Booked" && !(shipment.lrNumber || shipment.masterAwb || shipment.trackingNumber || shipment.providerReference)) return "Awaiting LR/AWB confirmation";
+  if (shipment.status === "Booked" && shipment.events.some((event) => event.title === "Manifested")) return "Manifested";
   if (shipment.status === "Booked") return "Ready to Ship";
   return shipment.status;
 };
@@ -390,7 +391,7 @@ export default function DelhiveryTrackingPane() {
   const latest = selected.events.at(-1);
   const copyReference = async () => { try { await navigator.clipboard.writeText(selected.reference); } catch { /* clipboard may be unavailable */ } setCopied(true); window.setTimeout(() => setCopied(false), 1400); };
   const hasProviderReference = Boolean(selected.lrNumber || selected.masterAwb || selected.trackingNumber || selected.providerReference);
-  const isReadyToShip = selected.status === "Booked" && hasProviderReference && latest?.title !== "Manifested";
+  const isReadyToShip = selected.status === "Booked" && hasProviderReference && !selected.events.some((event) => event.title === "Manifested");
   const visibleStatus = statusLabel(selected);
   const fullDeliveryAddress = selected.destination;
 
