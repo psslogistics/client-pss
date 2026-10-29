@@ -18,7 +18,7 @@ This register keeps the panel audit scoped. Production records are not used as d
 | Courier visibility | Booking, pickup, pricing, rate card, settings, and integrations use `/v1/client-courier-capabilities`; pickup renders only the public courier name while retaining an opaque routing ID. Legacy provider-account aliases now map to PSS-facing service names (`PSS Heavy Freight`, `PSS Economy Freight`, `PSS Standard Freight`, and `PSS Freight Service`) in Client commit `5694f6e`. | Source-fixed; authenticated capability matrix and full rendered-text scan still need release-gate verification |
 | Profile assignment | Profile displays the active client membership name separately from the editable profile company name. | Source-fixed; live membership fixture pending |
 | Wallet and COD | Wallet exposes current balance, credits, debits, net movement, pending, and reversed amounts with signed transaction rows; COD exposes total, pending, paid, and failed settlement totals. | Wallet live-verified after Worker commits `eb9173f` and `a70201d`; the page now returns bounded data and displays client-safe shipment references. Controlled COD settlement fixture and cross-finance reconciliation remain pending. |
-| Returns and weight reconciliation | Client tables use shipment references instead of raw shipment UUIDs; return creation uses a shipment selector. | Source-fixed; endpoint/runtime fixture pending |
+| Returns and weight reconciliation | Client tables use shipment references instead of raw shipment UUIDs; return creation uses a shipment selector. Pickup list/detail visibility now excludes classified standalone pickups and pickups linked to classified shipments. | Pickup source-fixed and live-verified after Worker `b2dfc134-cef1-4243-bdfe-e7e0be9e33f2`; authenticated Pickup view shows 54 of 54 with no reviewed test/QA records. Return endpoint/runtime fixture remains pending |
 | NDR and exceptions | Client case responses now join safe shipment references; case creation uses a shipment selector and no longer renders raw case or shipment UUIDs. | Source-fixed; authenticated case workflow pending |
 | Support filters | Open, Resolved, and Closed tabs are stateful and filter the ticket list. | Source-fixed; live ticket fixture pending |
 
@@ -47,7 +47,7 @@ The matrix is validated by `npm run test:fixtures`; it is not seeded into produc
 - [ ] Saved address survives reload and repopulates dedicated fields
 - [x] Label PDF opens, has the expected page size/count, and preserves barcode readability
 - [ ] Report, billing, wallet, and COD totals reconcile against the same fixture set
-- [ ] No provider-only text, raw UUID, or test record appears in client-facing output
+- [ ] No provider-only text, raw UUID, or test record appears in client-facing output (reviewed test/QA records are now explicitly classified and hidden on Pickup, Warehouse, and Shipment lists; full route-matrix scan remains open)
 - [x] Client production build completes with elevated filesystem access; ordinary sandboxed execution still fails on Next output-directory creation with Windows `EPERM`
 - [x] Vercel deployment is Ready and authenticated production routes are verified (Client `12528fe`; Worker `dcc64e9f-5afc-477c-8c9f-0159081de2d6`)
 
