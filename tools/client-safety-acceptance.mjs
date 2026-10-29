@@ -16,7 +16,7 @@ const booking = await readFile(new URL("../components/block/shipmentBooking.tsx"
 const worker = await readFile(new URL("../../admin-pss/worker/src/index.ts", import.meta.url), "utf8");
 const classificationMigration = await readFile(new URL("../../admin-pss/worker/migrations/20261029_client_test_classification.sql", import.meta.url), "utf8");
 
-assert.match(operations, /shipment_pss_reference/);
+assert.match(operations, /clientShipmentReference/);
 assert.match(operations, /Select shipment/);
 assert.doesNotMatch(operations, /<p className="font-mono text-xs font-semibold text-primary">\{String\(item\.id\)\}<\/p>/);
 assert.match(worker, /s\.pss_reference AS shipment_pss_reference/);
@@ -41,11 +41,11 @@ assert.match(trackingPane, /Courier confirmation/);
 assert.doesNotMatch(pickup, /<Detail label="Provider account"|<Detail label="Provider status"/);
 assert.match(pickup, /Courier confirmation/);
 assert.doesNotMatch(allShipments, /Retry provider sync|Provider confirmation pending|Awaiting provider reference/);
-assert.match(report, /shipment_pss_reference/);
+assert.match(report, /clientShipmentReference/);
 assert.doesNotMatch(report, /asText\(row\.tracking_number \?\? row\.id/);
 assert.doesNotMatch(report, /client: asText\(row\.client_id\)/);
 assert.match(worker, /s\.pss_reference AS shipment_pss_reference/);
-assert.match(dashboard, /shipment_pss_reference/);
+assert.match(dashboard, /clientShipmentReference/);
 assert.match(dashboard, /codExposure/);
 assert.match(dashboard, /codTotals\(production\.cod\)/);
 assert.doesNotMatch(dashboard, /description: `\$\{String\(row\.entity_type.*row\.entity_id/);
