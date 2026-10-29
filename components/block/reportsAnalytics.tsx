@@ -7,6 +7,7 @@ import { downloadWorkbook } from "@/lib/xlsx";
 import { publicCourierName } from "@/lib/client-pricing-data";
 import { localDateInput, shiftLocalDays } from "@/lib/date-format";
 import { clientShipmentReference } from "@/lib/client-shipment-reference";
+import { isDelayedShipment, toClientShipmentStatus } from "@/lib/shipment-status";
 
 type Shipment = Record<string, unknown>;
 type Pickup = Record<string, unknown>;
@@ -15,6 +16,7 @@ type PreferenceResponse = { data?: { preferences?: { reportRange?: string } } };
 const cell = (value: unknown) => value == null ? "" : String(value);
 const date = (value: unknown) => typeof value === "string" ? value.slice(0, 10) : "";
 const shipmentReference = (row: Shipment) => clientShipmentReference(row, "Pending reference");
+const reportStatus = (row: Shipment) => isDelayedShipment(row.edd, row.status) ? "Delayed" : toClientShipmentStatus(row.status);
 const pickupReference = (row: Pickup) => cell(row.reference) || cell(row.provider_reference) || cell(row.shipment_reference) || "Pending reference";
 const today = () => localDateInput();
 const generatedAt = () => new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date());
@@ -80,6 +82,14 @@ export default function ReportsAnalytics() {
 
   const filteredShipments = useMemo(() => shipments.filter((row) => { const value = date(row.created_at); return (!start || value >= start) && (!end || value <= end); }), [shipments, start, end]);
   const filteredPickups = useMemo(() => pickups.filter((row) => { const value = date(row.requested_date ?? row.created_at); return (!start || value >= start) && (!end || value <= end); }), [pickups, start, end]);
+  const statusSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of filteredShipments) {
+      const status = reportStatus(row);
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right));
+  }, [filteredShipments]);
   const validateRange = () => {
     if (start && end && start > end) { setRangeError("The start date must be on or before the end date."); return false; }
     setRangeError(""); return true;
@@ -90,7 +100,8 @@ export default function ReportsAnalytics() {
     const from = start || "all"; const to = end || "time";
     downloadWorkbook(`PSS-shipment-report-${from}-to-${to}.xlsx`, [
       { name: "Report summary", headers: ["Field", "Value"], rows: [["Report title", "PSS Logistics shipment and pickup report"], ["Report period", `${start || "All dates"} to ${end || "Today"}`], ["Generated at", generatedAt()], ["Timezone", "Asia/Kolkata"], ["Shipments", filteredShipments.length], ["Pickups", filteredPickups.length]], columnWidths: [24, 48], autoFilter: false },
-      { name: "Shipments", headers: ["Shipment reference", "Status", "Provider", "Origin", "Destination", "EDD", "Delivered", "Delay days", "Created"], rows: filteredShipments.map((row) => [shipmentReference(row), cell(row.status), publicCourierName(row.provider, row.account_name), cell(row.origin), cell(row.destination), cell(row.edd), cell(row.delivered_at), delayDays(row), cell(row.created_at)]), columnWidths: [24, 16, 16, 24, 24, 14, 14, 12, 22], numericColumns: [7], dateColumns: [5, 6, 8] },
+      { name: "Status summary", headers: ["Status", "Shipments"], rows: statusSummary, columnWidths: [24, 16], numericColumns: [1], autoFilter: false },
+      { name: "Shipments", headers: ["Shipment reference", "Status", "Provider", "Origin", "Destination", "EDD", "Delivered", "Delay days", "Created"], rows: filteredShipments.map((row) => [shipmentReference(row), reportStatus(row), publicCourierName(row.provider, row.account_name), cell(row.origin), cell(row.destination), cell(row.edd), cell(row.delivered_at), delayDays(row), cell(row.created_at)]), columnWidths: [24, 16, 16, 24, 24, 14, 14, 12, 22], numericColumns: [7], dateColumns: [5, 6, 8] },
       { name: "Pickups", headers: ["Pickup reference", "Shipment reference", "Requested date", "Status", "Address"], rows: filteredPickups.map((row) => [pickupReference(row), cell(row.shipment_reference) || "Pending reference", cell(row.requested_date), cell(row.status), cell(row.pickup_address)]), columnWidths: [24, 24, 16, 16, 48], dateColumns: [2] },
     ]);
     setNotice(`Report downloaded: ${filteredShipments.length} shipments and ${filteredPickups.length} pickups.`);
