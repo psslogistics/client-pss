@@ -19,6 +19,9 @@ assert.doesNotMatch(operations, /<p className="font-mono text-xs font-semibold t
 assert.match(worker, /s\.pss_reference AS shipment_pss_reference/);
 assert.match(worker, /c\.id, c\.client_id, c\.reason/);
 assert.match(worker, /c\.id, c\.client_id, c\.category/);
+assert.match(worker, /WHEN w\.reference LIKE 'SHIPMENT-%' THEN 'Shipment/);
+assert.match(worker, /WHEN w\.reference LIKE 'REVERSAL-%' THEN 'Reversal/);
+assert.match(worker, /wallet_transactions w LEFT JOIN shipments s/);
 assert.match(settings, /Available couriers/);
 assert.match(settings, /delete preferences\.courier/);
 assert.match(support, /Support conversation/);
@@ -42,4 +45,4 @@ assert.match(invoicePdf, /const publicReference = clean\(record\.lr_number \?\? 
 assert.doesNotMatch(invoicePdf, /invoiceNumberForLr\(undefined, record\.id\)/);
 assert.doesNotMatch(invoicePdf, /\["Dispatch Doc No\."\s*,\s*clean\(record\.shipment_id/);
 
-console.log("Client safety contract checks passed (28 checks).");
+console.log("Client safety contract checks passed (31 checks).");
