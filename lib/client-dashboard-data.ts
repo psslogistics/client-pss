@@ -7,5 +7,6 @@ export type ClientFinancialSnapshot = {
   balance: number | null;
   pendingCharges: number | null;
   codExposure: number | null;
+  financeLoaded: boolean;
   recentTransactions: WalletTransaction[];
 };
