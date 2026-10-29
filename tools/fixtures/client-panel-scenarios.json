@@ -1,5 +1,27 @@
 {
   "purpose": "Non-production client-panel acceptance fixtures. Do not seed these values into production.",
+  "reconciliation_fixture": {
+    "shipments": [
+      { "id": "shipment-paid", "lr_number": "321964753", "status": "delivered" },
+      { "id": "shipment-pending", "lr_number": "321964754", "status": "booked" },
+      { "id": "shipment-cancelled", "lr_number": "321964755", "status": "cancelled" }
+    ],
+    "billing": [
+      { "shipment_id": "shipment-paid", "amount": 1000, "status": "paid" },
+      { "shipment_id": "shipment-pending", "amount": 250, "status": "pending" },
+      { "shipment_id": "shipment-cancelled", "amount": 500, "status": "cancelled" }
+    ],
+    "wallet": [
+      { "reference": "SHIPMENT-321964753", "type": "debit", "amount": 1000, "status": "posted" },
+      { "reference": "SHIPMENT-321964754", "type": "debit", "amount": 250, "status": "pending" },
+      { "reference": "REVERSAL-321964755", "type": "credit", "amount": 500, "status": "posted" }
+    ],
+    "cod": [
+      { "shipment_id": "shipment-paid", "amount": 700, "status": "paid" },
+      { "shipment_id": "shipment-pending", "amount": 300, "status": "pending" },
+      { "shipment_id": "shipment-cancelled", "amount": 100, "status": "failed" }
+    ]
+  },
   "scenarios": [
     { "id": "booked-lr", "kind": "shipment", "status": "booked", "lr_number": "321964753", "pieces": 1 },
     { "id": "delayed", "kind": "shipment", "status": "booked", "edd": "2026-10-01", "pieces": 1 },
