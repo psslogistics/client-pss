@@ -90,7 +90,7 @@ const consigneeAddressRows = (rows: Array<Record<string, string>>) => {
 const fetchConsigneeAddresses = async (limit: number, offset: number, query = "", init: RequestInit = {}) => {
   const search = query ? `&search=${encodeURIComponent(query)}` : "";
   const typed = await pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/addresses?limit=${limit}&offset=${offset}&active_only=true&address_kind=consignee${search}`, init);
-  if ((typed.data ?? []).length || typed.pagination?.has_more) return typed;
+  if ((typed.data ?? []).length) return typed;
   const legacy = await pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/addresses?limit=${limit}&offset=${offset}&active_only=true${search}`, init);
   return { ...legacy, data: consigneeAddressRows(legacy.data ?? []) };
 };
