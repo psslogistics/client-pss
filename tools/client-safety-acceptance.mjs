@@ -12,6 +12,7 @@ const report = await readFile(new URL("../components/block/client-report-preview
 const dashboard = await readFile(new URL("../components/block/dashboard.tsx", import.meta.url), "utf8");
 const invoicePdf = await readFile(new URL("../lib/invoice-pdf.ts", import.meta.url), "utf8");
 const pricingData = await readFile(new URL("../lib/client-pricing-data.ts", import.meta.url), "utf8");
+const booking = await readFile(new URL("../components/block/shipmentBooking.tsx", import.meta.url), "utf8");
 const worker = await readFile(new URL("../../admin-pss/worker/src/index.ts", import.meta.url), "utf8");
 const classificationMigration = await readFile(new URL("../../admin-pss/worker/migrations/20261029_client_test_classification.sql", import.meta.url), "utf8");
 
@@ -58,5 +59,8 @@ assert.match(worker, /Only administrators may classify test shipments/);
 assert.match(worker, /Only administrators may classify test data/);
 assert.doesNotMatch(pricingData, /Delhivery Heavy|Delhivery Light|Delhivery Standard|Delhivery Account 04/);
 assert.match(pricingData, /PSS Heavy Freight|PSS Economy Freight|PSS Standard Freight/);
+assert.match(booking, /clientSavedAddressName/);
+assert.match(booking, /PSS-\[A-Za-z0-9-\]/);
+assert.match(booking, /savedPickups\.map\(\(saved\) => \(\{ value: saved\.id, label: clientSavedAddressName\(saved\.name\) \}\)\)/);
 
-console.log("Client safety contract checks passed (42 checks).");
+console.log("Client safety contract checks passed (45 checks).");
