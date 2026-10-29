@@ -21,5 +21,6 @@ const sourceFiles = await Promise.all([
   "components/block/weightReconciliationWorkspace.tsx",
 ].map((path) => readFile(new URL(`../${path}`, import.meta.url), "utf8")));
 for (const [index, token] of ["cod-remittances", "shipment", "/v1/exceptions", "tickets", "weight-reconciliation"].entries()) assert.ok(sourceFiles[index].includes(token), `workflow source is missing ${token}`);
+assert.ok(sourceFiles[1].includes("Customer requested return") && sourceFiles[1].includes("Additional details"), "return requests must use a controlled reason and optional details");
 assert.ok(sourceFiles.every((source) => !/raw UUID|shipment UUID/i.test(source)), "workflow UI must not advertise raw UUIDs");
 console.log(`Populated workflow fixture checks passed (${required.length + sourceFiles.length + 1} checks).`);
