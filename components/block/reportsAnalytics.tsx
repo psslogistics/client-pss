@@ -16,7 +16,7 @@ const date = (value: unknown) => typeof value === "string" ? value.slice(0, 10) 
 const shipmentReference = (row: Shipment) => cell(row.pss_reference) || cell(row.lr_number) || cell(row.master_awb) || cell(row.tracking_number) || "Pending reference";
 const pickupReference = (row: Pickup) => cell(row.reference) || cell(row.provider_reference) || cell(row.shipment_reference) || "Pending reference";
 const today = () => localDateInput();
-const generatedAt = () => new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZoneName: "short" }).format(new Date());
+const generatedAt = () => new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date());
 const rangeFor = (value: string) => {
   const now = new Date();
   if (value === "Previous month") {
