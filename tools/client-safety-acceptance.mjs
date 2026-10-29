@@ -73,5 +73,7 @@ assert.match(booking, /pagination\?\.has_more/);
 assert.match(booking, /active_only=true&address_kind=consignee/);
 assert.match(booking, /fetchConsigneeAddresses/);
 assert.match(booking, /consigneeAddressRows/);
+assert.match(booking, /const explicitConsignees = rows\.filter/);
+assert.match(booking, /return legacyRows\.length \? legacyRows : rows/);
 
 console.log("Client safety contract checks passed (51 checks).");
