@@ -293,7 +293,14 @@ export default function Dashboard() {
   const transportModes = [...transportCounts.entries()].map(([name, shipments]) => ({ name, shipments, percentage: totalShipments ? Math.round((shipments / totalShipments) * 100) : 0, color: "var(--primary)" }));
   const billingSummary = billingTotals(production.billing);
   const codSummary = codTotals(production.cod);
-  const financialSnapshot: ClientFinancialSnapshot = { balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null, pendingCharges: billingSummary.pendingAmount || null, codExposure: codSummary.exposure || null, recentTransactions: [] };
+  const financialSnapshot: ClientFinancialSnapshot = {
+    balance: production.wallet.length ? Number(production.wallet[0].balance_after ?? 0) : null,
+    // Preserve a real zero when finance records exist. Converting zero to null
+    // made an available, settled/empty metric appear as "Not available".
+    pendingCharges: production.billing.length ? billingSummary.pendingAmount : null,
+    codExposure: production.cod.length ? codSummary.exposure : null,
+    recentTransactions: [],
+  };
   const todayIso = new Date().toISOString().slice(0, 10);
   const closedPickupStatuses = new Set(["completed", "cancelled", "failed"]);
   const todayPickupRows = production.pickups
