@@ -5,6 +5,7 @@ import { formatDate, localDateInput, shiftLocalDays } from "@/lib/date-format";
 import { buildWorkbook, type WorkbookCell } from "@/lib/xlsx";
 import { EXAMPLE_INVOICE_BUYER, EXAMPLE_INVOICE_SELLER, amountInWords, cycleInvoiceNumber, invoiceNumberForLr } from "@/lib/invoice-contract";
 import { billingTotals, isExcludedFinanceRecord } from "@/lib/finance-contract";
+import { clientShipmentReference } from "@/lib/client-shipment-reference";
 
 export type BillingExportRecord = {
   id: string;
@@ -61,7 +62,7 @@ function makeXlsx(records: BillingExportRecord[], days: number, now: Date) {
   const period = billingPeriod(days, now);
   const headers = ["Invoice", "Shipment ID", "PSS Reference", "LR / LRN", "Tracking", "From", "To", "Consignor", "Consignee", "Origin address", "Destination address", "Pieces", "Weight (kg)", "Chargeable weight (kg)", "Dimensions", "Declared value", "Billing date", "Status", "Due date", "Charge breakup", "Tax", "Adjustments", "Amendments", "Total"];
   const rows: WorkbookCell[][] = records.map((record) => [
-    shipmentInvoiceNumber(record), record.shipment_pss_reference || "Pending reference", record.shipment_pss_reference, record.lr_number, record.tracking_number,
+    shipmentInvoiceNumber(record), clientShipmentReference(record, "Pending reference"), record.shipment_pss_reference, record.lr_number, record.tracking_number,
     record.shipment_origin, record.shipment_destination, text(record.shipment_origin_address?.name), record.shipment_consignee ?? text(record.shipment_destination_address?.name),
     addressText(record.shipment_origin_address), addressText(record.shipment_destination_address), record.pieces ?? null, record.total_weight_kg ?? null,
     record.pricing?.chargeableWeightKg ?? null, dimensionsText(record.dimensions), record.declared_value ?? null, record.created_at, record.status, record.due_date ?? null,
