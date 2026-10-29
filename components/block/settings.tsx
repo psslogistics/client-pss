@@ -10,7 +10,7 @@ import { SkeletonFormSection } from "@/components/ui/skeleton";
 type Section = "preferences" | "notifications" | "security" | "billing" | "integrations";
 type SettingsState = { warehouse: string; reportRange: string; notifications: Record<string, boolean>; lowBalance: string; billingEmail: string };
 type ProviderState = { configured?: boolean; enabled?: boolean; health?: string; last_error_code?: string | null; capabilities?: string[]; activation_blockers?: string[] };
-const initialSettings: SettingsState = { warehouse: "", reportRange: "Current month", notifications: { shipment: false, operations: false, finance: false, support: false }, lowBalance: "", billingEmail: "" };
+const initialSettings: SettingsState = { warehouse: "", reportRange: "Current month", notifications: { shipment: true, operations: true, finance: true, support: true }, lowBalance: "", billingEmail: "" };
 const sections: { id: Section; label: string; description: string; icon: typeof SlidersHorizontal }[] = [
   { id: "preferences", label: "Workspace preferences", description: "Defaults used while operating shipments", icon: SlidersHorizontal },
   { id: "notifications", label: "Notifications", description: "Choose the events that need your attention", icon: Bell },

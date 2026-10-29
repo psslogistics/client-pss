@@ -24,7 +24,8 @@
     "test:reports": "node --experimental-strip-types tools/report-contract-acceptance.mjs",
     "test:xlsx": "node --experimental-strip-types tools/xlsx-contract-acceptance.mjs",
     "test:fixtures": "node tools/fixture-matrix-acceptance.mjs",
-    "test:warehouse": "node tools/exact-warehouse-client-contract.mjs"
+    "test:warehouse": "node tools/exact-warehouse-client-contract.mjs",
+    "test:notifications": "node tools/notification-contract-acceptance.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
