@@ -12,7 +12,7 @@ import { clientShipmentReference } from "@/lib/client-shipment-reference";
 
 const money = (value: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 type RecordRow = InvoicePdfRecord & BillingExportRecord;
-const shipmentInvoiceNumber = (row: RecordRow) => row.lr_number ? invoiceNumberForLr(row.lr_number) : invoiceNumberForLr(undefined);
+const shipmentInvoiceNumber = (row: RecordRow) => String(row.invoice_number || (row.lr_number ? invoiceNumberForLr(row.lr_number) : invoiceNumberForLr(undefined)));
 const shipmentReference = (row: RecordRow) => clientShipmentReference(row, "Pending reference");
 const billingRange = (days: number, now = new Date()) => ({ start: shiftLocalDays(now, -(days - 1)), end: localDateInput(now) });
 
