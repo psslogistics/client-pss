@@ -6,7 +6,7 @@ const invoice = await readFile(new URL("../lib/invoice-pdf.ts", import.meta.url)
 const worker = await readFile(new URL("../../admin-pss/worker/src/index.ts", import.meta.url), "utf8");
 const checks = [
   ["shipment invoice numbers use LR", source.includes("invoiceNumberForLr(record.lr_number)") && block.includes("invoiceNumberForLr(row.lr_number)")],
-  ["legacy invoice values are not rendered as current invoice numbers", source.includes("record.lr_number ? invoiceNumberForLr(record.lr_number) : invoiceNumberForLr(undefined)") && block.includes("row.lr_number ? invoiceNumberForLr(row.lr_number) : String(row.invoice_number || invoiceNumberForLr(undefined))")],
+  ["legacy invoice values are not rendered as current invoice numbers", source.includes("record.lr_number ? invoiceNumberForLr(record.lr_number) : invoiceNumberForLr(undefined)") && block.includes("const shipmentInvoiceNumber = (row: RecordRow) => invoiceNumberForLr(row.lr_number)")],
   ["billing shipment reference has a client-safe fallback", source.includes("clientShipmentReference(record, \"Pending reference\")") && block.includes("clientShipmentReference(row, \"Pending reference\")")],
   ["consolidated cycle identifiers are stable", source.includes("cycleInvoiceNumber(period.start, period.end)")],
   ["supported export ranges are present", block.includes("[15, 30, 60, 90]")],
@@ -19,7 +19,7 @@ const checks = [
   ["consolidated PDF shows separate subtotal and taxes", source.includes("const taxTotal") && source.includes("const subtotal") && source.includes('pdf.text(`Rs. ${money(taxTotal)}`')],
   ["invoice amount is rendered in words", source.includes("amountInWords(total)")],
   ["shipment PDF avoids invented legal identity and labels statement accurately", block.includes("billing statement") && invoice.includes("Shipment Billing Statement") && invoice.includes("Billing statement only. This is not a tax invoice.") && !invoice.includes("EXAMPLE_INVOICE_") && !block.includes("EXAMPLE_INVOICE_")],
-  ["billing table uses the LR-based reference shown in the downloaded statement", block.includes("row.lr_number ? invoiceNumberForLr(row.lr_number) : String(row.invoice_number") && invoice.includes("const invoiceNumber = invoiceNumberForLr(record.lr_number)")],
+  ["billing table uses the LR-based reference shown in the downloaded statement", block.includes("const shipmentInvoiceNumber = (row: RecordRow) => invoiceNumberForLr(row.lr_number)") && invoice.includes("const invoiceNumber = invoiceNumberForLr(record.lr_number)")],
   ["billing export uses one captured local date", block.includes("const now = new Date()") && block.includes("downloadBillingExport(rows, days, now)") && source.includes("billingPeriod(days, now)")],
   ["billing API accepts explicit calendar date bounds", block.includes("start_date: period.start") && worker.includes("start_date") && worker.includes("date(b.created_at) >= date(?)")],
 ];
