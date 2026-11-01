@@ -22,7 +22,24 @@ function useSavedAddresses() {
   const [error, setError] = useState("");
   useEffect(() => {
     let cancelled = false;
-    void Promise.allSettled([pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses"), pssApi<{ data: Array<Record<string, string>> }>("/v1/addresses")]).then(([warehouseResult, addressResult]) => { if (cancelled) return; const failures: string[] = []; const map = (row: Record<string, string>): SavedAddressRecord => ({ id: row.id, name: row.name ?? row.label ?? "", kind: "warehouse", company: "", address: { line: row.address ?? "", city: row.city ?? "", state: row.state ?? "", pincode: row.pincode ?? "", country: "India" }, contact: { name: row.contact_name ?? "", phone: row.phone ?? row.contact ?? "", email: "" }, default: false }); if (warehouseResult.status === "fulfilled") setWarehouses(dedupeAddressRecords(warehouseResult.value.data.map(map))); else failures.push(`warehouses: ${getPssErrorDetails(warehouseResult.reason, "temporarily unavailable").message}`); if (addressResult.status === "fulfilled") setConsignees(dedupeAddressRecords(addressResult.value.data.map(map))); else failures.push(`saved addresses: ${getPssErrorDetails(addressResult.reason, "temporarily unavailable").message}`); setError(failures.length ? `Some address data could not be loaded — ${failures.join("; ")}` : ""); });
+    void Promise.allSettled([pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses"), pssApi<{ data: Array<Record<string, string>> }>("/v1/addresses?address_kind=consignee")]).then(([warehouseResult, addressResult]) => {
+      if (cancelled) return;
+      const failures: string[] = [];
+      const map = (row: Record<string, string>, kind: SavedAddressRecord["kind"]): SavedAddressRecord => ({
+        id: row.id,
+        name: row.name ?? row.label ?? "",
+        kind,
+        company: "",
+        address: { line: row.address ?? "", city: row.city ?? "", state: row.state ?? "", pincode: row.pincode ?? "", country: "India" },
+        contact: { name: row.contact_name ?? "", phone: row.phone ?? row.contact ?? "", email: "" },
+        default: false,
+      });
+      if (warehouseResult.status === "fulfilled") setWarehouses(dedupeAddressRecords(warehouseResult.value.data.map((row) => map(row, "warehouse"))));
+      else failures.push(`warehouses: ${getPssErrorDetails(warehouseResult.reason, "temporarily unavailable").message}`);
+      if (addressResult.status === "fulfilled") setConsignees(dedupeAddressRecords(addressResult.value.data.filter((row) => row.address_kind === "consignee").map((row) => map(row, "consignee"))));
+      else failures.push(`saved addresses: ${getPssErrorDetails(addressResult.reason, "temporarily unavailable").message}`);
+      setError(failures.length ? `Some address data could not be loaded — ${failures.join("; ")}` : "");
+    });
     return () => { cancelled = true; };
   }, []);
   return { warehouses, consignees, error };
