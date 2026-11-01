@@ -37,8 +37,14 @@ export default function SupportTicketCreation({ statusFilter = "Open" }: { statu
           if (cancelled) return;
           const choices = (result.data ?? []).map((row) => {
             const id = String(row.id ?? "");
-            const shipmentReference = String(row.lr_number ?? row.tracking_number ?? row.master_awb ?? row.pss_reference ?? id);
-            const consignee = row.consignee && typeof row.consignee === "object" ? (row.consignee as Record<string, unknown>).name : row.consignee_name;
+            const shipmentReference = String(row.lr_number ?? row.master_awb ?? row.tracking_number ?? row.provider_reference ?? row.pss_reference ?? id);
+            const consignee = typeof row.consignee === "string"
+              ? row.consignee
+              : row.consignee && typeof row.consignee === "object"
+                ? (row.consignee as Record<string, unknown>).name
+                : row.consignee_name ?? (row.destination_address && typeof row.destination_address === "object"
+                  ? (row.destination_address as Record<string, unknown>).name
+                  : undefined);
             return { id, reference: shipmentReference, consignee: String(consignee ?? "Consignee unavailable") };
           }).filter((row) => row.id);
           setShipmentChoices(choices);
