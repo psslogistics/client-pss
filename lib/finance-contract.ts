@@ -1,4 +1,4 @@
-export type WalletTransaction = { type?: string | null; amount?: number | null; status?: string | null };
+export type WalletTransaction = { type?: string | null; amount?: number | null; status?: string | null; reference?: string | null };
 
 export type FinanceRecord = { amount?: number | string | null; status?: string | null };
 
@@ -6,7 +6,7 @@ export const transactionKind = (item: WalletTransaction) => String(item.type ?? 
 export const absoluteAmount = (item: WalletTransaction) => Math.abs(Number(item.amount ?? 0));
 export const isCredit = (item: WalletTransaction) => { const type = transactionKind(item); return type.includes("credit") || type.includes("refund") || type.includes("topup"); };
 export const isPending = (item: WalletTransaction) => ["pending", "processing", "awaiting", "queued"].includes(String(item.status ?? "").toLowerCase());
-export const isReversed = (item: WalletTransaction) => ["reversed", "reversal", "refunded"].includes(String(item.status ?? "").toLowerCase()) || transactionKind(item).includes("reversal");
+export const isReversed = (item: WalletTransaction) => ["reversed", "reversal", "refunded"].includes(String(item.status ?? "").toLowerCase()) || transactionKind(item).includes("reversal") || String(item.reference ?? "").trim().toLowerCase().startsWith("reversal");
 
 export function walletTotals<T extends WalletTransaction>(transactions: T[]) {
   return transactions.reduce((result, item) => {
