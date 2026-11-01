@@ -397,8 +397,8 @@ export default function PickupRequests() {
       <div className="flex flex-wrap items-stretch gap-2">
         <MetricCard label="Today's Pickups" value={metrics.today} icon={<Truck className="h-4 w-4" />} />
         <MetricCard label="Scheduled" value={metrics.scheduled} icon={<Clock3 className="h-4 w-4" />} />
-        <MetricCard label="Completed (7d)" value={metrics.completed} icon={<Check className="h-4 w-4" />} />
-        <MetricCard label="Failed (7d)" value={metrics.failed} icon={<FileText className="h-4 w-4" />} />
+        <MetricCard label="Completed" value={metrics.completed} icon={<Check className="h-4 w-4" />} />
+        <MetricCard label="Failed" value={metrics.failed} icon={<FileText className="h-4 w-4" />} />
         <div className="flex w-full shrink-0 gap-2 sm:w-auto">
           <button type="button" onClick={() => setCalendarOpen((current) => !current)} className={cn(buttonSecondary, "flex-1 sm:flex-none")}><CalendarDays className="h-4 w-4" /> Calendar View</button>
           <button type="button" onClick={() => { setPickupSlotOptions([]); setScheduleError(""); setScheduleOpen(true); }} className={cn(buttonPrimary, "flex-1 sm:flex-none")}><Plus className="h-4 w-4" /> Schedule Pickup</button>
