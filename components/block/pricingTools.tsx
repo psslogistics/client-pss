@@ -22,7 +22,7 @@ function useSavedAddresses() {
   const [error, setError] = useState("");
   useEffect(() => {
     let cancelled = false;
-    void Promise.allSettled([pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses"), pssApi<{ data: Array<Record<string, string>> }>("/v1/addresses?address_kind=consignee")]).then(([warehouseResult, addressResult]) => {
+    void Promise.allSettled([pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses"), pssApi<{ data: Array<Record<string, string>> }>("/v1/addresses")]).then(([warehouseResult, addressResult]) => {
       if (cancelled) return;
       const failures: string[] = [];
       const map = (row: Record<string, string>, kind: SavedAddressRecord["kind"]): SavedAddressRecord => ({
@@ -36,7 +36,10 @@ function useSavedAddresses() {
       });
       if (warehouseResult.status === "fulfilled") setWarehouses(dedupeAddressRecords(warehouseResult.value.data.map((row) => map(row, "warehouse"))));
       else failures.push(`warehouses: ${getPssErrorDetails(warehouseResult.reason, "temporarily unavailable").message}`);
-      if (addressResult.status === "fulfilled") setConsignees(dedupeAddressRecords(addressResult.value.data.filter((row) => row.address_kind === "consignee").map((row) => map(row, "consignee"))));
+      // Legacy saved addresses may not have address_kind populated. Keep those
+      // selectable as delivery addresses, while excluding records explicitly
+      // marked as consignors.
+      if (addressResult.status === "fulfilled") setConsignees(dedupeAddressRecords(addressResult.value.data.filter((row) => row.address_kind?.trim().toLowerCase() !== "consignor").map((row) => map(row, "consignee"))));
       else failures.push(`saved addresses: ${getPssErrorDetails(addressResult.reason, "temporarily unavailable").message}`);
       setError(failures.length ? `Some address data could not be loaded — ${failures.join("; ")}` : "");
     });
