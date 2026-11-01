@@ -3,7 +3,7 @@
 @import "shadcn/tailwind.css";
 
 .auth-login-hero {
-  background-image: url("/auth-login-hero.png");
+  background-image: url("/auth-login-hero.webp");
   background-position: center center;
   background-size: cover;
 }
