@@ -341,7 +341,7 @@ export default function DelhiveryTrackingPane() {
 
   const selected = useMemo(() => {
     const linked = selectedId ? shipments.find((shipment) => shipment.id === selectedId || shipment.pssReference === selectedId || shipment.reference === selectedId) : undefined;
-    return linked ?? (selectedId ? undefined : shipments[0]);
+    return linked;
   }, [shipments, selectedId]);
   const visibleSearchResults = query.trim() ? searchResults : [];
 
@@ -386,7 +386,7 @@ export default function DelhiveryTrackingPane() {
   }, [routeShipmentLoaded, selected]);
 
   if (loading && !shipments.length) return <DelhiveryTrackingSkeleton />;
-  if (!selected) return <div className="tracking-pane grid min-h-[420px] w-full min-w-0 place-items-center rounded-xl border border-border bg-card p-8 text-center text-foreground"><div><Package className="mx-auto size-7 text-muted-foreground" /><h1 className="mt-3 text-base font-semibold">{loadError ? "Shipment data is unavailable" : selectedId ? "Shipment not found" : "No shipments yet"}</h1><p className="mt-1 text-sm text-muted-foreground">{loadError || (selectedId ? `The linked shipment ${selectedId} could not be loaded.` : "Shipment tracking will appear here once a shipment is available.")}</p><button type="button" onClick={() => void load(true)} className="mt-4 rounded-md border border-input px-3 py-2 text-xs font-semibold">Retry</button></div></div>;
+  if (!selected) return <div className="tracking-pane grid min-h-[420px] w-full min-w-0 place-items-center rounded-xl border border-border bg-card p-8 text-center text-foreground"><div><Package className="mx-auto size-7 text-muted-foreground" /><h1 className="mt-3 text-base font-semibold">{loadError ? "Shipment data is unavailable" : selectedId ? "Shipment not found" : "No shipment selected"}</h1><p className="mt-1 text-sm text-muted-foreground">{loadError || (selectedId ? `The linked shipment ${selectedId} could not be loaded.` : "Search by PSS reference, LR/LRN, AWB, or pickup reference to open a shipment here.")}</p>{loadError && <button type="button" onClick={() => void load(true)} className="mt-4 rounded-md border border-input px-3 py-2 text-xs font-semibold">Retry</button>}</div></div>;
 
   const tone = statusTone(selected.status);
   const latest = selected.events.at(-1);
