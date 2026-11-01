@@ -307,6 +307,7 @@ export default function DelhiveryTrackingPane() {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Shipment[]>([]);
   const [searching, setSearching] = useState(false);
+  const searchRequestId = useRef(0);
   const [routeShipmentLoaded, setRouteShipmentLoaded] = useState(false);
   const routeRefreshId = useRef<string | null>(null);
 
@@ -341,15 +342,17 @@ export default function DelhiveryTrackingPane() {
   /* eslint-disable react-hooks/set-state-in-effect -- debounced search state must reset synchronously when the query is cleared. */
   useEffect(() => {
     const term = query.trim();
-    if (!term) { setSearchResults([]); setSearching(false); return; }
+    const requestId = ++searchRequestId.current;
+    setSearchResults([]);
+    if (!term) { setSearching(false); return; }
+    setSearching(true);
     const timer = window.setTimeout(() => {
-      setSearching(true);
       void pssApi<{ data?: Record<string, unknown>[] }>(`/v1/shipments?limit=50&offset=0&include_tracking=1&search=${encodeURIComponent(term)}`)
-        .then((result) => setSearchResults((result.data ?? []).map(mapShipment)))
-        .catch(() => setSearchResults([]))
-        .finally(() => setSearching(false));
+        .then((result) => { if (requestId === searchRequestId.current) setSearchResults((result.data ?? []).map(mapShipment)); })
+        .catch(() => { if (requestId === searchRequestId.current) setSearchResults([]); })
+        .finally(() => { if (requestId === searchRequestId.current) setSearching(false); });
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(timer); if (requestId === searchRequestId.current) searchRequestId.current += 1; };
   }, [query]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
