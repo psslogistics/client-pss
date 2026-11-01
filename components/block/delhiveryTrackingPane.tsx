@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDate as formatClientDate, formatDateTime as formatClientDateTime } from "@/lib/date-format";
-import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
+import { getPssErrorDetails, pssApi, pssApiFile } from "@/lib/pss-api";
 import { mergeProviderPdfs } from "@/lib/merge-pdf";
 import { invoiceNumberForLr } from "@/lib/invoice-contract";
 import { SkeletonProvider } from "@/components/ui/skeleton";
@@ -28,6 +28,7 @@ import { DelhiveryLabelMenu } from "@/components/block/delhiveryLabelMenu";
 
 type Status = "Booked" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type TrackingEvent = { title: string; description: string; location: string; eventTime: string; status: Status; source?: string };
+type ShipmentDocument = { id: string; original_filename: string; content_type?: string; file_size_bytes?: number };
 type Shipment = {
   id: string;
   pssReference: string;
@@ -333,6 +334,8 @@ export default function DelhiveryTrackingPane() {
   const [searching, setSearching] = useState(false);
   const searchRequestId = useRef(0);
   const [routeShipmentLoaded, setRouteShipmentLoaded] = useState(false);
+  const [invoiceDocuments, setInvoiceDocuments] = useState<ShipmentDocument[]>([]);
+  const [invoiceDocumentsLoading, setInvoiceDocumentsLoading] = useState(false);
   const routeRefreshId = useRef<string | null>(null);
 
   const load = async (showNotice = false) => {
@@ -431,6 +434,38 @@ export default function DelhiveryTrackingPane() {
     void refreshTracking(selected);
   }, [routeShipmentLoaded, selected]);
 
+  const selectedShipmentId = selected?.id;
+  useEffect(() => {
+    if (!selectedShipmentId) return;
+    let cancelled = false;
+    const shipmentId = selectedShipmentId;
+    void (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      setInvoiceDocuments([]);
+      setInvoiceDocumentsLoading(true);
+      try {
+        const result = await pssApi<{ data?: Array<Record<string, unknown>> }>(`/v1/shipments/${encodeURIComponent(shipmentId)}/documents`, { cache: "no-store" });
+        if (cancelled) return;
+        const documents = (result.data ?? []).filter((document) => {
+          const filename = String(document.original_filename ?? "").toLowerCase();
+          return !filename.startsWith("delhivery-pod-") && !filename.startsWith("eway-bill-");
+        }).map((document) => ({
+          id: String(document.id ?? ""),
+          original_filename: String(document.original_filename || "Invoice document"),
+          content_type: String(document.content_type ?? "") || undefined,
+          file_size_bytes: Number(document.file_size_bytes ?? 0) || undefined,
+        })).filter((document) => document.id);
+        setInvoiceDocuments(documents);
+      } catch (error) {
+        if (!cancelled) setNotice(`Invoice documents could not be loaded: ${getPssErrorDetails(error, "Document list unavailable.").message}`);
+      } finally {
+        if (!cancelled) setInvoiceDocumentsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedShipmentId]);
+
   if (loading && !shipments.length) return <DelhiveryTrackingSkeleton />;
   if (!selected) return <div className="tracking-pane min-h-full w-full min-w-0 bg-background p-4 text-foreground sm:p-6"><main className="mx-auto w-full max-w-[1400px] space-y-4"><TrackingSearch query={query} setQuery={setQuery} searching={searching} results={searchResults} onSelect={selectSearchResult} /><div className="grid min-h-[320px] place-items-center rounded-xl border border-border bg-card p-8 text-center"><div><Package className="mx-auto size-7 text-muted-foreground" /><h1 className="mt-3 text-base font-semibold">{loadError ? "Shipment data is unavailable" : selectedId ? "Shipment not found" : "No shipment selected"}</h1><p className="mt-1 text-sm text-muted-foreground">{loadError || (selectedId ? `The linked shipment ${selectedId} could not be loaded.` : "Search by PSS reference, LR/LRN, AWB, or pickup reference to open a shipment here.")}</p>{loadError && <button type="button" onClick={() => void load(true)} className="mt-4 rounded-md border border-input px-3 py-2 text-xs font-semibold">Retry</button>}</div></div></main></div>;
 
@@ -444,7 +479,26 @@ export default function DelhiveryTrackingPane() {
 
   const showInvoice = () => {
     setSummaryOpen(true);
-    setNotice("Invoice details are shown in Order summary.");
+    setNotice(invoiceDocuments.length
+      ? `${invoiceDocuments.length} uploaded invoice document${invoiceDocuments.length === 1 ? "" : "s"} available in Order summary.`
+      : invoiceDocumentsLoading ? "Loading uploaded invoice documents…" : "No uploaded invoice documents are attached to this shipment.");
+  };
+
+  const downloadInvoiceDocument = async (invoice: ShipmentDocument) => {
+    setNotice(`Downloading ${invoice.original_filename}…`);
+    try {
+      const { blob } = await pssApiFile(`/v1/documents/${encodeURIComponent(invoice.id)}`);
+      if (!blob.size) throw new Error("The stored invoice document is empty.");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = invoice.original_filename;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice("Uploaded invoice downloaded.");
+    } catch (error) {
+      setNotice(`Invoice download failed: ${getPssErrorDetails(error, "The invoice could not be downloaded.").message}`);
+    }
   };
 
   const downloadPod = async () => {
@@ -506,7 +560,7 @@ export default function DelhiveryTrackingPane() {
       <TrackingSearch query={query} setQuery={setQuery} searching={searching} results={searchResults} onSelect={selectSearchResult} />
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="px-4 pb-4 pt-5 sm:px-6"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><div className="grid size-11 shrink-0 place-items-center rounded-md bg-rose-50 text-rose-600"><Truck className="size-5" /></div><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold tracking-tight">{selected.referenceLabel} {selected.reference}</h1><button type="button" aria-label="Copy shipment reference" onClick={() => void copyReference()} className="rounded p-1 text-slate-500 hover:bg-slate-100"><Copy className="size-3.5" /></button></div><p className="mt-1 text-sm text-slate-600">{selected.masterAwb ? `Master AWB: ${selected.masterAwb} · ` : ""}{selected.pieces} {selected.pieces === 1 ? "Box" : "Boxes"}</p><p className="mt-1 text-sm text-slate-600">· Created on: {formatDate(selected.createdAt)}</p></div></div><button type="button" onClick={() => void refreshTracking()} disabled={refreshing} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />Refresh</button></div><div className="mt-4 border-t border-slate-200 pt-4"><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"><Identifier label="Shipment reference" value={selected.pssReference} /><Identifier label="LR / LRN" value={selected.lrNumber} /><Identifier label="AWB / waybill" value={selected.masterAwb || selected.trackingNumber || selected.providerReference} /><Identifier label="Box AWB(s)" value={selected.boxAwbs.length ? selected.boxAwbs.join(", ") : undefined} /><Identifier label="Invoice number" value={selected.invoiceNumber} /><Identifier label="Pickup reference" value={selected.pickupReference} /><Identifier label="Courier confirmation" value={selected.providerSyncStatus === "failed" ? "Courier update needs attention" : selected.providerSyncStatus ? "Courier update received" : "Awaiting courier confirmation"} /></div><div className="mt-3 flex flex-wrap gap-2"><StatusChip tone={tone === "danger" ? "purple" : "neutral"}>{visibleStatus}</StatusChip><StatusChip tone="blue">{selected.provider}</StatusChip><StatusChip tone="blue">BTC</StatusChip><StatusChip tone="blue">{selected.paymentMode === "Not provided" ? "Prepaid" : selected.paymentMode}</StatusChip></div><div className={cn("mt-4 flex items-start gap-3 rounded-md px-3 py-3", tone === "danger" ? "bg-rose-50" : "bg-emerald-50/70")}><Truck className={cn("mt-0.5 size-4 shrink-0", tone === "danger" ? "text-rose-600" : "text-emerald-600")} /><div><p className="text-sm font-medium">{visibleStatus}</p><p className="mt-0.5 text-xs text-slate-600">{selected.status === "Booked" && !(selected.lrNumber || selected.masterAwb || selected.trackingNumber || selected.providerReference) ? "No LR/AWB has been received; courier booking is not confirmed in this panel." : isReadyToShip ? "Print shipping label and schedule pickup to get it delivered without any delays" : latest?.description ?? "Shipment movement is being tracked from the provider."}</p></div></div></div></div></section>
       <TrackingTimeline shipment={selected} scanOpen={scanOpen} setScanOpen={setScanOpen} />
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<ReceiptText className="size-4 text-rose-600" />} title="Order summary" open={summaryOpen} onClick={() => setSummaryOpen(!summaryOpen)} />{summaryOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Box details</h3><div className="grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Box count</p><p className="mt-1 text-xs font-semibold">{selected.pieces}</p></div><div><p className="text-xs text-slate-500">Dimensions</p><p className="mt-1 text-xs font-semibold">{selected.dimensions}</p></div></div></div><div className="mt-4 space-y-1"><DetailRow label="Chargeable weight" value={selected.weight} /><DetailRow label="Actual weight" value={selected.weight} /></div><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Invoice details</h3><DetailRow label="Payment mode" value={selected.paymentMode === "Not provided" ? "Prepaid" : selected.paymentMode} /><DetailRow label="Product description" value={selected.productDescription} /><DetailRow label="PO number" value="NIL" action={<button type="button" onClick={() => setNotice("PO editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="PO expiry date" value="NIL" action={<button type="button" onClick={() => setNotice("PO expiry editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="Invoices" value="1" /><DetailRow label="Total invoice value" value={selected.invoiceValue} /><DetailRow label="E-way bills" value={selected.ewayBills} /></div></div>}</section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<ReceiptText className="size-4 text-rose-600" />} title="Order summary" open={summaryOpen} onClick={() => setSummaryOpen(!summaryOpen)} />{summaryOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Box details</h3><div className="grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Box count</p><p className="mt-1 text-xs font-semibold">{selected.pieces}</p></div><div><p className="text-xs text-slate-500">Dimensions</p><p className="mt-1 text-xs font-semibold">{selected.dimensions}</p></div></div></div><div className="mt-4 space-y-1"><DetailRow label="Chargeable weight" value={selected.weight} /><DetailRow label="Actual weight" value={selected.weight} /></div><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Invoice details</h3><DetailRow label="Payment mode" value={selected.paymentMode === "Not provided" ? "Prepaid" : selected.paymentMode} /><DetailRow label="Product description" value={selected.productDescription} /><DetailRow label="PO number" value="NIL" action={<button type="button" onClick={() => setNotice("PO editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="PO expiry date" value="NIL" action={<button type="button" onClick={() => setNotice("PO expiry editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="Invoices" value={invoiceDocumentsLoading ? "Loading…" : String(invoiceDocuments.length)} /><DetailRow label="Total invoice value" value={selected.invoiceValue} /><DetailRow label="E-way bills" value={selected.ewayBills} />{!invoiceDocumentsLoading && <div className="mt-3 border-t border-slate-200 pt-3"><p className="mb-2 text-xs font-medium text-slate-500">Uploaded invoice documents</p>{invoiceDocuments.length ? <ul className="space-y-2">{invoiceDocuments.map((invoice) => <li key={invoice.id} className="flex flex-wrap items-center justify-between gap-2"><span className="min-w-0 break-all text-xs text-slate-700">{invoice.original_filename}</span><button type="button" onClick={() => void downloadInvoiceDocument(invoice)} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"><Download className="size-3" />Download</button></li>)}</ul> : <p className="text-xs text-slate-500">No uploaded invoice documents are attached to this shipment.</p>}</div>}</div></div>}</section>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<MapPin className="size-4 text-rose-600" />} title="Addresses" open={addressesOpen} onClick={() => setAddressesOpen(!addressesOpen)} />{addressesOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><p className="text-xs text-slate-500">Pickup Address</p><p className="mt-1 text-sm font-semibold">{selected.consignor}</p><p className="text-xs text-slate-600">{selected.pickupAddress}</p></div><div><p className="text-xs text-slate-500">Delivery Address</p><p className="mt-1 text-sm font-semibold">{selected.consignee}</p><p className="text-xs text-slate-600">{fullAddress ? fullDeliveryAddress : fullDeliveryAddress.length > 44 ? `${fullDeliveryAddress.slice(0, 44)}…` : fullDeliveryAddress}</p>{fullDeliveryAddress.length > 44 && <button type="button" onClick={() => setFullAddress(!fullAddress)} className="mt-1 text-xs font-medium text-blue-600">{fullAddress ? "Show less" : "View Address"}</button>}</div></div></div>}</section>
       <section aria-label="Shipment actions" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><div className="grid size-7 place-items-center rounded-md bg-rose-50 text-rose-600"><ReceiptText className="size-4" /></div><div><h2 className="text-sm font-semibold text-slate-900">Shipment actions</h2><p className="text-xs text-slate-500">Documents and support for this shipment</p></div></div><ShipmentActions onNotice={setNotice} onInvoice={showInvoice} onPod={() => void downloadPod()} onLr={() => void downloadLr()} labelMenu={<DelhiveryLabelMenu shipmentId={selected.id} reference={selected.reference} boxes={selected.pieces} onNotice={setNotice} compact={false} />} /></section>
     </main>
