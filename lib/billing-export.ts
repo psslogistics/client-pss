@@ -3,7 +3,7 @@ import autoTable from "jspdf-autotable";
 import { zipSync } from "fflate";
 import { formatDate, localDateInput, shiftLocalDays } from "@/lib/date-format";
 import { buildWorkbook, type WorkbookCell } from "@/lib/xlsx";
-import { EXAMPLE_INVOICE_BUYER, EXAMPLE_INVOICE_SELLER, amountInWords, cycleInvoiceNumber, invoiceNumberForLr } from "@/lib/invoice-contract";
+import { amountInWords, cycleInvoiceNumber, invoiceNumberForLr } from "@/lib/invoice-contract";
 import { billingTotals, isExcludedFinanceRecord } from "@/lib/finance-contract";
 import { clientShipmentReference } from "@/lib/client-shipment-reference";
 
@@ -52,15 +52,13 @@ const taxFor = (record: BillingExportRecord) => linesFor(record).filter((line) =
 const breakupText = (record: BillingExportRecord) => linesFor(record).map((line) => `${line.label}${line.marker ?? ""}: Rs. ${money(line.amount)}`).join(" | ");
 const isExcluded = isExcludedFinanceRecord;
 const downloadBytes = (bytes: ArrayBuffer, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([bytes], { type })); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
-const exampleSeller = `${EXAMPLE_INVOICE_SELLER.name}\n${EXAMPLE_INVOICE_SELLER.address}\nGSTIN: ${EXAMPLE_INVOICE_SELLER.gstin}\nEmail: ${EXAMPLE_INVOICE_SELLER.email}`;
-const exampleBuyer = `${EXAMPLE_INVOICE_BUYER.name}\n${EXAMPLE_INVOICE_BUYER.address}\nGSTIN: ${EXAMPLE_INVOICE_BUYER.gstin}`;
 // Billing cycles are inclusive: a 30-day cycle contains today plus the prior
 // 29 local calendar days, matching the Reports date-range semantics.
 const billingPeriod = (days: number, now = new Date()) => ({ start: shiftLocalDays(now, -(days - 1)), end: localDateInput(now) });
 
 function makeXlsx(records: BillingExportRecord[], days: number, now: Date) {
   const period = billingPeriod(days, now);
-  const headers = ["Invoice", "Shipment ID", "PSS Reference", "LR / LRN", "Tracking", "From", "To", "Consignor", "Consignee", "Origin address", "Destination address", "Pieces", "Weight (kg)", "Chargeable weight (kg)", "Dimensions", "Declared value", "Billing date", "Status", "Due date", "Charge breakup", "Tax", "Adjustments", "Amendments", "Total"];
+  const headers = ["Billing reference", "Shipment ID", "PSS Reference", "LR / LRN", "Tracking", "From", "To", "Consignor", "Consignee", "Origin address", "Destination address", "Pieces", "Weight (kg)", "Chargeable weight (kg)", "Dimensions", "Declared value", "Billing date", "Status", "Due date", "Charge breakup", "Tax", "Adjustments", "Amendments", "Total"];
   const rows: WorkbookCell[][] = records.map((record) => [
     shipmentInvoiceNumber(record), clientShipmentReference(record, "Pending reference"), record.shipment_pss_reference, record.lr_number, record.tracking_number,
     record.shipment_origin, record.shipment_destination, text(record.shipment_origin_address?.name), record.shipment_consignee ?? text(record.shipment_destination_address?.name),
@@ -90,21 +88,21 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number, now: Date)
   const period = billingPeriod(days, generatedAt);
   const generated = formatDate(generatedAt.toISOString());
   const cycleNumber = cycleInvoiceNumber(period.start, period.end);
-  pdf.setProperties({ title: `PSS Logistics Billing Invoice ${cycleNumber}`, subject: "Consolidated client tax invoice", creator: "PSS Logistics" });
+  pdf.setProperties({ title: `PSS Logistics Billing Statement ${cycleNumber}`, subject: "Consolidated shipment billing statement; not a tax invoice", creator: "PSS Logistics" });
   const drawHeader = () => {
     pdf.setFillColor(15, 57, 88); pdf.rect(0, 0, pageWidth, 74, "F");
     pdf.setFont("helvetica", "bold"); pdf.setFontSize(20); pdf.setTextColor(255, 255, 255); pdf.text("PSS LOGISTICS", margin, 32);
-    pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.text("CONSOLIDATED TAX INVOICE", margin, 49);
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.text("CONSOLIDATED BILLING STATEMENT · NOT A TAX INVOICE", margin, 49);
     pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.text(cycleNumber, pageWidth - margin, 30, { align: "right" });
     pdf.setFont("helvetica", "normal"); pdf.text(`Billing period: Last ${days} days`, pageWidth - margin, 46, { align: "right" });
   };
   drawHeader();
   pdf.setTextColor(30, 41, 59); pdf.setFont("helvetica", "normal"); pdf.setFontSize(8);
-  pdf.text("From", margin, 98); pdf.text("Bill to", pageWidth / 2 + 8, 98);
+  pdf.text("Service provider", margin, 98); pdf.text("Client account", pageWidth / 2 + 8, 98);
   pdf.setDrawColor(203, 213, 225); pdf.setFillColor(248, 250, 252); pdf.roundedRect(margin, 106, pageWidth / 2 - margin - 8, 84, 5, 5, "FD"); pdf.roundedRect(pageWidth / 2 + 8, 106, pageWidth / 2 - margin - 8, 84, 5, 5, "FD");
-  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.text(exampleSeller.split("\n"), margin + 10, 122); pdf.text(exampleBuyer.split("\n"), pageWidth / 2 + 18, 122);
-  pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(15, 57, 88); pdf.text("Invoice details", margin, 214);
-  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(30, 41, 59); pdf.text(`Invoice number: ${cycleNumber}`, margin, 230); pdf.text(`Invoice date: ${generated}`, margin, 244); pdf.text(`Shipments included: ${billable.length}`, pageWidth / 2 + 8, 230); pdf.text(`Excluded records: ${excluded}`, pageWidth / 2 + 8, 244);
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.text(["PSS Logistics", "Legal/tax identity not configured"], margin + 10, 122); pdf.text(["Client account", "Legal billing identity not provided"], pageWidth / 2 + 18, 122);
+  pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(15, 57, 88); pdf.text("Statement details", margin, 214);
+  pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(30, 41, 59); pdf.text(`Statement reference: ${cycleNumber}`, margin, 230); pdf.text(`Statement date: ${generated}`, margin, 244); pdf.text(`Shipments included: ${billable.length}`, pageWidth / 2 + 8, 230); pdf.text(`Excluded records: ${excluded}`, pageWidth / 2 + 8, 244);
   autoTable(pdf, {
     startY: 264,
     head: [["#", "Shipment / invoice", "Route and consignee", "Boxes / weight", "Charge breakup", "Amount"]],
@@ -122,7 +120,7 @@ function makeSummaryPdf(records: BillingExportRecord[], days: number, now: Date)
     columnStyles: { 0: { cellWidth: 24, halign: "center" }, 1: { cellWidth: 125 }, 2: { cellWidth: 150 }, 3: { cellWidth: 55, halign: "right" }, 4: { cellWidth: 100 }, 5: { cellWidth: 70, halign: "right" } },
     didDrawPage: (hookData) => {
       if (hookData.pageNumber > 1) drawHeader();
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(100, 116, 139); pdf.text("PSS Logistics | Computer generated invoice | Example addresses pending configuration", margin, pageHeight - 24); pdf.text(`Page ${hookData.pageNumber}`, pageWidth - margin, pageHeight - 24, { align: "right" });
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(100, 116, 139); pdf.text("PSS Logistics | Billing statement only · Not a tax invoice", margin, pageHeight - 24); pdf.text(`Page ${hookData.pageNumber}`, pageWidth - margin, pageHeight - 24, { align: "right" });
     },
   });
   const finalY = (pdf as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 264;

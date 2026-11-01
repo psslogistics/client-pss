@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate } from "@/lib/date-format";
-import { EXAMPLE_INVOICE_BUYER, EXAMPLE_INVOICE_SELLER, amountInWords, invoiceFileName, invoiceNumberForLr } from "@/lib/invoice-contract";
+import { amountInWords, invoiceFileName, invoiceNumberForLr } from "@/lib/invoice-contract";
 
 export type InvoicePdfRecord = {
   id: string;
@@ -124,14 +124,14 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
   const publicReference = clean(record.lr_number ?? record.tracking_number ?? record.reference_number, "Pending reference");
   const invoiceDate = date(record.created_at);
 
-  doc.setTextColor(...INK); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text("Tax Invoice", LEFT, 38);
+  doc.setTextColor(...INK); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text("Shipment Billing Statement", LEFT, 38);
   doc.setFontSize(10); doc.text("PSS LOGISTICS", PAGE_W - LEFT, 38, { align: "right" });
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text(`Invoice No.: ${invoiceNumber}`, LEFT, 56); doc.text(`Invoice date: ${invoiceDate}`, PAGE_W - LEFT, 56, { align: "right" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text(`Statement reference: ${invoiceNumber}`, LEFT, 56); doc.text(`Statement date: ${invoiceDate}`, PAGE_W - LEFT, 56, { align: "right" });
   line(doc, LEFT, 66, PAGE_W - LEFT, 66, 0.8);
 
   const boxY = 78; const boxH = 94; const boxW = 261;
-  cell(doc, LEFT, boxY, boxW, boxH, `From\n${clean(record.seller_name, EXAMPLE_INVOICE_SELLER.name)}\n${clean(record.seller_address, EXAMPLE_INVOICE_SELLER.address)}\nGSTIN: ${clean(record.seller_gstin, EXAMPLE_INVOICE_SELLER.gstin)}\n${clean(record.seller_contact, EXAMPLE_INVOICE_SELLER.contact)} · ${clean(record.seller_email, EXAMPLE_INVOICE_SELLER.email)}`, { bold: true, size: 8 });
-  cell(doc, LEFT + boxW + 18, boxY, boxW, boxH, `Buyer (Bill to)\n${clean(record.client_name ?? record.buyer_name, EXAMPLE_INVOICE_BUYER.name)}\n${clean(record.client_address ?? record.buyer_address, EXAMPLE_INVOICE_BUYER.address)}\nGSTIN: ${clean(record.client_gstin ?? record.buyer_gstin, EXAMPLE_INVOICE_BUYER.gstin)}\n${clean(record.client_state ?? record.buyer_state, EXAMPLE_INVOICE_BUYER.state)}`, { bold: true, size: 8 });
+  cell(doc, LEFT, boxY, boxW, boxH, `Service provider\n${clean(record.seller_name, "PSS Logistics")}\n${record.seller_address ? `${record.seller_address}\n` : ""}${record.seller_gstin ? `GSTIN: ${record.seller_gstin}\n` : "Legal/tax details not configured\n"}${record.seller_contact ?? ""}${record.seller_email ? ` · ${record.seller_email}` : ""}`, { bold: true, size: 8 });
+  cell(doc, LEFT + boxW + 18, boxY, boxW, boxH, `Billed client\n${clean(record.client_name ?? record.buyer_name, "Client account")}\n${record.client_address ?? record.buyer_address ?? "Billing address not provided"}${record.client_gstin ?? record.buyer_gstin ? `\nGSTIN: ${record.client_gstin ?? record.buyer_gstin}` : "\nGSTIN not provided"}${record.client_state ?? record.buyer_state ? `\n${record.client_state ?? record.buyer_state}` : ""}`, { bold: true, size: 8 });
 
   const metaY = 190;
   autoTable(doc, { startY: metaY, head: [["LR / LRN", "Shipment reference", "Route", "Boxes / weight"]], body: [[clean(record.lr_number, "Pending"), publicReference, `${clean(record.origin, "Not provided")} → ${clean(record.destination, "Not provided")}`, `${record.pieces ?? 1} / ${record.weight_kg ?? "—"} kg`]], margin: { left: LEFT, right: LEFT }, tableWidth: PAGE_W - LEFT * 2, styles: { font: "helvetica", fontSize: 8, cellPadding: 6, overflow: "linebreak", minCellHeight: 26, valign: "middle", lineColor: [203, 213, 225], lineWidth: 0.4, textColor: [...INK] }, headStyles: { fillColor: [238, 238, 238], textColor: [...INK], fontStyle: "bold" }, columnStyles: { 0: { cellWidth: 82 }, 1: { cellWidth: 122 }, 2: { cellWidth: 232 }, 3: { cellWidth: 68, halign: "right" } } });
@@ -148,10 +148,10 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
   const totalsBottom = ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? subtotalY + 80);
   const lowerY = totalsBottom + 12;
   cell(doc, LEFT, lowerY, 540, 46, `Amount chargeable in words\nINR ${amountInWords(total)}`, { bold: true, size: 8 });
-  cell(doc, LEFT, lowerY + 58, 260, 68, `Company's PAN: ${clean(record.seller_pan, "Not provided")}\n\nDeclaration\nComputer-generated invoice.`, { size: 8 });
+  cell(doc, LEFT, lowerY + 58, 260, 68, `Company's PAN: ${clean(record.seller_pan, "Not configured")}\n\nBilling statement only. This is not a tax invoice.`, { size: 8 });
   cell(doc, LEFT + 280, lowerY + 58, 260, 68, `Payment details\nBank: ${clean(record.bank_name, "Not configured")}\nAccount: ${clean(record.bank_account_number, "Not configured")}\nIFSC: ${clean(record.bank_branch_ifsc, "Not configured")}`, { size: 8 });
   cell(doc, LEFT, lowerY + 136, 240, 38, "Customer's Seal and Signature", { size: 8 }); cell(doc, LEFT + 240, lowerY + 136, 300, 38, "for PSS LOGISTICS\nAuthorised Signatory", { bold: true, align: "right", size: 8 });
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text("This is a Computer Generated Invoice", PAGE_W / 2, lowerY + 194, { align: "center" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text("Billing statement only · Not a tax invoice", PAGE_W / 2, lowerY + 194, { align: "center" });
   return { doc, invoiceNumber };
 }
 

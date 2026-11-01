@@ -1,28 +1,3 @@
-/**
- * Customer-facing invoice identity and numbering rules.
- *
- * Keep these values in one place until the real PSS/client legal details are
- * supplied. Shipment destination/consignee data must never be used as the
- * invoice Bill-to party.
- */
-export const EXAMPLE_INVOICE_SELLER = {
-  name: "PSS Logistics",
-  address: "123 Logistics Park, Industrial Area, New Delhi, Delhi 110001",
-  gstin: "EXAMPLE-GSTIN",
-  state: "Delhi",
-  stateCode: "07",
-  contact: "+91 00000 00000",
-  email: "billing@example.com",
-};
-
-export const EXAMPLE_INVOICE_BUYER = {
-  name: "Client Company",
-  address: "456 Client Business Park, Gurugram, Haryana 122001",
-  gstin: "CLIENT-EXAMPLE-GSTIN",
-  state: "Haryana",
-  stateCode: "06",
-};
-
 export function invoiceNumberForLr(lrNumber: unknown, fallback = "PENDING-REFERENCE") {
   const value = String(lrNumber ?? "").trim();
   const safe = (value || fallback).replace(/[^A-Za-z0-9-]/g, "-");
