@@ -80,7 +80,12 @@ function mapApiShipment(row: Record<string, unknown>, trackingEvents: Array<Reco
   const pssReference = String(row.pss_reference ?? "").trim();
   const publicId = lr || masterAwb || orderId || pssReference || `PSS-${id.slice(0, 8)}`;
   const date = String(row.created_at || new Date().toISOString()).slice(0, 10);
-  const events: Event[] = trackingEvents.length ? trackingEvents.map((event) => { const normalizedEvent = normalizeStatus(event.status); return { title: normalizedEvent, description: customerEventDescription(normalizedEvent, event.description), location: String(event.location || "Not provided"), date: String(event.event_time || date).slice(0, 10), time: String(event.event_time || "").slice(11, 16) || "Not provided", status: normalizedEvent }; }).sort((left, right) => `${left.date} ${left.time}`.localeCompare(`${right.date} ${right.time}`)) : [{ title: "Shipment booked", description: "Shipment booked successfully", location: String(row.origin || "Not provided"), date, time: "Not provided", status: "Booked" }];
+  const fallbackEventDescription = safeStatus === "Exception"
+    ? String(row.provider_failure_reason ?? "").trim() || "Shipment needs attention. Courier confirmation is not available."
+    : safeStatus === "Booked" && !lr && !masterAwb
+      ? "Booking request recorded; awaiting courier confirmation."
+      : "No courier tracking events are available yet.";
+  const events: Event[] = trackingEvents.length ? trackingEvents.map((event) => { const normalizedEvent = normalizeStatus(event.status); return { title: normalizedEvent, description: customerEventDescription(normalizedEvent, event.description), location: String(event.location || "Not provided"), date: String(event.event_time || date).slice(0, 10), time: String(event.event_time || "").slice(11, 16) || "Not provided", status: normalizedEvent }; }).sort((left, right) => `${left.date} ${left.time}`.localeCompare(`${right.date} ${right.time}`)) : [{ title: safeStatus, description: fallbackEventDescription, location: String(row.origin || "Not provided"), date, time: "Not provided", status: safeStatus }];
   const lrn = lr;
   const legacyCandidate = String(row.tracking_number ?? row.provider_reference ?? "").trim();
   const isDelhivery = String(row.provider ?? "").trim().toLowerCase() === "delhivery";

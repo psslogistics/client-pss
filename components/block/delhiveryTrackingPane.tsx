@@ -43,8 +43,10 @@ type Shipment = {
   pieces: number;
   weight: string;
   origin: string;
+  pickupAddress: string;
   consignor: string;
   destination: string;
+  deliveryAddress: string;
   consignee: string;
   createdAt: string;
   updatedAt: string;
@@ -70,6 +72,20 @@ const addressName = (value: unknown) => {
     const parsed = JSON.parse(value) as unknown;
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? String((parsed as Record<string, unknown>).name ?? "").trim() : "";
   } catch { return ""; }
+};
+
+const addressText = (value: unknown, fallback: unknown) => {
+  if (typeof value === "string" && value.trim()) {
+    try { return addressText(JSON.parse(value) as unknown, fallback); } catch { return value.trim(); }
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const item = value as Record<string, unknown>;
+    const parts = [item.line, item.address_line1, item.address_line2, item.address, item.landmark, item.locality, item.city, item.state, item.pincode ?? item.pin_code]
+      .map((part) => String(part ?? "").trim()).filter(Boolean);
+    const uniqueParts = parts.filter((part, index) => parts.findIndex((candidate) => candidate.toLowerCase() === part.toLowerCase()) === index);
+    if (uniqueParts.length) return uniqueParts.join(", ");
+  }
+  return String(fallback ?? "").trim() || "Not provided";
 };
 
 const normalizeStatus = (value: unknown): Status => {
@@ -187,6 +203,12 @@ function mapShipment(row: Record<string, unknown>): Shipment {
     status: normalizeStatus(event.status),
     source: String(event.source ?? event.created_by_user_id ?? "").trim() || undefined,
   })).sort((left, right) => left.eventTime.localeCompare(right.eventTime));
+  const providerSyncStatus = String(row.provider_sync_status ?? "").trim() || undefined;
+  const fallbackEventDescription = status === "Exception" || providerSyncStatus?.toLowerCase() === "failed"
+    ? "Shipment needs attention. Courier confirmation is not available."
+    : status === "Booked" && !(lrNumber || masterAwb)
+      ? "Booking request recorded; awaiting courier confirmation."
+      : "No courier tracking events are available yet.";
   return {
     id,
     pssReference,
@@ -203,7 +225,9 @@ function mapShipment(row: Record<string, unknown>): Shipment {
     pieces: Number(row.pieces ?? 1),
     weight: `${Math.max(20, Number(row.total_weight_kg ?? 0), Number(row.weight_override_kg ?? 0)).toFixed(2)} kg`,
     origin: String(row.origin ?? "Not provided"),
+    pickupAddress: addressText(row.origin_address_json, row.origin),
     destination: String(row.destination ?? "Not provided"),
+    deliveryAddress: addressText(row.destination_address_json, row.destination),
     consignor,
     consignee,
     createdAt,
@@ -214,8 +238,8 @@ function mapShipment(row: Record<string, unknown>): Shipment {
     paymentMode: String(row.payment_mode ?? "Not provided"),
     invoiceValue: String(row.declared_value ?? "Not provided"),
     ewayBills: String(row.eway_bills ?? "0"),
-    events: events.length ? events : [{ title: status, description: "Shipment booked successfully", location: String(row.origin ?? "Not provided"), eventTime: createdAt, status }],
-    providerSyncStatus: String(row.provider_sync_status ?? "").trim() || undefined,
+    events: events.length ? events : [{ title: status, description: fallbackEventDescription, location: String(row.origin ?? "Not provided"), eventTime: createdAt, status }],
+    providerSyncStatus,
     providerBookingId: String(row.provider_booking_id ?? "").trim() || undefined,
     providerPickupId: String(row.provider_pickup_id ?? "").trim() || undefined,
     invoiceNumber,
@@ -224,7 +248,7 @@ function mapShipment(row: Record<string, unknown>): Shipment {
 
 const statusLabel = (shipment: Shipment) => {
   if (shipment.providerSyncStatus?.toLowerCase() === "failed" && shipment.status === "Exception") return "Provider booking failed";
-  if (shipment.status === "Booked" && !(shipment.lrNumber || shipment.masterAwb || shipment.trackingNumber || shipment.providerReference)) return "Awaiting LR/AWB confirmation";
+  if (shipment.status === "Booked" && !(shipment.lrNumber || shipment.masterAwb || shipment.trackingNumber || shipment.providerReference)) return "Awaiting courier confirmation";
   if (shipment.status === "Booked" && shipment.events.some((event) => event.title === "Manifested" || /manifested|manifest/i.test(event.description))) return "Manifested";
   if (shipment.status === "Booked") return "Ready to Ship";
   return shipment.status;
@@ -416,7 +440,7 @@ export default function DelhiveryTrackingPane() {
   const hasProviderReference = Boolean(selected.lrNumber || selected.masterAwb || selected.trackingNumber || selected.providerReference);
   const isReadyToShip = selected.status === "Booked" && hasProviderReference && !selected.events.some((event) => event.title === "Manifested" || /manifested|manifest/i.test(event.description));
   const visibleStatus = statusLabel(selected);
-  const fullDeliveryAddress = selected.destination;
+  const fullDeliveryAddress = selected.deliveryAddress;
 
   const showInvoice = () => {
     setSummaryOpen(true);
@@ -480,10 +504,10 @@ export default function DelhiveryTrackingPane() {
   return <div className="tracking-pane relative min-h-full w-full min-w-0 bg-background text-foreground">
     <main className="mx-auto w-full max-w-[1400px] space-y-4 p-4 sm:p-6">
       <TrackingSearch query={query} setQuery={setQuery} searching={searching} results={searchResults} onSelect={selectSearchResult} />
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="px-4 pb-4 pt-5 sm:px-6"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><div className="grid size-11 shrink-0 place-items-center rounded-md bg-rose-50 text-rose-600"><Truck className="size-5" /></div><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold tracking-tight">{selected.referenceLabel} {selected.reference}</h1><button type="button" aria-label="Copy shipment reference" onClick={() => void copyReference()} className="rounded p-1 text-slate-500 hover:bg-slate-100"><Copy className="size-3.5" /></button></div><p className="mt-1 text-sm text-slate-600">{selected.masterAwb ? `Master AWB: ${selected.masterAwb} · ` : ""}{selected.pieces} {selected.pieces === 1 ? "Box" : "Boxes"}</p><p className="mt-1 text-sm text-slate-600">· Created on: {formatDate(selected.createdAt)}</p></div></div><button type="button" onClick={() => void refreshTracking()} disabled={refreshing} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />Refresh</button></div><div className="mt-4 border-t border-slate-200 pt-4"><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"><Identifier label="Shipment reference" value={selected.pssReference} /><Identifier label="LR / LRN" value={selected.lrNumber} /><Identifier label="AWB / waybill" value={selected.masterAwb || selected.trackingNumber || selected.providerReference} /><Identifier label="Box AWB(s)" value={selected.boxAwbs.length ? selected.boxAwbs.join(", ") : undefined} /><Identifier label="Invoice number" value={selected.invoiceNumber} /><Identifier label="Pickup reference" value={selected.pickupReference} /><Identifier label="Courier confirmation" value={selected.providerSyncStatus === "failed" ? "Courier update needs attention" : selected.providerSyncStatus ? "Courier update received" : "Awaiting courier confirmation"} /></div><div className="mt-3 flex flex-wrap gap-2"><StatusChip tone={tone === "danger" ? "purple" : "neutral"}>{visibleStatus}</StatusChip><StatusChip tone="blue">{selected.provider}</StatusChip><StatusChip tone="blue">BTC</StatusChip><StatusChip tone="blue">{selected.paymentMode === "Not provided" ? "Prepaid" : selected.paymentMode}</StatusChip></div><div className={cn("mt-4 flex items-start gap-3 rounded-md px-3 py-3", tone === "danger" ? "bg-rose-50" : "bg-emerald-50/70")}><Truck className={cn("mt-0.5 size-4 shrink-0", tone === "danger" ? "text-rose-600" : "text-emerald-600")} /><div><p className="text-sm font-medium">{visibleStatus}</p><p className="mt-0.5 text-xs text-slate-600">{selected.status === "Booked" && !(selected.lrNumber || selected.masterAwb || selected.trackingNumber || selected.providerReference) ? "Delhivery accepted the booking; awaiting LR/AWB confirmation." : isReadyToShip ? "Print shipping label and schedule pickup to get it delivered without any delays" : latest?.description ?? "Shipment movement is being tracked from the provider."}</p></div></div></div></div></section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><div className="px-4 pb-4 pt-5 sm:px-6"><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><div className="grid size-11 shrink-0 place-items-center rounded-md bg-rose-50 text-rose-600"><Truck className="size-5" /></div><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold tracking-tight">{selected.referenceLabel} {selected.reference}</h1><button type="button" aria-label="Copy shipment reference" onClick={() => void copyReference()} className="rounded p-1 text-slate-500 hover:bg-slate-100"><Copy className="size-3.5" /></button></div><p className="mt-1 text-sm text-slate-600">{selected.masterAwb ? `Master AWB: ${selected.masterAwb} · ` : ""}{selected.pieces} {selected.pieces === 1 ? "Box" : "Boxes"}</p><p className="mt-1 text-sm text-slate-600">· Created on: {formatDate(selected.createdAt)}</p></div></div><button type="button" onClick={() => void refreshTracking()} disabled={refreshing} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />Refresh</button></div><div className="mt-4 border-t border-slate-200 pt-4"><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"><Identifier label="Shipment reference" value={selected.pssReference} /><Identifier label="LR / LRN" value={selected.lrNumber} /><Identifier label="AWB / waybill" value={selected.masterAwb || selected.trackingNumber || selected.providerReference} /><Identifier label="Box AWB(s)" value={selected.boxAwbs.length ? selected.boxAwbs.join(", ") : undefined} /><Identifier label="Invoice number" value={selected.invoiceNumber} /><Identifier label="Pickup reference" value={selected.pickupReference} /><Identifier label="Courier confirmation" value={selected.providerSyncStatus === "failed" ? "Courier update needs attention" : selected.providerSyncStatus ? "Courier update received" : "Awaiting courier confirmation"} /></div><div className="mt-3 flex flex-wrap gap-2"><StatusChip tone={tone === "danger" ? "purple" : "neutral"}>{visibleStatus}</StatusChip><StatusChip tone="blue">{selected.provider}</StatusChip><StatusChip tone="blue">BTC</StatusChip><StatusChip tone="blue">{selected.paymentMode === "Not provided" ? "Prepaid" : selected.paymentMode}</StatusChip></div><div className={cn("mt-4 flex items-start gap-3 rounded-md px-3 py-3", tone === "danger" ? "bg-rose-50" : "bg-emerald-50/70")}><Truck className={cn("mt-0.5 size-4 shrink-0", tone === "danger" ? "text-rose-600" : "text-emerald-600")} /><div><p className="text-sm font-medium">{visibleStatus}</p><p className="mt-0.5 text-xs text-slate-600">{selected.status === "Booked" && !(selected.lrNumber || selected.masterAwb || selected.trackingNumber || selected.providerReference) ? "No LR/AWB has been received; courier booking is not confirmed in this panel." : isReadyToShip ? "Print shipping label and schedule pickup to get it delivered without any delays" : latest?.description ?? "Shipment movement is being tracked from the provider."}</p></div></div></div></div></section>
       <TrackingTimeline shipment={selected} scanOpen={scanOpen} setScanOpen={setScanOpen} />
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<ReceiptText className="size-4 text-rose-600" />} title="Order summary" open={summaryOpen} onClick={() => setSummaryOpen(!summaryOpen)} />{summaryOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Box details</h3><div className="grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-500">Box count</p><p className="mt-1 text-xs font-semibold">{selected.pieces}</p></div><div><p className="text-xs text-slate-500">Dimensions</p><p className="mt-1 text-xs font-semibold">{selected.dimensions}</p></div></div></div><div className="mt-4 space-y-1"><DetailRow label="Chargeable weight" value={selected.weight} /><DetailRow label="Actual weight" value={selected.weight} /></div><div className="mt-4 rounded-lg bg-slate-50 p-3"><h3 className="mb-3 text-sm font-semibold">Invoice details</h3><DetailRow label="Payment mode" value={selected.paymentMode === "Not provided" ? "Prepaid" : selected.paymentMode} /><DetailRow label="Product description" value={selected.productDescription} /><DetailRow label="PO number" value="NIL" action={<button type="button" onClick={() => setNotice("PO editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="PO expiry date" value="NIL" action={<button type="button" onClick={() => setNotice("PO expiry editing is available from the shipment workflow.")} className="ml-1 text-blue-600">Add</button>} /><DetailRow label="Invoices" value="1" /><DetailRow label="Total invoice value" value={selected.invoiceValue} /><DetailRow label="E-way bills" value={selected.ewayBills} /></div></div>}</section>
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<MapPin className="size-4 text-rose-600" />} title="Addresses" open={addressesOpen} onClick={() => setAddressesOpen(!addressesOpen)} />{addressesOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><p className="text-xs text-slate-500">Pickup Address</p><p className="mt-1 text-sm font-semibold">{selected.consignor}</p><p className="text-xs text-slate-600">{selected.origin}</p></div><div><p className="text-xs text-slate-500">Delivery Address</p><p className="mt-1 text-sm font-semibold">{selected.consignee}</p><p className="text-xs text-slate-600">{fullAddress ? fullDeliveryAddress : fullDeliveryAddress.length > 44 ? `${fullDeliveryAddress.slice(0, 44)}…` : fullDeliveryAddress}</p>{fullDeliveryAddress.length > 44 && <button type="button" onClick={() => setFullAddress(!fullAddress)} className="mt-1 text-xs font-medium text-blue-600">{fullAddress ? "Show less" : "View Address"}</button>}</div></div></div>}</section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><SectionHeader icon={<MapPin className="size-4 text-rose-600" />} title="Addresses" open={addressesOpen} onClick={() => setAddressesOpen(!addressesOpen)} />{addressesOpen && <div className="border-t border-slate-200 px-4 pb-4 sm:px-5"><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><p className="text-xs text-slate-500">Pickup Address</p><p className="mt-1 text-sm font-semibold">{selected.consignor}</p><p className="text-xs text-slate-600">{selected.pickupAddress}</p></div><div><p className="text-xs text-slate-500">Delivery Address</p><p className="mt-1 text-sm font-semibold">{selected.consignee}</p><p className="text-xs text-slate-600">{fullAddress ? fullDeliveryAddress : fullDeliveryAddress.length > 44 ? `${fullDeliveryAddress.slice(0, 44)}…` : fullDeliveryAddress}</p>{fullDeliveryAddress.length > 44 && <button type="button" onClick={() => setFullAddress(!fullAddress)} className="mt-1 text-xs font-medium text-blue-600">{fullAddress ? "Show less" : "View Address"}</button>}</div></div></div>}</section>
       <section aria-label="Shipment actions" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><div className="grid size-7 place-items-center rounded-md bg-rose-50 text-rose-600"><ReceiptText className="size-4" /></div><div><h2 className="text-sm font-semibold text-slate-900">Shipment actions</h2><p className="text-xs text-slate-500">Documents and support for this shipment</p></div></div><ShipmentActions onNotice={setNotice} onInvoice={showInvoice} onPod={() => void downloadPod()} onLr={() => void downloadLr()} labelMenu={<DelhiveryLabelMenu shipmentId={selected.id} reference={selected.reference} boxes={selected.pieces} onNotice={setNotice} compact={false} />} /></section>
     </main>
     {notice && <div role="status" className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 shadow-lg"><CheckCircle2 className="size-3.5 text-emerald-600" />{notice}<button type="button" aria-label="Dismiss notice" onClick={() => setNotice("")}><X className="size-3.5" /></button></div>}
