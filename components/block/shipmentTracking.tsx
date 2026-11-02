@@ -17,6 +17,8 @@ import { invoiceNumberForLr } from "@/lib/invoice-contract";
 import { Skeleton, SkeletonBadge, SkeletonCard, SkeletonHeading, SkeletonInput, SkeletonTimeline, SkeletonText } from "@/components/ui/skeleton";
 import { DelhiveryLabelMenu } from "@/components/block/delhiveryLabelMenu";
 import { normalizeShipmentStatus } from "@/lib/shipment-status";
+import { composeAssetsToA4, type ArtifactEntry } from "@/lib/label-pdf";
+import type { LabelSize } from "@/lib/label-contract";
 
 type Status = "Booked" | "Manifested" | "Picked up" | "In transit" | "Out for delivery" | "Delivered" | "Delayed" | "Exception" | "Returned" | "Cancelled";
 type Event = { title: string; description: string; location: string; date: string; time: string; status: Status };
@@ -156,7 +158,32 @@ const downloadBinary = (name: string, bytes: Uint8Array, type: string) => { cons
 const downloadBase64Artifact = (name: string, base64: string, type: string) => { const normalized = base64.includes(",") ? base64.slice(base64.indexOf(",") + 1) : base64; const bytes = Uint8Array.from(atob(normalized), (character) => character.charCodeAt(0)); downloadBinary(name, bytes, type); };
 const artifactExtension = (kind: string, contentType: string) => { const type = contentType.toLowerCase().split(";", 1)[0]; if (type.includes("pdf")) return "pdf"; if (type.includes("jpeg") || type.includes("jpg")) return "jpg"; if (type.includes("webp")) return "webp"; if (type.includes("svg")) return "svg"; return kind === "lr-copy" ? "pdf" : "png"; };
 const artifactBase64s = (value: unknown): string[] => { if (!value) return []; if (Array.isArray(value)) return value.flatMap((item) => artifactBase64s(item)); if (typeof value !== "object") return []; const record = value as Record<string, unknown>; const direct = ["content_base64", "base64", "data"].flatMap((key) => typeof record[key] === "string" ? [record[key] as string] : []); return direct.length ? direct : Object.values(record).flatMap((child) => artifactBase64s(child)); };
-const downloadLabelPdf = async (name: string, base64s: string[], _size?: string) => { const value = base64s[0]; if (!value) throw new Error("Delhivery returned no label content."); const normalized = value.replace(/^data:[^;]+;base64,/, ""); const isPdf = normalized.startsWith("JVBERi0"); downloadBase64Artifact(name.replace(/\.pdf$/i, isPdf ? ".pdf" : ".png"), normalized, isPdf ? "application/pdf" : "image/png"); };
+const imageContentType = (base64: string) => {
+  const normalized = base64.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+  const bytes = Uint8Array.from(atob(normalized.slice(0, 96)), (character) => character.charCodeAt(0));
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  return "";
+};
+const downloadLabelPdf = async (name: string, base64s: string[], size?: string) => {
+  const entries: ArtifactEntry[] = base64s.map((value) => {
+    const normalized = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+    return { value: normalized, contentType: imageContentType(normalized) };
+  }).filter((entry): entry is ArtifactEntry => entry.value.length > 100 && Boolean(entry.contentType));
+  if (!entries.length) {
+    const value = base64s[0]?.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+    if (!value) throw new Error("Delhivery returned no label content.");
+    if (value.startsWith("JVBERi0")) { downloadBase64Artifact(name, value, "application/pdf"); return; }
+    throw new Error("Delhivery returned an unsupported label format.");
+  }
+  // Keep the provider image bytes intact while placing them into the same
+  // A4 packing contract used by the All Shipments label menu. This guarantees
+  // a PDF download without silently renaming a raster label to .png or
+  // re-rendering it through a lower-resolution canvas.
+  const labelSize: LabelSize = size === "sm" ? "3x2" : size === "md" ? "4x2" : size === "std" ? "4x2.5" : "a4";
+  const pdfBytes = await composeAssetsToA4(labelSize, entries);
+  downloadBinary(name, pdfBytes, "application/pdf");
+};
 const findArtifactField = (value: unknown, keys: string[]): string | undefined => { if (!value || typeof value !== "object") return undefined; if (Array.isArray(value)) { for (const item of value) { const found = findArtifactField(item, keys); if (found) return found; } return undefined; } const record = value as Record<string, unknown>; for (const key of keys) if (typeof record[key] === "string" && record[key]) return record[key] as string; for (const child of Object.values(record)) { const found = findArtifactField(child, keys); if (found) return found; } return undefined; };
 const findArtifactUrl = (value: unknown): string | undefined => { if (typeof value === "string") return /^https?:\/\//i.test(value) ? value : undefined; if (Array.isArray(value)) { for (const item of value) { const found = findArtifactUrl(item); if (found) return found; } return undefined; } if (!value || typeof value !== "object") return undefined; const record = value as Record<string, unknown>; for (const key of ["download_url", "downloadUrl", "file_url", "fileUrl", "url", "link"]) { const found = findArtifactUrl(record[key]); if (found) return found; } for (const child of Object.values(record)) { const found = findArtifactUrl(child); if (found) return found; } return undefined; };
 const buildWorkbook = (list: Shipment[], filters: Filters, query: string) => {
