@@ -7,6 +7,8 @@ export type InvoicePdfRecord = {
   id: string;
   invoice_number?: string;
   shipment_id?: string;
+  linked_shipment_id?: string | null;
+  shipment_link_status?: "linked" | "unlinked" | string | null;
   amount: number;
   currency?: string;
   status: string;

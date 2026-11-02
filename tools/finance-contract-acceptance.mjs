@@ -13,8 +13,9 @@ const billing = billingTotals([
   { amount: 1000, status: "paid" },
   { amount: 250, status: "pending" },
   { amount: 99, status: "cancelled" },
+  { amount: 458, status: "paid", shipment_link_status: "unlinked" },
 ]);
-assert.deepEqual(billing, { total: 1250, pendingAmount: 250, paidAmount: 1000, billableCount: 2, pendingCount: 1, excludedCount: 1 });
+assert.deepEqual(billing, { total: 1250, pendingAmount: 250, paidAmount: 1000, billableCount: 2, pendingCount: 1, reviewAmount: 458, reviewCount: 1, excludedCount: 2 });
 const cod = codTotals([
   { amount: 500, status: "pending" },
   { amount: 700, status: "paid" },

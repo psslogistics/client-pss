@@ -1,6 +1,6 @@
 export type WalletTransaction = { type?: string | null; amount?: number | null; status?: string | null; reference?: string | null };
 
-export type FinanceRecord = { amount?: number | string | null; status?: string | null };
+export type FinanceRecord = { amount?: number | string | null; status?: string | null; shipment_link_status?: string | null; linked_shipment_id?: string | null };
 
 export const transactionKind = (item: WalletTransaction) => String(item.type ?? "").toLowerCase();
 export const absoluteAmount = (item: WalletTransaction) => Math.abs(Number(item.amount ?? 0));
@@ -23,15 +23,19 @@ export const isExcludedFinanceRecord = (item: FinanceRecord) => ["void", "cancel
 export const isPendingFinanceRecord = (item: FinanceRecord) => financeStatus(item) === "pending";
 export const isPaidFinanceRecord = (item: FinanceRecord) => ["paid", "settled", "completed"].includes(financeStatus(item));
 export const isFailedFinanceRecord = (item: FinanceRecord) => ["failed", "rejected"].includes(financeStatus(item));
+export const isUnlinkedFinanceRecord = (item: FinanceRecord) => String(item.shipment_link_status ?? "").trim().toLowerCase() === "unlinked" || item.linked_shipment_id === null;
 
 export function billingTotals<T extends FinanceRecord>(records: T[]) {
-  const billable = records.filter((record) => !isExcludedFinanceRecord(record));
+  const review = records.filter((record) => isUnlinkedFinanceRecord(record));
+  const billable = records.filter((record) => !isExcludedFinanceRecord(record) && !isUnlinkedFinanceRecord(record));
   return {
     total: billable.reduce((sum, record) => sum + absoluteAmount({ amount: Number(record.amount ?? 0) }), 0),
     pendingAmount: billable.filter(isPendingFinanceRecord).reduce((sum, record) => sum + absoluteAmount({ amount: Number(record.amount ?? 0) }), 0),
     paidAmount: billable.filter(isPaidFinanceRecord).reduce((sum, record) => sum + absoluteAmount({ amount: Number(record.amount ?? 0) }), 0),
     billableCount: billable.length,
     pendingCount: billable.filter(isPendingFinanceRecord).length,
+    reviewAmount: review.reduce((sum, record) => sum + absoluteAmount({ amount: Number(record.amount ?? 0) }), 0),
+    reviewCount: review.length,
     excludedCount: records.length - billable.length,
   };
 }
