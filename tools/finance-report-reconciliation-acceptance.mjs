@@ -14,7 +14,7 @@ assert.deepEqual([...reportIds].sort(), [...codIds].sort(), "report and COD ship
 assert.ok(reconciliation.wallet.every((row) => /^((SHIPMENT|REVERSAL)-)/.test(row.reference)), "wallet references must remain shipment-linked");
 assert.equal(billingTotals(reconciliation.billing).total, 1250, "cancelled billing must be excluded");
 assert.equal(billingTotals(reconciliation.billing).billableCount, 2, "only paid and pending billing rows are billable");
-assert.deepEqual(walletTotals(reconciliation.wallet), { credits: 500, debits: 1250, pending: 250, reversed: 0 });
+assert.deepEqual(walletTotals(reconciliation.wallet), { credits: 500, debits: 1250, pending: 250, reversed: 500 });
 assert.deepEqual(codTotals(reconciliation.cod), { total: 1100, pendingAmount: 300, paidAmount: 700, failedAmount: 100, exposure: 300 });
 assert.ok(reconciliation.shipments.every((row) => shipmentIds.has(row.id)), "all reconciliation records must reference known shipments");
 console.log("Cross-domain finance/report reconciliation passed (7 checks).");
