@@ -939,6 +939,40 @@ export default function ShipmentBooking() {
       }
     } catch (error) {
       const details = getPssErrorDetails(error, "Unable to save booking.");
+      const errorPayload = (error as { payload?: unknown })?.payload;
+      const errorRecord = errorPayload && typeof errorPayload === "object" ? errorPayload as Record<string, unknown> : {};
+      const errorBody = errorRecord.error && typeof errorRecord.error === "object" ? errorRecord.error as Record<string, unknown> : {};
+      const errorData = errorRecord.data && typeof errorRecord.data === "object" ? errorRecord.data as Record<string, unknown> : {};
+      const acceptedShipmentId = typeof errorData.id === "string" ? errorData.id.trim() : "";
+      const providerAcceptedWithoutReference = acceptedShipmentId && (
+        errorBody.code === "PROVIDER_LR_TIMEOUT"
+        || /accepted the manifest|accepted the booking|lr\/awb/i.test(String(errorBody.message ?? errorBody.user_safe_message ?? ""))
+      );
+      if (providerAcceptedWithoutReference) {
+        setSingleProviderPending(true);
+        setSingleCompleted(true);
+        setBookingPhase("idle");
+        setBookingNotice("Delhivery accepted the booking, but the LR/AWB was not published in the first response. We are checking the same shipment without creating another manifest.");
+        void (async () => {
+          for (let attempt = 0; attempt < 30; attempt += 1) {
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 3000));
+            try {
+              const detail = await pssApi<{ data?: { lr_number?: string | null; master_awb?: string | null; provider_reference?: string | null; tracking_number?: string | null } }>(`/v1/shipments/${encodeURIComponent(acceptedShipmentId)}`);
+              const reference = detail.data?.lr_number || detail.data?.master_awb || detail.data?.provider_reference || detail.data?.tracking_number;
+              if (reference) {
+                setSingleProviderPending(false);
+                setBookingNotice(`Booking confirmed with LR/AWB ${reference}.`);
+                return;
+              }
+            } catch {
+              return;
+            }
+          }
+          setSingleProviderPending(true);
+          setBookingNotice("Delhivery accepted the booking, but the LR/AWB is still pending. Refresh All Shipments to check the same shipment; do not submit it again.");
+        })();
+        return;
+      }
       setBookingPhase("idle");
       setBookingNotice(`Booking failed: ${details.message}`);
       setBookingDiagnostic({ technicalMessage: details.technicalMessage, requestId: details.requestId });
