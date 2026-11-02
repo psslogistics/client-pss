@@ -101,8 +101,19 @@ export function DelhiveryLabelMenu({ shipmentId, reference, boxes = 1, onNotice,
     let artifact = option.artifact;
     try {
       if (!artifact || (!isPdfArtifact(artifact) && !isImageArtifact(artifact))) {
-        const result = await pssApi<{ data?: { artifact?: unknown } }>(`/v1/shipments/${encodeURIComponent(shipmentId)}/label?size=${option.size}`);
+        const path = `/v1/shipments/${encodeURIComponent(shipmentId)}/label?size=${option.size}`;
+        let result = await pssApi<{ data?: { artifact?: unknown; pending?: boolean } }>(path);
         artifact = result.data?.artifact;
+        // Delhivery's PDF job is asynchronous. Poll the same shipment/size
+        // without creating another provider job; the Worker returns pending
+        // while the callback token is active and returns the stored PDF once
+        // it arrives. Keep the wait bounded so the UI never spins forever.
+        for (let attempt = 0; !artifact && result.data?.pending && attempt < 12; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2000));
+          result = await pssApi<{ data?: { artifact?: unknown; pending?: boolean } }>(`${path}&wait=1`);
+          artifact = result.data?.artifact;
+        }
+        if (!artifact && result.data?.pending) throw new Error("Delhivery is still preparing this label. Please try again shortly.");
       }
       const entries = artifactEntries(artifact)
         .map((entry) => ({ ...entry, value: entry.value.replace(/^data:[^;]+;base64,/, "") }))
