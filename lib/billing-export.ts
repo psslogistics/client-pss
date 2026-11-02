@@ -4,7 +4,7 @@ import { zipSync } from "fflate";
 import { formatDate, localDateInput, shiftLocalDays } from "@/lib/date-format";
 import { buildWorkbook, type WorkbookCell } from "@/lib/xlsx";
 import { amountInWords, cycleInvoiceNumber, invoiceNumberForLr } from "@/lib/invoice-contract";
-import { billingTotals, isExcludedFinanceRecord } from "@/lib/finance-contract";
+import { billingTotals, isExcludedFinanceRecord, isFinanceReviewRecord } from "@/lib/finance-contract";
 import { clientShipmentReference } from "@/lib/client-shipment-reference";
 
 export type BillingExportRecord = {
@@ -13,6 +13,7 @@ export type BillingExportRecord = {
   shipment_id?: string;
   linked_shipment_id?: string | null;
   shipment_link_status?: "linked" | "unlinked" | string | null;
+  provider_sync_status?: string | null;
   amount: number;
   currency?: string;
   status: string;
@@ -52,7 +53,7 @@ const dimensionsText = (value: BillingExportRecord["dimensions"]) => {
 const linesFor = (record: BillingExportRecord) => record.line_items?.length ? [...record.line_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)) : record.pricing?.lines ?? [];
 const taxFor = (record: BillingExportRecord) => linesFor(record).filter((line) => line.code.toLowerCase().includes("gst") || line.code.toLowerCase().includes("tax")).reduce((sum, line) => sum + Number(line.amount || 0), 0);
 const breakupText = (record: BillingExportRecord) => linesFor(record).map((line) => `${line.label}${line.marker ?? ""}: Rs. ${money(line.amount)}`).join(" | ");
-const isExcluded = isExcludedFinanceRecord;
+const isExcluded = (record: BillingExportRecord) => isExcludedFinanceRecord(record) || isFinanceReviewRecord(record);
 const downloadBytes = (bytes: ArrayBuffer, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([bytes], { type })); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
 // Billing cycles are inclusive: a 30-day cycle contains today plus the prior
 // 29 local calendar days, matching the Reports date-range semantics.

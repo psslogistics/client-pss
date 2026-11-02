@@ -1,6 +1,6 @@
 export type WalletTransaction = { type?: string | null; amount?: number | null; status?: string | null; reference?: string | null };
 
-export type FinanceRecord = { amount?: number | string | null; status?: string | null; shipment_link_status?: string | null; linked_shipment_id?: string | null };
+export type FinanceRecord = { amount?: number | string | null; status?: string | null; shipment_link_status?: string | null; linked_shipment_id?: string | null; lr_number?: string | null; master_awb?: string | null; tracking_number?: string | null; provider_sync_status?: string | null };
 
 export const transactionKind = (item: WalletTransaction) => String(item.type ?? "").toLowerCase();
 export const absoluteAmount = (item: WalletTransaction) => Math.abs(Number(item.amount ?? 0));
@@ -24,10 +24,12 @@ export const isPendingFinanceRecord = (item: FinanceRecord) => financeStatus(ite
 export const isPaidFinanceRecord = (item: FinanceRecord) => ["paid", "settled", "completed"].includes(financeStatus(item));
 export const isFailedFinanceRecord = (item: FinanceRecord) => ["failed", "rejected"].includes(financeStatus(item));
 export const isUnlinkedFinanceRecord = (item: FinanceRecord) => String(item.shipment_link_status ?? "").trim().toLowerCase() === "unlinked" || item.linked_shipment_id === null;
+export const hasProviderReference = (item: FinanceRecord) => [item.lr_number, item.master_awb, item.tracking_number].some((value) => String(value ?? "").trim().length > 0);
+export const isFinanceReviewRecord = (item: FinanceRecord) => isUnlinkedFinanceRecord(item) || (item.linked_shipment_id != null && !hasProviderReference(item));
 
 export function billingTotals<T extends FinanceRecord>(records: T[]) {
-  const review = records.filter((record) => isUnlinkedFinanceRecord(record));
-  const billable = records.filter((record) => !isExcludedFinanceRecord(record) && !isUnlinkedFinanceRecord(record));
+  const review = records.filter((record) => isFinanceReviewRecord(record));
+  const billable = records.filter((record) => !isExcludedFinanceRecord(record) && !isFinanceReviewRecord(record));
   return {
     total: billable.reduce((sum, record) => sum + absoluteAmount({ amount: Number(record.amount ?? 0) }), 0),
     pendingAmount: billable.filter(isPendingFinanceRecord).reduce((sum, record) => sum + absoluteAmount({ amount: Number(record.amount ?? 0) }), 0),
