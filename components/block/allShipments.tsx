@@ -78,7 +78,7 @@ const nextActionFor = (status: ShipmentRow["status"], providerSyncStatus: string
   return status === "Delivered" ? "No action required" : "Review shipment";
 };
 const hasProviderReference = (row: ShipmentRow) => Boolean(row.lr || row.masterAwb || row.courierTracking);
-const visibleStatusLabel = (row: ShipmentRow) => row.status === "Booked" && !hasProviderReference(row) ? "Awaiting LR/AWB" : row.status;
+const visibleStatusLabel = (row: ShipmentRow) => row.status === "Booked" && row.providerSyncStatus !== "failed" && !hasProviderReference(row) ? "Awaiting LR/AWB" : row.status;
 const canDeleteShipment = (row: ShipmentRow) => (row.status === "Cancelled" || row.status === "Exception") && !hasProviderReference(row);
 const canCancelShipment = (row: ShipmentRow) => row.status === "Booked" || row.status === "Exception";
 

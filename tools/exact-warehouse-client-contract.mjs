@@ -13,5 +13,5 @@ if (!source.includes('title="Consignee"')) throw new Error("Booking must render 
 if (!source.includes('title="Consignor"')) throw new Error("Booking must render the warehouse-backed consignor fields");
 if (!source.includes('onSearchWarehouse={searchSavedAddresses}')) throw new Error("Booking must search warehouses for consignor addresses");
 if (source.includes('fetchConsigneeAddresses') || source.includes('consigneeAddressRows')) throw new Error("Booking must not read the deleted saved-consignee address collection");
-if (!source.includes('row.provider === "delhivery" && row.providerStatus !== "failed"')) throw new Error("Booking must expose pending Delhivery warehouses so the Worker can perform idempotent provider preparation");
+if (!source.includes('row.provider === "delhivery" && row.providerStatus === "active" && Boolean(row.providerReference && row.providerName)')) throw new Error("Booking must expose only provider-verified Delhivery warehouses");
 console.log("Client exact warehouse contract passed");
