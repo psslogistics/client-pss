@@ -113,7 +113,10 @@ function dimensionsText(value: InvoicePdfRecord["dimensions"]) {
 }
 
 export function createInvoicePdf(record: InvoicePdfRecord) {
-  const doc = new jsPDF({ unit: "pt", format: [PAGE_W, PAGE_H] });
+  // Keep the statement portable for browser/PDF viewers: jsPDF otherwise
+  // advertises unused built-in font resources which some rasterizers try to
+  // resolve as Symbol/ArialUnicode even though this document uses Helvetica.
+  const doc = new jsPDF({ unit: "pt", format: [PAGE_W, PAGE_H], putOnlyUsedFonts: true });
   const total = Number(record.amount || 0);
   const taxRate = Number(record.tax_rate ?? 0);
   const pricingTax = record.pricing?.lines?.find((line) => line.code === "gst")?.amount ?? 0;
