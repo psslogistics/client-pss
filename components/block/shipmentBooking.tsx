@@ -940,7 +940,11 @@ export default function ShipmentBooking() {
       });
       setBookingAmount(Number(result.data.pricing_amount ?? 0));
       const lrOrAwb = result.data.lr_number || result.data.master_awb || result.data.provider_reference || result.data.tracking_number;
-      const providerQueued = result.data.provider_pending === true || result.data.provider_status === "pending" || result.data.provider_sync_status === "pending" || result.data.retry_at === "scheduled";
+      // Delhivery/Worker may describe the same accepted-but-not-yet-numbered
+      // shipment as pending, provider_pending, accepted, or manifested. None
+      // of these states is a booking confirmation without an LR/AWB; keep the
+      // shipment in the truthful pending path and poll the same PSS record.
+      const providerQueued = result.data.provider_pending === true || ["pending", "provider_pending", "accepted", "manifested"].includes(String(result.data.provider_status ?? "").toLowerCase()) || ["pending", "provider_pending"].includes(String(result.data.provider_sync_status ?? "").toLowerCase()) || result.data.retry_at === "scheduled";
       if (lrOrAwb) {
         setSingleProviderPending(false);
         setSingleCompleted(true);

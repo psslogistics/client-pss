@@ -76,5 +76,7 @@ assert.match(booking, /title="Consignee"/);
 assert.doesNotMatch(booking, /fetchConsigneeAddresses/);
 assert.doesNotMatch(booking, /consigneeAddressRows/);
 assert.doesNotMatch(booking, /\/v1\/addresses\?limit=/);
+assert.match(booking, /provider_pending.*accepted.*manifested/);
+assert.match(booking, /same PSS record/);
 
-console.log("Client safety contract checks passed (51 checks).");
+console.log("Client safety contract checks passed (53 checks).");
