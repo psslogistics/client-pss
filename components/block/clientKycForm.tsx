@@ -64,7 +64,13 @@ export default function ClientKycForm() {
   const sendOtp = async () => {
     const normalized = phone.replace(/[^0-9+]/g, "");
     if (!/^\+?[0-9]{10,15}$/.test(normalized)) { setError("Enter an active mobile number with 10 to 15 digits."); return; }
+    if (!profile) { setError("KYC details are still loading. Please try again."); return; }
     if (mobileOtpPlaceholder) {
+      setSaving(true); setError(""); setNotice("");
+      const { error: mobileError } = await supabase.from("client_kyc_profiles").update({ mobile_number: normalized }).eq("client_id", profile.client_id);
+      setSaving(false);
+      if (mobileError) { setError("The mobile number could not be saved."); return; }
+      setProfile((current) => current ? { ...current, mobile_number: normalized } : current);
       setOtpSent(true); setError(""); setNotice("Mobile OTP is temporarily a placeholder. SMS verification will be enabled after the provider is configured."); return;
     }
     setSaving(true); setError("");
@@ -118,7 +124,8 @@ export default function ClientKycForm() {
 
   const documentFor = (type: string) => documents.find((document) => document.document_type === type);
   const hasDocument = (type: string) => Boolean(documentFor(type));
-  const complete = Boolean(profile?.gst_number && profile.pan_number && profile.aadhaar_last4 && profile.phone_verified_at && requiredDocuments.every(hasDocument));
+  const mobileComplete = mobileOtpPlaceholder ? Boolean(profile?.mobile_number) : Boolean(profile?.phone_verified_at);
+  const complete = Boolean(profile?.gst_number && profile.pan_number && profile.aadhaar_last4 && mobileComplete && requiredDocuments.every(hasDocument));
   const status = profile?.status ?? "not_started";
 
   if (loading) return <section className="rounded-xl border border-border bg-card p-5" role="status" aria-label="Loading KYC requirements" aria-busy="true"><SkeletonFormSection fields={4} /><SkeletonFormSection className="mt-5" fields={3} /></section>;

@@ -26,6 +26,7 @@
     "test:fixtures": "node tools/fixture-matrix-acceptance.mjs",
     "test:warehouse": "node tools/exact-warehouse-client-contract.mjs",
     "test:notifications": "node tools/notification-contract-acceptance.mjs",
+    "test:kyc": "node tools/kyc-upload-contract-acceptance.mjs",
     "test:reconciliation": "node --experimental-strip-types tools/finance-report-reconciliation-acceptance.mjs",
     "test:workflows": "node tools/populated-workflow-acceptance.mjs"
   },
