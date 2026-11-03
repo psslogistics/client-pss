@@ -80,17 +80,6 @@ const savedAddressRecord = (row: Record<string, string>): SavedPickup => {
   const pick = (...values: unknown[]) => values.map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
   return { id: String(row.id ?? ""), name: label, address: { line: cleanSavedAddressLine(row.address), city: pick(row.city, parts.length >= 4 ? parts[1] : ""), state: pick(row.state, parts.length >= 4 ? parts[2] : ""), pincode: pick(row.pincode, parts.length >= 4 ? parts[3] : ""), country: pick(row.country, "India") }, contact: { name: pick(row.contact_name, row.contactName, parts.length >= 4 ? parts[0] : ""), phone: pick(row.phone, row.contact), email: pick(row.email) }, provider: pick(row.provider).toLowerCase(), providerStatus: pick(row.provider_status).toLowerCase(), providerReference: pick(row.provider_reference), providerName: pick(row.provider_name) };
 };
-const consigneeAddressRows = (rows: Array<Record<string, string>>) => {
-  const explicitConsignees = rows.filter((row) => String(row.address_kind ?? "").trim().toLowerCase() === "consignee");
-  if (explicitConsignees.length) return explicitConsignees;
-  const legacyRows = rows.filter((row) => !String(row.address_kind ?? "").trim());
-  return legacyRows.length ? legacyRows : rows;
-};
-const fetchConsigneeAddresses = async (limit: number, offset: number, query = "", init: RequestInit = {}) => {
-  const search = query ? `&search=${encodeURIComponent(query)}` : "";
-  const legacy = await pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/addresses?limit=${limit}&offset=${offset}&active_only=true${search}`, init);
-  return { ...legacy, data: consigneeAddressRows(legacy.data ?? []) };
-};
 const savedAddressIdentity = (row: SavedPickup) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 const dedupeSavedAddresses = (rows: SavedPickup[]) => { const seen = new Set<string>(); return rows.filter((row) => { const key = savedAddressIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; }); };
 // The old picker gate required a locally stored `active` provider status and
@@ -301,15 +290,17 @@ export default function ShipmentBooking() {
   const [selectedSavedPickupId, setSelectedSavedPickupId] = useState("");
   const [savedName, setSavedName] = useState("");
   const [isRenamingSaved, setIsRenamingSaved] = useState(false);
+  // Legacy saved-consignee state is retained only for rollback compatibility.
+  // The rendered booking form never reads or writes this state; consignee data
+  // is entered directly while the consignor comes exclusively from warehouses.
   const [savedConsignees, setSavedConsignees] = useState<SavedPickup[]>([]);
   const [selectedSavedConsigneeId, setSelectedSavedConsigneeId] = useState("");
   const [savedConsigneeName, setSavedConsigneeName] = useState("");
   const [isRenamingConsignee, setIsRenamingConsignee] = useState(false);
   const [savedAddressesError, setSavedAddressesError] = useState("");
   const [savedPickupSearchLoading, setSavedPickupSearchLoading] = useState(false);
-  const [savedConsigneeSearchLoading, setSavedConsigneeSearchLoading] = useState(false);
-  const [savedAddressHasMore, setSavedAddressHasMore] = useState({ pickup: false, consignee: false });
-  const [savedAddressLoadingMore, setSavedAddressLoadingMore] = useState({ pickup: false, consignee: false });
+  const [savedAddressHasMore, setSavedAddressHasMore] = useState(false);
+  const [savedAddressLoadingMore, setSavedAddressLoadingMore] = useState(false);
   const [notice, setNotice] = useState("");
   const [invoicePromptOpen, setInvoicePromptOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: ConfirmationToastTone } | null>(null);
@@ -361,16 +352,15 @@ export default function ShipmentBooking() {
   const bulkFileRef = useRef<HTMLInputElement>(null);
   const pinRequestRef = useRef({ pickup: 0, delivery: 0 });
   const pinAbortRef = useRef<{ pickup?: AbortController; delivery?: AbortController }>({});
-  const savedAddressSearchTimers = useRef<{ pickup?: number; consignee?: number }>({});
-  const savedAddressSearchSequence = useRef({ pickup: 0, consignee: 0 });
-  const savedAddressPaging = useRef({ pickup: { query: "", offset: 0 }, consignee: { query: "", offset: 0 } });
+  const savedAddressSearchTimer = useRef<number | undefined>(undefined);
+  const savedAddressSearchSequence = useRef(0);
+  const savedAddressPaging = useRef({ query: "", offset: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => {
     pinAbortRef.current.pickup?.abort();
     pinAbortRef.current.delivery?.abort();
-    if (savedAddressSearchTimers.current.pickup) window.clearTimeout(savedAddressSearchTimers.current.pickup);
-    if (savedAddressSearchTimers.current.consignee) window.clearTimeout(savedAddressSearchTimers.current.consignee);
+    if (savedAddressSearchTimer.current) window.clearTimeout(savedAddressSearchTimer.current);
   }, []);
 
   useEffect(() => {
@@ -380,8 +370,8 @@ export default function ShipmentBooking() {
       const errors: string[] = [];
       const rows = warehouseResult.data ?? [];
       setSavedPickups(verifiedDelhiveryWarehouses(rows.map(savedAddressRecord)));
-      savedAddressPaging.current.pickup = { query: "", offset: rows.length };
-      setSavedAddressHasMore((current) => ({ ...current, pickup: warehouseResult.pagination?.has_more === true }));
+      savedAddressPaging.current = { query: "", offset: rows.length };
+      setSavedAddressHasMore(warehouseResult.pagination?.has_more === true);
       const message = errors.join(" ");
       setSavedAddressesError(message);
       if (message) setNotice(message);
@@ -394,56 +384,51 @@ export default function ShipmentBooking() {
     return () => { cancelled = true; };
   }, []);
 
-  const searchSavedAddresses = useCallback((kind: "pickup" | "consignee", query: string) => {
+  const searchSavedAddresses = useCallback((query: string) => {
     const normalized = query.trim();
-    const sequence = ++savedAddressSearchSequence.current[kind];
-    if (savedAddressSearchTimers.current[kind]) window.clearTimeout(savedAddressSearchTimers.current[kind]);
-    if (kind === "pickup") setSavedPickupSearchLoading(true); else setSavedConsigneeSearchLoading(true);
-    savedAddressSearchTimers.current[kind] = window.setTimeout(() => {
-      const request = kind === "pickup" ? pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=0&search=${encodeURIComponent(normalized)}`) : fetchConsigneeAddresses(50, 0, normalized);
-      void request.then((result) => {
-        if (sequence !== savedAddressSearchSequence.current[kind]) return;
+    const sequence = ++savedAddressSearchSequence.current;
+    if (savedAddressSearchTimer.current) window.clearTimeout(savedAddressSearchTimer.current);
+    setSavedPickupSearchLoading(true);
+    savedAddressSearchTimer.current = window.setTimeout(() => {
+      void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=0&search=${encodeURIComponent(normalized)}`).then((result) => {
+        if (sequence !== savedAddressSearchSequence.current) return;
         const rows = result.data ?? [];
         const mapped = dedupeSavedAddresses(rows.map(savedAddressRecord));
-        savedAddressPaging.current[kind] = { query: normalized, offset: rows.length };
-        setSavedAddressHasMore((current) => ({ ...current, [kind]: result.pagination?.has_more === true }));
-        if (kind === "pickup") setSavedPickups(verifiedDelhiveryWarehouses(mapped)); else setSavedConsignees(mapped);
+        savedAddressPaging.current = { query: normalized, offset: rows.length };
+        setSavedAddressHasMore(result.pagination?.has_more === true);
+        setSavedPickups(verifiedDelhiveryWarehouses(mapped));
       }).catch((error) => {
-        if (sequence !== savedAddressSearchSequence.current[kind]) return;
-        setSavedAddressesError(`Saved ${kind === "pickup" ? "consignor" : "consignee"} search failed: ${getPssErrorDetails(error, "temporarily unavailable").message}`);
+        if (sequence !== savedAddressSearchSequence.current) return;
+        setSavedAddressesError(`Warehouse search failed: ${getPssErrorDetails(error, "temporarily unavailable").message}`);
       }).finally(() => {
-        if (sequence !== savedAddressSearchSequence.current[kind]) return;
-        if (kind === "pickup") setSavedPickupSearchLoading(false); else setSavedConsigneeSearchLoading(false);
+        if (sequence === savedAddressSearchSequence.current) setSavedPickupSearchLoading(false);
       });
     }, 250);
   }, []);
 
-  const loadMoreSavedAddresses = useCallback((kind: "pickup" | "consignee") => {
-    if (savedAddressLoadingMore[kind] || !savedAddressHasMore[kind]) return;
-    const sequence = savedAddressSearchSequence.current[kind];
-    const { query, offset } = savedAddressPaging.current[kind];
-    setSavedAddressLoadingMore((current) => ({ ...current, [kind]: true }));
-    const request = kind === "pickup"
-      ? pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=${offset}&search=${encodeURIComponent(query)}`)
-      : fetchConsigneeAddresses(50, offset, query);
-    void request.then((result) => {
-      if (sequence !== savedAddressSearchSequence.current[kind]) return;
+  const loadMoreSavedAddresses = useCallback(() => {
+    if (savedAddressLoadingMore || !savedAddressHasMore) return;
+    const sequence = savedAddressSearchSequence.current;
+    const { query, offset } = savedAddressPaging.current;
+    setSavedAddressLoadingMore(true);
+    void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=${offset}&search=${encodeURIComponent(query)}`).then((result) => {
+      if (sequence !== savedAddressSearchSequence.current) return;
       const rows = result.data ?? [];
-      savedAddressPaging.current[kind] = { query, offset: offset + rows.length };
-      setSavedAddressHasMore((current) => ({ ...current, [kind]: result.pagination?.has_more === true }));
+      savedAddressPaging.current = { query, offset: offset + rows.length };
+      setSavedAddressHasMore(result.pagination?.has_more === true);
       const append = rows.map(savedAddressRecord);
-      if (kind === "pickup") setSavedPickups((current) => verifiedDelhiveryWarehouses([...current, ...append])); else setSavedConsignees((current) => dedupeSavedAddresses([...current, ...append]));
+      setSavedPickups((current) => verifiedDelhiveryWarehouses([...current, ...append]));
     }).catch((error) => {
-      setSavedAddressesError(`Saved ${kind === "pickup" ? "consignor" : "consignee"} pagination failed: ${getPssErrorDetails(error, "temporarily unavailable").message}`);
-    }).finally(() => setSavedAddressLoadingMore((current) => ({ ...current, [kind]: false })));
+      setSavedAddressesError(`Warehouse pagination failed: ${getPssErrorDetails(error, "temporarily unavailable").message}`);
+    }).finally(() => setSavedAddressLoadingMore(false));
   }, [savedAddressHasMore, savedAddressLoadingMore]);
 
-  const reloadSavedAddressList = useCallback(async (kind: "pickup" | "consignee") => {
-    const result = kind === "pickup" ? await pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>("/v1/warehouses?limit=50&offset=0", { cache: "no-store" }) : await fetchConsigneeAddresses(50, 0, "", { cache: "no-store" });
+  const reloadSavedAddressList = useCallback(async (_kind: "pickup" | "consignee" = "pickup") => {
+    const result = await pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>("/v1/warehouses?limit=50&offset=0", { cache: "no-store" });
     const mapped = dedupeSavedAddresses((result.data ?? []).map(savedAddressRecord));
-    savedAddressPaging.current[kind] = { query: "", offset: (result.data ?? []).length };
-    setSavedAddressHasMore((current) => ({ ...current, [kind]: result.pagination?.has_more === true }));
-    if (kind === "pickup") setSavedPickups(verifiedDelhiveryWarehouses(mapped)); else setSavedConsignees(mapped);
+    savedAddressPaging.current = { query: "", offset: (result.data ?? []).length };
+    setSavedAddressHasMore(result.pagination?.has_more === true);
+    setSavedPickups(verifiedDelhiveryWarehouses(mapped));
     return mapped;
   }, []);
 
@@ -1160,7 +1145,7 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
       <form onSubmit={submit} className="pss-booking-form space-y-4">
         {kycStatus?.approved !== true && <div role="alert" className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm"><div><p className="font-semibold text-amber-900 dark:text-amber-100">{kycStatus ? "Client verification is required before booking" : "Checking client verification"}</p><p className="mt-1 text-xs text-amber-800 dark:text-amber-200">{kycStatus ? "Finish the required verification items in Profile & Account. Booking stays disabled until PSS approves them." : "Booking is temporarily unavailable while the verification status loads."}</p>{kycStatus?.missing_fields?.length ? <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">Missing: {kycStatus.missing_fields.join(", ")}</p> : null}</div>{kycStatus && <a href="/dashboard/profileAccountManagement" className="rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-500/10 dark:text-amber-100">Open verification</a>}</div>}
         {savedAddressesError && <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><p>Warehouses are unavailable right now. Enter the shipment details manually; existing form data has not been cleared.</p><p className="mt-1 text-[11px] opacity-80">{savedAddressesError}</p></div>}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PartyFieldsCompact title="Consignor" tone="bg-amber-500/10 text-amber-600" address={pickup} setAddress={setPickup} person={pickupPerson} setPerson={setPickupPerson} pinStatus={pickupPinStatus} onPincodeChange={(value) => void lookupPincode("pickup", value)} onAddressPaste={handleAddressPaste("pickup")} warehouses={savedPickups} selectedWarehouseId={selectedSavedPickupId} onSelectWarehouse={reuseSavedPickup} onSearchWarehouse={(query) => searchSavedAddresses("pickup", query)} warehouseSearchLoading={savedPickupSearchLoading} onLoadMoreWarehouses={() => loadMoreSavedAddresses("pickup")} warehousesHaveMore={savedAddressHasMore.pickup} warehousesLoadingMore={savedAddressLoadingMore.pickup} /><PartyFieldsCompact title="Consignee" tone="bg-emerald-500/10 text-emerald-600" address={delivery} setAddress={setDelivery} person={deliveryPerson} setPerson={setDeliveryPerson} pinStatus={deliveryPinStatus} onPincodeChange={(value) => void lookupPincode("delivery", value)} onAddressPaste={handleAddressPaste("delivery")} /></div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PartyFieldsCompact title="Consignor" tone="bg-amber-500/10 text-amber-600" address={pickup} setAddress={setPickup} person={pickupPerson} setPerson={setPickupPerson} pinStatus={pickupPinStatus} onPincodeChange={(value) => void lookupPincode("pickup", value)} onAddressPaste={handleAddressPaste("pickup")} warehouses={savedPickups} selectedWarehouseId={selectedSavedPickupId} onSelectWarehouse={reuseSavedPickup} onSearchWarehouse={searchSavedAddresses} warehouseSearchLoading={savedPickupSearchLoading} onLoadMoreWarehouses={loadMoreSavedAddresses} warehousesHaveMore={savedAddressHasMore} warehousesLoadingMore={savedAddressLoadingMore} /><PartyFieldsCompact title="Consignee" tone="bg-emerald-500/10 text-emerald-600" address={delivery} setAddress={setDelivery} person={deliveryPerson} setPerson={setDeliveryPerson} pinStatus={deliveryPinStatus} onPincodeChange={(value) => void lookupPincode("delivery", value)} onAddressPaste={handleAddressPaste("delivery")} /></div>
 
         <section className="rounded-xl border border-border bg-card p-4 shadow-xs">
           <div className="mb-4 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600"><FileText className="h-3.5 w-3.5" /></span><div><h2 className="text-sm font-semibold">Shipment documentation</h2><p className="text-xs text-muted-foreground">A Delhivery B2B invoice is required. A Delivery Challan may be added as supplementary documentation.</p></div></div>
