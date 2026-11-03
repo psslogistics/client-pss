@@ -63,7 +63,9 @@ assert.doesNotMatch(pricingData, /Delhivery Heavy|Delhivery Light|Delhivery Stan
 assert.match(pricingData, /PSS Heavy Freight|PSS Economy Freight|PSS Standard Freight/);
 assert.match(booking, /clientSavedAddressName/);
 assert.match(booking, /PSS-\[A-Za-z0-9-\]/);
-assert.match(booking, /savedPickups\.map\(\(saved\) => \(\{ value: saved\.id, label: clientSavedAddressName\(saved\.name\) \}\)\)/);
+assert.match(booking, /label="Select warehouse"/);
+assert.doesNotMatch(booking, /label="Reuse saved"/);
+assert.doesNotMatch(booking, /Save this (?:consignor|consignee) address/);
 assert.match(booking, /reloadSavedAddressList/);
 assert.match(booking, /cache: "no-store"/);
 assert.match(booking, /address_kind: "consignee"/);
