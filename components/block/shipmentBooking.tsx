@@ -25,7 +25,7 @@ import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincode
 
 type Address = { line: string; city: string; state: string; pincode: string; country: string };
 type Contact = { name: string; phone: string; email: string };
-type SavedPickup = { id: string; name: string; address: Address; contact: Contact };
+type SavedPickup = { id: string; name: string; address: Address; contact: Contact; provider?: string; providerStatus?: string; providerReference?: string; providerName?: string };
 type PinStatus = "idle" | "loading" | "success" | "error";
 type PaymentMode = "COD" | "Prepaid";
 type RiskType = "owner" | "carrier";
@@ -79,7 +79,7 @@ const savedAddressRecord = (row: Record<string, string>): SavedPickup => {
   const label = clientSavedAddressName(row.name ?? row.label);
   const parts = label.split(" · ").map((part) => part.trim()).filter(Boolean);
   const pick = (...values: unknown[]) => values.map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
-  return { id: String(row.id ?? ""), name: label, address: { line: cleanSavedAddressLine(row.address), city: pick(row.city, parts.length >= 4 ? parts[1] : ""), state: pick(row.state, parts.length >= 4 ? parts[2] : ""), pincode: pick(row.pincode, parts.length >= 4 ? parts[3] : ""), country: pick(row.country, "India") }, contact: { name: pick(row.contact_name, row.contactName, parts.length >= 4 ? parts[0] : ""), phone: pick(row.phone, row.contact), email: pick(row.email) } };
+  return { id: String(row.id ?? ""), name: label, address: { line: cleanSavedAddressLine(row.address), city: pick(row.city, parts.length >= 4 ? parts[1] : ""), state: pick(row.state, parts.length >= 4 ? parts[2] : ""), pincode: pick(row.pincode, parts.length >= 4 ? parts[3] : ""), country: pick(row.country, "India") }, contact: { name: pick(row.contact_name, row.contactName, parts.length >= 4 ? parts[0] : ""), phone: pick(row.phone, row.contact), email: pick(row.email) }, provider: pick(row.provider).toLowerCase(), providerStatus: pick(row.provider_status).toLowerCase(), providerReference: pick(row.provider_reference), providerName: pick(row.provider_name) };
 };
 const consigneeAddressRows = (rows: Array<Record<string, string>>) => {
   const explicitConsignees = rows.filter((row) => String(row.address_kind ?? "").trim().toLowerCase() === "consignee");
@@ -94,6 +94,8 @@ const fetchConsigneeAddresses = async (limit: number, offset: number, query = ""
 };
 const savedAddressIdentity = (row: SavedPickup) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 const dedupeSavedAddresses = (rows: SavedPickup[]) => { const seen = new Set<string>(); return rows.filter((row) => { const key = savedAddressIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; }); };
+const verifiedDelhiveryWarehouses = (rows: SavedPickup[]) => dedupeSavedAddresses(rows.filter((row) => row.provider === "delhivery" && row.providerStatus === "active" && Boolean(row.providerReference && row.providerName)));
+const savedAddressOptionLabel = (saved: SavedPickup) => saved.providerName && saved.providerName !== saved.name ? `${clientSavedAddressName(saved.name)} · Delhivery: ${saved.providerName}` : clientSavedAddressName(saved.name);
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
 const fileAsBase64 = async (file: File) => {
   try {
@@ -349,7 +351,7 @@ export default function ShipmentBooking() {
     void Promise.allSettled([pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>("/v1/warehouses?limit=50&offset=0"), fetchConsigneeAddresses(50, 0)]).then(([warehouseResult, addressResult]) => {
       if (cancelled) return;
       const errors: string[] = [];
-      if (warehouseResult.status === "fulfilled") { const rows = warehouseResult.value.data ?? []; setSavedPickups(dedupeSavedAddresses(rows.map(savedAddressRecord))); savedAddressPaging.current.pickup = { query: "", offset: rows.length }; setSavedAddressHasMore((current) => ({ ...current, pickup: warehouseResult.value.pagination?.has_more === true })); }
+      if (warehouseResult.status === "fulfilled") { const rows = warehouseResult.value.data ?? []; setSavedPickups(verifiedDelhiveryWarehouses(rows.map(savedAddressRecord))); savedAddressPaging.current.pickup = { query: "", offset: rows.length }; setSavedAddressHasMore((current) => ({ ...current, pickup: warehouseResult.value.pagination?.has_more === true })); }
       else errors.push(`Saved consignor addresses: ${getPssErrorDetails(warehouseResult.reason, "temporarily unavailable").message}`);
       if (addressResult.status === "fulfilled") { const rows = addressResult.value.data ?? []; setSavedConsignees(dedupeSavedAddresses(rows.map(savedAddressRecord))); savedAddressPaging.current.consignee = { query: "", offset: rows.length }; setSavedAddressHasMore((current) => ({ ...current, consignee: addressResult.value.pagination?.has_more === true })); }
       else errors.push(`Saved consignee addresses: ${getPssErrorDetails(addressResult.reason, "temporarily unavailable").message}`);
@@ -373,7 +375,7 @@ export default function ShipmentBooking() {
         const mapped = dedupeSavedAddresses(rows.map(savedAddressRecord));
         savedAddressPaging.current[kind] = { query: normalized, offset: rows.length };
         setSavedAddressHasMore((current) => ({ ...current, [kind]: result.pagination?.has_more === true }));
-        if (kind === "pickup") setSavedPickups(mapped); else setSavedConsignees(mapped);
+        if (kind === "pickup") setSavedPickups(verifiedDelhiveryWarehouses(mapped)); else setSavedConsignees(mapped);
       }).catch((error) => {
         if (sequence !== savedAddressSearchSequence.current[kind]) return;
         setSavedAddressesError(`Saved ${kind === "pickup" ? "consignor" : "consignee"} search failed: ${getPssErrorDetails(error, "temporarily unavailable").message}`);
@@ -398,7 +400,7 @@ export default function ShipmentBooking() {
       savedAddressPaging.current[kind] = { query, offset: offset + rows.length };
       setSavedAddressHasMore((current) => ({ ...current, [kind]: result.pagination?.has_more === true }));
       const append = rows.map(savedAddressRecord);
-      if (kind === "pickup") setSavedPickups((current) => dedupeSavedAddresses([...current, ...append])); else setSavedConsignees((current) => dedupeSavedAddresses([...current, ...append]));
+      if (kind === "pickup") setSavedPickups((current) => verifiedDelhiveryWarehouses([...current, ...append])); else setSavedConsignees((current) => dedupeSavedAddresses([...current, ...append]));
     }).catch((error) => {
       setSavedAddressesError(`Saved ${kind === "pickup" ? "consignor" : "consignee"} pagination failed: ${getPssErrorDetails(error, "temporarily unavailable").message}`);
     }).finally(() => setSavedAddressLoadingMore((current) => ({ ...current, [kind]: false })));
@@ -409,7 +411,7 @@ export default function ShipmentBooking() {
     const mapped = dedupeSavedAddresses((result.data ?? []).map(savedAddressRecord));
     savedAddressPaging.current[kind] = { query: "", offset: (result.data ?? []).length };
     setSavedAddressHasMore((current) => ({ ...current, [kind]: result.pagination?.has_more === true }));
-    if (kind === "pickup") setSavedPickups(mapped); else setSavedConsignees(mapped);
+    if (kind === "pickup") setSavedPickups(verifiedDelhiveryWarehouses(mapped)); else setSavedConsignees(mapped);
     return mapped;
   }, []);
 
@@ -639,7 +641,7 @@ export default function ShipmentBooking() {
   const savePickup = () => {
     const saved = { id: `${Date.now()}-${savedPickups.length}`, name: [pickupPerson.name || "Pickup", pickup.city, pickup.state, pickup.pincode].filter(Boolean).join(" · "), address: pickup, contact: pickupPerson };
     const selectedCourierConfig = couriers.find((item) => item.id === selectedCourier) || couriers[0];
-    void pssApi<{ data: { id: string } }>("/v1/warehouses", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ name: saved.name, provider_account_id: selectedCourierConfig?.accountId || undefined, contact_name: pickupPerson.name, address: pickup.line, city: pickup.city, state: pickup.state, pincode: pickup.pincode, contact: pickupPerson.phone }) }).then(async (result) => { const fallback = { ...saved, id: result.data.id }; let persisted = fallback; try { persisted = (await reloadSavedAddressList("pickup")).find((item) => item.id === result.data.id) ?? fallback; } catch { /* The POST already persisted; keep the returned record if the follow-up read is unavailable. */ } setSelectedSavedPickupId(persisted.id); setSavedName(persisted.name); setIsRenamingSaved(false); setNotice("Pickup address saved"); setToast({ message: "Consignor address saved for reuse", tone: "success" }); }).catch((error) => { const details = getPssErrorDetails(error, "The pickup address could not be saved."); setToast({ message: `Pickup address could not be saved: ${details.message}`, tone: "error" }); });
+    void pssApi<{ data: { id: string } }>("/v1/warehouses", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ name: saved.name, provider_account_id: selectedCourierConfig?.accountId || undefined, contact_name: pickupPerson.name, address: pickup.line, city: pickup.city, state: pickup.state, pincode: pickup.pincode, contact: pickupPerson.phone }) }).then(async (result) => { let persisted: SavedPickup | undefined; try { persisted = (await reloadSavedAddressList("pickup")).find((item) => item.id === result.data.id); } catch { setSelectedSavedPickupId(""); setSavedName(saved.name); setNotice("Consignor address saved, but Delhivery verification could not be confirmed yet. Refresh the picker before booking."); setToast({ message: "Address saved; provider verification is still pending", tone: "warning" }); return; } if (!persisted) { setSelectedSavedPickupId(""); setSavedName(saved.name); setNotice("Consignor address saved, but it is not active with Delhivery yet. Booking remains blocked until the provider facility is verified."); setToast({ message: "Address saved; waiting for Delhivery facility activation", tone: "warning" }); return; } setSelectedSavedPickupId(persisted.id); setSavedName(persisted.name); setIsRenamingSaved(false); setNotice("Pickup address saved and verified with Delhivery"); setToast({ message: "Consignor address saved for reuse", tone: "success" }); }).catch((error) => { const details = getPssErrorDetails(error, "The pickup address could not be saved."); setToast({ message: `Pickup address could not be saved: ${details.message}`, tone: "error" }); });
   };
 
   const saveConsignee = () => {
