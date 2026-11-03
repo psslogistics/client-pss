@@ -251,8 +251,9 @@ export default function PickupRequests() {
       pssApi<{ data?: ProviderAccount[] }>("/v1/provider-account-policies"),
       pssApi<{ data?: Record<string, { available_for_client?: boolean; booking_enabled?: boolean }> }>("/v1/client-courier-capabilities"),
       pssApi<{ data?: SavedWarehouse[] }>("/v1/warehouses"),
-      pssApi<{ data?: SavedWarehouse[] }>("/v1/addresses"),
-    ]).then(([accountsResult, capabilitiesResult, warehouseResult, addressResult]) => {
+      // Legacy separate consignor/consignee address loading intentionally
+      // remains disabled. Pickup locations are warehouse records only.
+    ]).then(([accountsResult, capabilitiesResult, warehouseResult]) => {
       if (cancelled) return;
       const failures: string[] = [];
       if (accountsResult.status === "fulfilled") {
@@ -264,10 +265,7 @@ export default function PickupRequests() {
       if (capabilitiesResult.status === "rejected") failures.push(`available couriers: ${getPssErrorDetails(capabilitiesResult.reason, "temporarily unavailable").message}`);
       const warehouses = warehouseResult.status === "fulfilled" ? (warehouseResult.value.data ?? []).map((warehouse) => ({ ...warehouse, source: "warehouse" as const })) : [];
       if (warehouseResult.status === "rejected") failures.push(`warehouses: ${getPssErrorDetails(warehouseResult.reason, "temporarily unavailable").message}`);
-      const addresses = addressResult.status === "fulfilled" ? (addressResult.value.data ?? []) : [];
-      if (addressResult.status === "rejected") failures.push(`saved pickup locations: ${getPssErrorDetails(addressResult.reason, "temporarily unavailable").message}`);
-      const savedAddresses = addresses.filter((address) => address.address_kind !== "consignee").map((address) => ({ ...address, source: "address" as const, name: address.label ?? address.contact_name ?? address.id }));
-      setWarehouses(dedupeSavedWarehouses([...warehouses, ...savedAddresses]));
+      setWarehouses(dedupeSavedWarehouses(warehouses));
       setConfigurationError(failures.join("; "));
       if (failures.length) notify(`Some pickup configuration could not be loaded — ${failures.join("; ")}`, "error");
     });

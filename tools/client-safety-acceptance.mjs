@@ -13,6 +13,8 @@ const dashboard = await readFile(new URL("../components/block/dashboard.tsx", im
 const invoicePdf = await readFile(new URL("../lib/invoice-pdf.ts", import.meta.url), "utf8");
 const pricingData = await readFile(new URL("../lib/client-pricing-data.ts", import.meta.url), "utf8");
 const booking = await readFile(new URL("../components/block/shipmentBooking.tsx", import.meta.url), "utf8");
+const bookingPrefetch = await readFile(new URL("../lib/booking-prefetch.ts", import.meta.url), "utf8");
+const pricingTools = await readFile(new URL("../components/block/pricingTools.tsx", import.meta.url), "utf8");
 const worker = await readFile(new URL("../../admin-pss/worker/src/index.ts", import.meta.url), "utf8");
 const classificationMigration = await readFile(new URL("../../admin-pss/worker/migrations/20261029_client_test_classification.sql", import.meta.url), "utf8");
 
@@ -76,7 +78,11 @@ assert.match(booking, /title="Consignee"/);
 assert.doesNotMatch(booking, /fetchConsigneeAddresses/);
 assert.doesNotMatch(booking, /consigneeAddressRows/);
 assert.doesNotMatch(booking, /\/v1\/addresses\?limit=/);
+assert.doesNotMatch(booking, /pssApi[^\n]*\/v1\/addresses/);
+assert.doesNotMatch(pickup, /pssApi[^\n]*\/v1\/addresses/);
+assert.doesNotMatch(bookingPrefetch, /pssApi\("\/v1\/addresses"/);
+assert.doesNotMatch(pricingTools, /pssApi[^\n]*\/v1\/addresses/);
 assert.match(booking, /provider_pending.*accepted.*manifested/);
 assert.match(booking, /same PSS record/);
 
-console.log("Client safety contract checks passed (53 checks).");
+console.log("Client safety contract checks passed (57 checks).");

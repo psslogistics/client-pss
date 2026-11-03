@@ -14,7 +14,8 @@ export function prefetchBookingDependencies() {
     pssApi("/v1/client-courier-capabilities"),
     pssApi("/v1/provider-account-policies"),
     pssApi("/v1/warehouses"),
-    pssApi("/v1/addresses"),
+    // Legacy separate-address prefetch intentionally disabled. Booking reads
+    // both origin and destination locations from the warehouse collection.
   ]).then(() => undefined);
   return bookingPrefetch;
 }

@@ -18,13 +18,11 @@ const dedupeAddressRecords = (rows: SavedAddressRecord[]) => { const seen = new 
 
 function useSavedAddresses() {
   const [warehouses, setWarehouses] = useState<SavedAddressRecord[]>([]);
-  const [consignees, setConsignees] = useState<SavedAddressRecord[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
     let cancelled = false;
-    void Promise.allSettled([pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses"), pssApi<{ data: Array<Record<string, string>> }>("/v1/addresses")]).then(([warehouseResult, addressResult]) => {
+    void pssApi<{ data: Array<Record<string, string>> }>("/v1/warehouses").then((warehouseResult) => {
       if (cancelled) return;
-      const failures: string[] = [];
       const map = (row: Record<string, string>, kind: SavedAddressRecord["kind"]): SavedAddressRecord => ({
         id: row.id,
         name: row.name ?? row.label ?? "",
@@ -34,18 +32,13 @@ function useSavedAddresses() {
         contact: { name: row.contact_name ?? "", phone: row.phone ?? row.contact ?? "", email: "" },
         default: false,
       });
-      if (warehouseResult.status === "fulfilled") setWarehouses(dedupeAddressRecords(warehouseResult.value.data.map((row) => map(row, "warehouse"))));
-      else failures.push(`warehouses: ${getPssErrorDetails(warehouseResult.reason, "temporarily unavailable").message}`);
-      // Legacy saved addresses may not have address_kind populated. Keep those
-      // selectable as delivery addresses, while excluding records explicitly
-      // marked as consignors.
-      if (addressResult.status === "fulfilled") setConsignees(dedupeAddressRecords(addressResult.value.data.filter((row) => row.address_kind?.trim().toLowerCase() !== "consignor").map((row) => map(row, "consignee"))));
-      else failures.push(`saved addresses: ${getPssErrorDetails(addressResult.reason, "temporarily unavailable").message}`);
-      setError(failures.length ? `Some address data could not be loaded — ${failures.join("; ")}` : "");
-    });
+      setWarehouses(dedupeAddressRecords(warehouseResult.data.map((row) => map(row, "warehouse"))));
+      setError("");
+    }).catch((reason) => { if (!cancelled) setError(`Warehouses: ${getPssErrorDetails(reason, "temporarily unavailable").message}`); });
     return () => { cancelled = true; };
   }, []);
-  return { warehouses, consignees, error };
+  // Both route endpoints intentionally use the same warehouse collection.
+  return { warehouses, consignees: warehouses, error };
 }
 
 function PageHeader({ title, description }: { title: string; description: string }) {
@@ -63,7 +56,8 @@ function PincodeField({ label, value, onChange }: { label: string; value: string
 }
 
 export function PincodeServiceability() {
-  const { warehouses, consignees, error: savedAddressError } = useSavedAddresses();
+  const { warehouses, error: savedAddressError } = useSavedAddresses();
+  const consignees = warehouses;
   const [pickup, setPickup] = useState("");
   const [delivery, setDelivery] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "done">("idle");
