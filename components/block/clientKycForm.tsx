@@ -12,6 +12,7 @@ type DocumentRow = { document_type: "aadhaar" | "gst" | "pan" | "other"; origina
 const inputClass = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-4 focus:ring-primary/10";
 const requiredDocuments = ["aadhaar", "gst", "pan"] as const;
 const documentLabel = (type: string) => type === "aadhaar" ? "Aadhaar" : type.toUpperCase();
+const mobileOtpPlaceholder = true;
 
 export default function ClientKycForm() {
   const supabase = useMemo(() => createClient(), []);
@@ -63,6 +64,9 @@ export default function ClientKycForm() {
   const sendOtp = async () => {
     const normalized = phone.replace(/[^0-9+]/g, "");
     if (!/^\+?[0-9]{10,15}$/.test(normalized)) { setError("Enter an active mobile number with 10 to 15 digits."); return; }
+    if (mobileOtpPlaceholder) {
+      setOtpSent(true); setError(""); setNotice("Mobile OTP is temporarily a placeholder. SMS verification will be enabled after the provider is configured."); return;
+    }
     setSaving(true); setError("");
     const { error: updateError } = await supabase.auth.updateUser({ phone: normalized });
     setSaving(false);
@@ -71,6 +75,9 @@ export default function ClientKycForm() {
   };
 
   const verifyOtp = async () => {
+    if (mobileOtpPlaceholder) {
+      setError("Mobile OTP verification is not enabled yet. No verification was recorded."); return;
+    }
     setSaving(true); setError("");
     const normalized = phone.replace(/[^0-9+]/g, "");
     const { error: verifyError } = await supabase.auth.verifyOtp({ phone: normalized, token: otp.trim(), type: "phone_change" });
@@ -83,15 +90,21 @@ export default function ClientKycForm() {
 
   const uploadDocument = async (type: typeof requiredDocuments[number], file: File | null) => {
     if (!profile || !file) return;
-    if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError("Upload a PDF, JPG, or PNG file up to 10 MB."); return; }
+    if (!file.size || !['application/pdf', 'image/jpeg', 'image/png'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError("Upload a non-empty PDF, JPG, or PNG file up to 10 MB."); return; }
     setSaving(true); setError(""); setNotice("");
     const extension = file.name.split(".").pop()?.toLowerCase() || "bin";
     const path = `${profile.client_id}/${type}/${crypto.randomUUID()}.${extension}`;
     const upload = await supabase.storage.from("client-kyc-documents").upload(path, file, { contentType: file.type, upsert: true });
-    if (upload.error) { setSaving(false); setError("The document could not be uploaded."); return; }
-    const { error: rowError } = await supabase.from("client_kyc_documents").upsert({ client_id: profile.client_id, document_type: type, object_path: path, original_filename: file.name, content_type: file.type, status: "submitted", uploaded_by: (await supabase.auth.getUser()).data.user?.id }, { onConflict: "client_id,document_type" });
+    if (upload.error) { setSaving(false); setError(`The document could not be uploaded. ${upload.error.message}`); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { await supabase.storage.from("client-kyc-documents").remove([path]); setSaving(false); setError("Your session has expired. Please sign in again."); return; }
+    const { error: rowError } = await supabase.rpc("replace_client_kyc_document", { p_document_type: type, p_object_path: path, p_original_filename: file.name, p_content_type: file.type });
     setSaving(false);
-    if (rowError) { setError("The document record could not be saved."); return; }
+    if (rowError) {
+      await supabase.storage.from("client-kyc-documents").remove([path]);
+      setError(`The document record could not be saved. ${rowError.message}`);
+      return;
+    }
     setFiles((current) => ({ ...current, [type]: file })); setNotice(`${documentLabel(type)} document uploaded.`); await load();
   };
 
@@ -115,8 +128,8 @@ export default function ClientKycForm() {
       {error && <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</div>}
       {profile?.review_notes && <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-800">Super Admin note: {profile.review_notes}</div>}
       <div className="grid gap-4 sm:grid-cols-3"><label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">GST number *</span><input className={inputClass} value={profile?.gst_number ?? ""} onChange={(event) => setProfile((current) => current ? { ...current, gst_number: event.target.value.toUpperCase() } : current)} onBlur={() => void updateFields({ gst_number: profile?.gst_number ?? "" })} placeholder="15-character GSTIN" /></label><label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">PAN number *</span><input className={inputClass} value={profile?.pan_number ?? ""} onChange={(event) => setProfile((current) => current ? { ...current, pan_number: event.target.value.toUpperCase() } : current)} onBlur={() => void updateFields({ pan_number: profile?.pan_number ?? "" })} placeholder="10-character PAN" /></label><label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">Aadhaar last 4 digits *</span><input className={inputClass} inputMode="numeric" maxLength={4} value={profile?.aadhaar_last4 ?? ""} onChange={(event) => setProfile((current) => current ? { ...current, aadhaar_last4: event.target.value.replace(/\D/g, "").slice(0, 4) } : current)} onBlur={() => void updateFields({ aadhaar_last4: profile?.aadhaar_last4 ?? "" })} placeholder="Last 4 digits" /></label></div>
-      <div className="rounded-xl border border-border/70 p-4"><div className="flex items-center gap-2 text-xs font-semibold"><Phone className="h-4 w-4 text-primary" />Active mobile number and OTP verification</div><div className="mt-3 flex flex-col gap-2 sm:flex-row"><input className={inputClass} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91XXXXXXXXXX" disabled={Boolean(profile?.phone_verified_at)} /><button type="button" onClick={() => void sendOtp()} disabled={saving || Boolean(profile?.phone_verified_at)} className="h-10 shrink-0 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50">{saving ? "Sending…" : "Send OTP"}</button></div>{otpSent && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input className={inputClass} value={otp} onChange={(event) => setOtp(event.target.value)} placeholder="Enter OTP" inputMode="numeric" /><button type="button" onClick={() => void verifyOtp()} disabled={saving || !otp.trim()} className="h-10 shrink-0 rounded-lg border border-primary px-3 text-xs font-semibold text-primary disabled:opacity-50">Verify mobile</button></div>}{profile?.phone_verified_at && <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700"><Check className="h-3.5 w-3.5" />Mobile number verified</p>}</div>
-      <div className="grid gap-3 sm:grid-cols-3">{requiredDocuments.map((type) => <label key={type} className="cursor-pointer rounded-xl border border-border/70 p-4 hover:border-primary/50"><span className="flex items-center gap-2 text-xs font-semibold"><FileText className="h-4 w-4 text-primary" />{documentLabel(type)} document *</span><span className="mt-1 block truncate text-[11px] text-muted-foreground">{files[type]?.name ?? (hasDocument(type) ? "Uploaded" : "PDF, JPG, or PNG up to 10 MB")}</span><span className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-input px-2.5 py-1.5 text-[11px] font-semibold"><Upload className="h-3.5 w-3.5" />Upload</span><input type="file" accept="application/pdf,image/jpeg,image/png" className="sr-only" onChange={(event) => void uploadDocument(type, event.target.files?.[0] ?? null)} /></label>)}</div>
+      <div className="rounded-xl border border-border/70 p-4"><div className="flex items-center gap-2 text-xs font-semibold"><Phone className="h-4 w-4 text-primary" />Active mobile number and OTP verification</div>{mobileOtpPlaceholder && <p className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-800">Mobile OTP is currently a placeholder. It does not send an SMS or mark the number as verified.</p>}<div className="mt-3 flex flex-col gap-2 sm:flex-row"><input className={inputClass} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91XXXXXXXXXX" disabled={Boolean(profile?.phone_verified_at)} /><button type="button" onClick={() => void sendOtp()} disabled={saving || Boolean(profile?.phone_verified_at)} className="h-10 shrink-0 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50">{mobileOtpPlaceholder ? "Preview OTP step" : saving ? "Sending…" : "Send OTP"}</button></div>{otpSent && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input className={inputClass} value={otp} onChange={(event) => setOtp(event.target.value)} placeholder="OTP provider pending" inputMode="numeric" disabled={mobileOtpPlaceholder} /><button type="button" onClick={() => void verifyOtp()} disabled={saving || !otp.trim() || mobileOtpPlaceholder} className="h-10 shrink-0 rounded-lg border border-primary px-3 text-xs font-semibold text-primary disabled:opacity-50">Verify mobile</button></div>}{profile?.phone_verified_at && <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700"><Check className="h-3.5 w-3.5" />Mobile number verified</p>}</div>
+      <div className="grid gap-3 sm:grid-cols-3">{requiredDocuments.map((type) => <label key={type} className="cursor-pointer rounded-xl border border-border/70 p-4 hover:border-primary/50"><span className="flex items-center gap-2 text-xs font-semibold"><FileText className="h-4 w-4 text-primary" />{documentLabel(type)} document *</span><span className="mt-1 block truncate text-[11px] text-muted-foreground">{files[type]?.name ?? (hasDocument(type) ? "Uploaded" : "PDF, JPG, or PNG up to 10 MB")}</span><span className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-input px-2.5 py-1.5 text-[11px] font-semibold"><Upload className="h-3.5 w-3.5" />Upload</span><input type="file" accept="application/pdf,image/jpeg,image/png" className="sr-only" onClick={(event) => { event.currentTarget.value = ""; }} onChange={(event) => void uploadDocument(type, event.target.files?.[0] ?? null)} /></label>)}</div>
       <div className="flex items-start gap-2 rounded-lg bg-muted/40 px-3 py-3 text-xs leading-5 text-muted-foreground"><LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-primary" />Documents are stored in a private secure area and reviewed only for KYC authorization.</div>
       <div className="flex flex-col gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">{status === "approved" ? "KYC approved. Shipment booking is enabled." : "Submit only after all mandatory details and documents are complete."}</p><button type="button" onClick={() => void submit()} disabled={saving || !complete || status === "approved" || status === "under_review" || status === "submitted"} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"><ShieldCheck className="h-4 w-4" />{status === "approved" ? "KYC approved" : status === "under_review" || status === "submitted" ? "Awaiting review" : "Submit KYC for review"}</button></div>
     </div>
