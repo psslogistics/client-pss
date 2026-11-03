@@ -796,6 +796,10 @@ export default function ShipmentBooking() {
       setBookingNotice("No active Delhivery B2B account is assigned to this client.");
       return;
     }
+    if (courier.provider.toLowerCase().includes("delhivery") && !selectedSavedPickupId) {
+      setBookingNotice("Select a verified Delhivery pickup warehouse in the Consignor section before booking. A manually entered consignor cannot be used as the provider facility.");
+      return;
+    }
     setSingleSubmitting(true);
     const idempotencyKey = singleAttemptId || `shipment-${courier.accountId || courier.id}-${selectedSavedPickupId || "warehouse"}-${crypto.randomUUID()}`;
     setSingleAttemptId(idempotencyKey);
