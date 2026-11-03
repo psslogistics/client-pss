@@ -82,12 +82,12 @@ const savedAddressRecord = (row: Record<string, string>): SavedPickup => {
 };
 const savedAddressIdentity = (row: SavedPickup) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 const dedupeSavedAddresses = (rows: SavedPickup[]) => { const seen = new Set<string>(); return rows.filter((row) => { const key = savedAddressIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; }); };
-// Booking addresses come from the client's warehouse records. A pending
-// warehouse is still a valid source record: the Worker registers it against
-// the selected Delhivery account during the manifest request and the provider
-// response decides whether the booking succeeds. Hiding pending rows here
-// made the booking form appear empty even though Warehouses contained data.
-const delhiveryWarehouses = (rows: SavedPickup[]) => dedupeSavedAddresses(rows.filter((row) => row.provider === "delhivery"));
+// Booking addresses come from the client's warehouse records. The warehouse
+// endpoint is already scoped to the authenticated client's warehouse records;
+// do not apply a second provider-metadata filter here because legacy rows may
+// not have provider fields populated yet. The Worker validates the selected
+// warehouse/account and registers it with Delhivery during manifesting.
+const delhiveryWarehouses = (rows: SavedPickup[]) => dedupeSavedAddresses(rows);
 const savedAddressOptionLabel = (saved: SavedPickup) => {
   const state = saved.providerStatus && saved.providerStatus !== "active" ? ` · ${saved.providerStatus}` : "";
   return `${saved.providerName && saved.providerName !== saved.name ? `${clientSavedAddressName(saved.name)} · Delhivery: ${saved.providerName}` : clientSavedAddressName(saved.name)}${state}`;
