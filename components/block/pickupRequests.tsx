@@ -407,11 +407,11 @@ export default function PickupRequests() {
   return (
     <div className="w-full space-y-4 pb-10">
       <div className="flex flex-wrap items-stretch gap-2">
-        <MetricCard label="Today's Pickups" value={metrics.today} icon={<Truck className="h-4 w-4" />} />
-        <MetricCard label="Scheduled" value={metrics.scheduled} icon={<Clock3 className="h-4 w-4" />} />
-        <MetricCard label="Past date · check status" value={metrics.overdue} icon={<Clock3 className="h-4 w-4" />} />
-        <MetricCard label="Completed" value={metrics.completed} icon={<Check className="h-4 w-4" />} />
-        <MetricCard label="Failed" value={metrics.failed} icon={<FileText className="h-4 w-4" />} />
+        <MetricCard label="Today's Pickups" value={loading ? null : metrics.today} icon={<Truck className="h-4 w-4" />} />
+        <MetricCard label="Scheduled" value={loading ? null : metrics.scheduled} icon={<Clock3 className="h-4 w-4" />} />
+        <MetricCard label="Past date · check status" value={loading ? null : metrics.overdue} icon={<Clock3 className="h-4 w-4" />} />
+        <MetricCard label="Completed" value={loading ? null : metrics.completed} icon={<Check className="h-4 w-4" />} />
+        <MetricCard label="Failed" value={loading ? null : metrics.failed} icon={<FileText className="h-4 w-4" />} />
         <div className="flex w-full shrink-0 gap-2 sm:w-auto">
           <button type="button" onClick={() => setCalendarOpen((current) => !current)} className={cn(buttonSecondary, "flex-1 sm:flex-none")}><CalendarDays className="h-4 w-4" /> Calendar View</button>
           <button type="button" onClick={() => { setPickupSlotOptions([]); setScheduleError(""); setScheduleOpen(true); }} className={cn(buttonPrimary, "flex-1 sm:flex-none")}><Plus className="h-4 w-4" /> Schedule Pickup</button>
@@ -429,13 +429,13 @@ export default function PickupRequests() {
             <button type="button" onClick={() => void loadPickups(true)} disabled={refreshing} className={buttonSecondary}><RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh</button><button type="button" onClick={exportCsv} className={buttonSecondary}><Download className="h-3.5 w-3.5" /> Export</button>
           </div>
         </div>
-        <div className="flex items-center justify-between px-4 py-2.5 text-[11px] text-muted-foreground"><span>{filtered.length} of {pickups.length} pickup requests</span><span>{selectedIds.length} selected</span></div>
+        <div className="flex items-center justify-between px-4 py-2.5 text-[11px] text-muted-foreground"><span>{loading ? "Loading pickup requests…" : `${filtered.length} of ${pickups.length} pickup requests`}</span><span>{loading ? "" : `${selectedIds.length} selected`}</span></div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] border-collapse text-left text-xs">
             <thead className="bg-muted/30 text-[10px] uppercase tracking-wide text-muted-foreground"><tr className="border-y border-border/70"><th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Select all visible pickup requests" checked={allVisibleSelected} onChange={toggleAllVisible} className="accent-primary" /></th>{columns.filter((column) => visibleColumns.includes(column.key)).map((column) => <th key={column.key} className="px-3 py-3 font-semibold"><button type="button" onClick={() => toggleSort(column.key)} className="inline-flex items-center gap-1 hover:text-foreground">{column.label}{sort.key === column.key ? sort.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : <span className="text-muted-foreground/50">↕</span>}</button></th>)}<th className="px-3 py-3 font-semibold">Contact</th></tr></thead>
             <tbody className="divide-y divide-border/70">{filtered.map((pickup) => <PickupRow key={pickup.id} pickup={pickup} visibleColumns={visibleColumns} selected={selectedIds.includes(pickup.id)} toggleSelected={() => toggleSelected(pickup.id)} open={() => setSelectedPickup(pickup)} />)}</tbody>
           </table>
-          {!filtered.length && <div className="px-5 py-14 text-center text-sm text-muted-foreground">{loading ? <div className="mx-auto max-w-4xl text-left" role="status" aria-label="Loading pickup requests" aria-busy="true"><SkeletonTable rows={6} columns={8} /></div> : <><Package className="mx-auto mb-2 h-6 w-6 opacity-50" />{loadError ? <><p>Pickup data is unavailable.</p><button type="button" onClick={() => void loadPickups(true)} disabled={refreshing} className="mt-3 rounded-lg border border-input px-3 py-2 text-xs font-semibold hover:bg-accent disabled:opacity-50">{refreshing ? "Retrying…" : "Retry pickup data"}</button></> : "No pickup requests match these filters."}</>}</div>}
+          {!filtered.length && <div className="px-5 py-8 text-center text-sm text-muted-foreground">{loading ? <div className="w-full overflow-hidden text-left" role="status" aria-label="Loading pickup requests" aria-busy="true"><SkeletonTable rows={6} columns={8} /></div> : <><Package className="mx-auto mb-2 h-6 w-6 opacity-50" />{loadError ? <><p>Pickup data is unavailable.</p><button type="button" onClick={() => void loadPickups(true)} disabled={refreshing} className="mt-3 rounded-lg border border-input px-3 py-2 text-xs font-semibold hover:bg-accent disabled:opacity-50">{refreshing ? "Retrying…" : "Retry pickup data"}</button></> : "No pickup requests match these filters."}</>}</div>}
         </div>
       </div>
 
@@ -452,8 +452,8 @@ const inputClass = "h-9 rounded-lg border border-input bg-background px-3 text-x
 const buttonSecondary = "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-input bg-background px-3 text-xs font-semibold text-foreground transition hover:bg-accent";
 const buttonPrimary = "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90";
 
-function MetricCard({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
-  return <div className="flex h-9 min-w-[190px] flex-1 items-center gap-2 rounded-lg border border-border bg-card px-3 shadow-xs"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">{icon}</span><p className="min-w-0 truncate text-[11px] font-semibold text-muted-foreground">{label}</p><p className="ml-auto text-base font-bold leading-none tracking-tight tabular-nums">{value}</p></div>;
+function MetricCard({ label, value, icon }: { label: string; value: number | null; icon: React.ReactNode }) {
+  return <div className="flex h-9 min-w-[190px] flex-1 items-center gap-2 rounded-lg border border-border bg-card px-3 shadow-xs"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">{icon}</span><p className="min-w-0 truncate text-[11px] font-semibold text-muted-foreground">{label}</p><p className="ml-auto text-base font-bold leading-none tracking-tight tabular-nums">{value == null ? <span className="inline-block h-4 w-7 animate-pulse rounded bg-muted" aria-hidden="true" /> : value}</p></div>;
 }
 
 function PickupRow({ pickup, visibleColumns, selected, toggleSelected, open }: { pickup: Pickup; visibleColumns: SortKey[]; selected: boolean; toggleSelected: () => void; open: () => void }) {
