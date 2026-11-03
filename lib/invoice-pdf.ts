@@ -107,7 +107,7 @@ function dimensionsText(value: InvoicePdfRecord["dimensions"]) {
     const width = String(item.width ?? item.breadth ?? "").trim();
     const height = String(item.height ?? "").trim();
     const unit = String(item.unit ?? "").trim();
-    return [length, width, height].every(Boolean) ? `${length} × ${width} × ${height}${unit ? ` ${unit}` : ""}` : "";
+    return [length, width, height].every(Boolean) ? `${length} x ${width} x ${height}${unit ? ` ${unit}` : ""}` : "";
   }).filter(Boolean).join("; ");
   return text || "Not provided";
 }
@@ -135,11 +135,11 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
   line(doc, LEFT, 66, PAGE_W - LEFT, 66, 0.8);
 
   const boxY = 78; const boxH = 94; const boxW = 261;
-  cell(doc, LEFT, boxY, boxW, boxH, `Service provider\n${clean(record.seller_name, "PSS Logistics")}\n${record.seller_address ? `${record.seller_address}\n` : ""}${record.seller_gstin ? `GSTIN: ${record.seller_gstin}\n` : "Legal/tax details not configured\n"}${record.seller_contact ?? ""}${record.seller_email ? ` · ${record.seller_email}` : ""}`, { bold: true, size: 8 });
+  cell(doc, LEFT, boxY, boxW, boxH, `Service provider\n${clean(record.seller_name, "PSS Logistics")}\n${record.seller_address ? `${record.seller_address}\n` : ""}${record.seller_gstin ? `GSTIN: ${record.seller_gstin}\n` : "Legal/tax details not configured\n"}${record.seller_contact ?? ""}${record.seller_email ? ` - ${record.seller_email}` : ""}`, { bold: true, size: 8 });
   cell(doc, LEFT + boxW + 18, boxY, boxW, boxH, `Billed client\n${clean(record.client_name ?? record.buyer_name, "Client account")}\n${record.client_address ?? record.buyer_address ?? "Billing address not provided"}${record.client_gstin ?? record.buyer_gstin ? `\nGSTIN: ${record.client_gstin ?? record.buyer_gstin}` : "\nGSTIN not provided"}${record.client_state ?? record.buyer_state ? `\n${record.client_state ?? record.buyer_state}` : ""}`, { bold: true, size: 8 });
 
   const metaY = 190;
-  autoTable(doc, { startY: metaY, head: [["LR / LRN", "Shipment reference", "Route", "Boxes / weight"]], body: [[clean(record.lr_number, "Pending"), publicReference, `${clean(record.origin, "Not provided")} → ${clean(record.destination, "Not provided")}`, `${record.pieces ?? 1} / ${record.weight_kg ?? "—"} kg`]], margin: { left: LEFT, right: LEFT }, tableWidth: PAGE_W - LEFT * 2, styles: { font: "helvetica", fontSize: 8, cellPadding: 6, overflow: "linebreak", minCellHeight: 26, valign: "middle", lineColor: [203, 213, 225], lineWidth: 0.4, textColor: [...INK] }, headStyles: { fillColor: [238, 238, 238], textColor: [...INK], fontStyle: "bold" }, columnStyles: { 0: { cellWidth: 82 }, 1: { cellWidth: 122 }, 2: { cellWidth: 251.28 }, 3: { cellWidth: 68, halign: "right" } } });
+  autoTable(doc, { startY: metaY, head: [["LR / LRN", "Shipment reference", "Route", "Boxes / weight"]], body: [[clean(record.lr_number, "Pending"), publicReference, `${clean(record.origin, "Not provided")} -> ${clean(record.destination, "Not provided")}`, `${record.pieces ?? 1} / ${record.weight_kg ?? "-"} kg`]], margin: { left: LEFT, right: LEFT }, tableWidth: PAGE_W - LEFT * 2, styles: { font: "helvetica", fontSize: 8, cellPadding: 6, overflow: "linebreak", minCellHeight: 26, valign: "middle", lineColor: [203, 213, 225], lineWidth: 0.4, textColor: [...INK] }, headStyles: { fillColor: [238, 238, 238], textColor: [...INK], fontStyle: "bold" }, columnStyles: { 0: { cellWidth: 82 }, 1: { cellWidth: 122 }, 2: { cellWidth: 251.28 }, 3: { cellWidth: 68, halign: "right" } } });
 
   const invoiceLines = (record.line_items?.length ? [...record.line_items].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)) : record.pricing?.lines ?? []);
   const chargeBreakup = invoiceLines.map((item) => `${clientChargeLabel(item.label)}${item.marker ?? ""}: Rs. ${money(item.amount)}`).join("\n");
@@ -163,7 +163,7 @@ export function createInvoicePdf(record: InvoicePdfRecord) {
   cell(doc, LEFT, lowerY + 58, 260, 68, `Company's PAN: ${clean(record.seller_pan, "Not configured")}\n\nBilling statement only. This is not a tax invoice.`, { size: 8 });
   cell(doc, LEFT + 280, lowerY + 58, 260, 68, `Payment details\nBank: ${clean(record.bank_name, "Not configured")}\nAccount: ${clean(record.bank_account_number, "Not configured")}\nIFSC: ${clean(record.bank_branch_ifsc, "Not configured")}`, { size: 8 });
   cell(doc, LEFT, lowerY + 136, 240, 38, "Customer's Seal and Signature", { size: 8 }); cell(doc, LEFT + 240, lowerY + 136, 300, 38, "for PSS LOGISTICS\nAuthorised Signatory", { bold: true, align: "right", size: 8 });
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text("Billing statement only · Not a tax invoice", PAGE_W / 2, lowerY + 194, { align: "center" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.text("Billing statement only - Not a tax invoice", PAGE_W / 2, lowerY + 194, { align: "center" });
   return { doc, invoiceNumber };
 }
 
