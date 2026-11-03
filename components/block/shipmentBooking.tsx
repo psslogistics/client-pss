@@ -93,7 +93,15 @@ const fetchConsigneeAddresses = async (limit: number, offset: number, query = ""
 };
 const savedAddressIdentity = (row: SavedPickup) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 const dedupeSavedAddresses = (rows: SavedPickup[]) => { const seen = new Set<string>(); return rows.filter((row) => { const key = savedAddressIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; }); };
-const verifiedDelhiveryWarehouses = (rows: SavedPickup[]) => dedupeSavedAddresses(rows.filter((row) => row.provider === "delhivery" && row.providerStatus === "active" && Boolean(row.providerReference && row.providerName)));
+// The old picker gate required a locally stored `active` provider status and
+// both provider identifiers before it would show a warehouse. That made the
+// booking form empty for newly registered/pending facilities even though the
+// Worker can now idempotently prepare the facility as part of the manifest
+// attempt and let Delhivery's booking response decide the outcome.
+// Keep the old predicate here for rollback/audit reference; it is no longer
+// the booking eligibility rule.
+// const verifiedDelhiveryWarehouses = (rows: SavedPickup[]) => dedupeSavedAddresses(rows.filter((row) => row.provider === "delhivery" && row.providerStatus === "active" && Boolean(row.providerReference && row.providerName)));
+const verifiedDelhiveryWarehouses = (rows: SavedPickup[]) => dedupeSavedAddresses(rows.filter((row) => row.provider === "delhivery" && row.providerStatus !== "failed"));
 const savedAddressOptionLabel = (saved: SavedPickup) => saved.providerName && saved.providerName !== saved.name ? `${clientSavedAddressName(saved.name)} · Delhivery: ${saved.providerName}` : clientSavedAddressName(saved.name);
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
 const fileAsBase64 = async (file: File) => {

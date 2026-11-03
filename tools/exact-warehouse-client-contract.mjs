@@ -11,4 +11,5 @@ if (!source.includes("state: pickup.state")) throw new Error("Saved warehouses m
 if (!source.includes("row.state") || !/state:\s*pick\(row\.state,\s*parts\.length >= 4 \? parts\[2\]/.test(source)) throw new Error("Saved warehouses must restore the consignor state after reload");
 if (!source.includes("country: delivery.country")) throw new Error("Saved consignees must preserve country when saved from Booking");
 if (!source.includes('address_kind: "consignee"')) throw new Error("Saved consignees must retain the consignee address type");
+if (!source.includes('row.provider === "delhivery" && row.providerStatus !== "failed"')) throw new Error("Booking must expose pending Delhivery warehouses so the Worker can perform idempotent provider preparation");
 console.log("Client exact warehouse contract passed");
