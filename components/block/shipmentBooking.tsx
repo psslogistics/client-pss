@@ -82,12 +82,16 @@ const savedAddressRecord = (row: Record<string, string>): SavedPickup => {
 };
 const savedAddressIdentity = (row: SavedPickup) => [row.name, row.address.line, row.address.city, row.address.state, row.address.pincode].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 const dedupeSavedAddresses = (rows: SavedPickup[]) => { const seen = new Set<string>(); return rows.filter((row) => { const key = savedAddressIdentity(row); if (seen.has(key)) return false; seen.add(key); return true; }); };
-// A local/pending warehouse is not a provider facility. Delhivery can accept
-// its registration request while still rejecting a manifest for that name.
-// Keep the booking picker aligned with the provider readiness contract: only
-// an active facility with both provider identifiers may be used for booking.
-const verifiedDelhiveryWarehouses = (rows: SavedPickup[]) => dedupeSavedAddresses(rows.filter((row) => row.provider === "delhivery" && row.providerStatus === "active" && Boolean(row.providerReference && row.providerName)));
-const savedAddressOptionLabel = (saved: SavedPickup) => saved.providerName && saved.providerName !== saved.name ? `${clientSavedAddressName(saved.name)} · Delhivery: ${saved.providerName}` : clientSavedAddressName(saved.name);
+// Booking addresses come from the client's warehouse records. A pending
+// warehouse is still a valid source record: the Worker registers it against
+// the selected Delhivery account during the manifest request and the provider
+// response decides whether the booking succeeds. Hiding pending rows here
+// made the booking form appear empty even though Warehouses contained data.
+const delhiveryWarehouses = (rows: SavedPickup[]) => dedupeSavedAddresses(rows.filter((row) => row.provider === "delhivery"));
+const savedAddressOptionLabel = (saved: SavedPickup) => {
+  const state = saved.providerStatus && saved.providerStatus !== "active" ? ` · ${saved.providerStatus}` : "";
+  return `${saved.providerName && saved.providerName !== saved.name ? `${clientSavedAddressName(saved.name)} · Delhivery: ${saved.providerName}` : clientSavedAddressName(saved.name)}${state}`;
+};
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10";
 const fileAsBase64 = async (file: File) => {
   try {
@@ -365,7 +369,7 @@ export default function ShipmentBooking() {
       if (cancelled) return;
       const errors: string[] = [];
       const rows = warehouseResult.data ?? [];
-      setSavedPickups(verifiedDelhiveryWarehouses(rows.map(savedAddressRecord)));
+      setSavedPickups(delhiveryWarehouses(rows.map(savedAddressRecord)));
       savedAddressPaging.current = { query: "", offset: rows.length };
       setSavedAddressHasMore(warehouseResult.pagination?.has_more === true);
       const message = errors.join(" ");
@@ -392,7 +396,7 @@ export default function ShipmentBooking() {
         const mapped = dedupeSavedAddresses(rows.map(savedAddressRecord));
         savedAddressPaging.current = { query: normalized, offset: rows.length };
         setSavedAddressHasMore(result.pagination?.has_more === true);
-        setSavedPickups(verifiedDelhiveryWarehouses(mapped));
+        setSavedPickups(delhiveryWarehouses(mapped));
       }).catch((error) => {
         if (sequence !== savedAddressSearchSequence.current) return;
         setSavedAddressesError(`Warehouse search failed: ${getPssErrorDetails(error, "temporarily unavailable").message}`);
@@ -413,7 +417,7 @@ export default function ShipmentBooking() {
       savedAddressPaging.current = { query, offset: offset + rows.length };
       setSavedAddressHasMore(result.pagination?.has_more === true);
       const append = rows.map(savedAddressRecord);
-      setSavedPickups((current) => verifiedDelhiveryWarehouses([...current, ...append]));
+      setSavedPickups((current) => delhiveryWarehouses([...current, ...append]));
     }).catch((error) => {
       setSavedAddressesError(`Warehouse pagination failed: ${getPssErrorDetails(error, "temporarily unavailable").message}`);
     }).finally(() => setSavedAddressLoadingMore(false));
@@ -424,7 +428,7 @@ export default function ShipmentBooking() {
     const mapped = dedupeSavedAddresses((result.data ?? []).map(savedAddressRecord));
     savedAddressPaging.current = { query: "", offset: (result.data ?? []).length };
     setSavedAddressHasMore(result.pagination?.has_more === true);
-    setSavedPickups(verifiedDelhiveryWarehouses(mapped));
+    setSavedPickups(delhiveryWarehouses(mapped));
     return mapped;
   }, []);
 
@@ -457,6 +461,19 @@ export default function ShipmentBooking() {
       });
     }
   }, [pickup, pickupPerson, savedPickups, selectedSavedPickupId]);
+
+  useEffect(() => {
+    if (!selectedSavedConsigneeId) return;
+    const saved = savedPickups.find((item) => item.id === selectedSavedConsigneeId);
+    if (!saved) return;
+    const sameAddress = saved.address.line === delivery.line
+      && saved.address.city === delivery.city
+      && saved.address.state === delivery.state
+      && saved.address.pincode === delivery.pincode
+      && saved.address.country === delivery.country;
+    const sameContact = saved.contact.name === deliveryPerson.name && saved.contact.phone === deliveryPerson.phone;
+    if (!sameAddress || !sameContact) queueMicrotask(() => setSelectedSavedConsigneeId(""));
+  }, [delivery, deliveryPerson, savedPickups, selectedSavedConsigneeId]);
 
   useEffect(() => {
     void pssApi<{ data: Record<string, { available_for_client?: boolean; booking_enabled?: boolean; tracking_enabled?: boolean; label_enabled?: boolean; rate_enabled?: boolean; display_name?: string; health?: string; last_error_code?: string | null }> }>("/v1/client-courier-capabilities")
@@ -664,7 +681,7 @@ export default function ShipmentBooking() {
 
   const reuseSavedPickup = (id: string) => { const saved = savedPickups.find((item) => item.id === id); if (!saved) return; setSelectedSavedPickupId(id); setSavedName(saved.name); setPickup(saved.address); setPickupPerson(saved.contact); setPickupPinStatus({ state: "idle", message: "" }); if (saved.address.pincode && (!saved.address.city || !saved.address.state)) void lookupPincode("pickup", saved.address.pincode); setBookingNotice(""); setBookingDiagnostic(null); };
   const renameSavedPickup = () => { if (!selectedSavedPickupId || !savedName.trim()) return; void pssApi(`/v1/warehouses/${selectedSavedPickupId}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ name: savedName.trim() }) }).then(() => { setSavedPickups((current) => current.map((saved) => saved.id === selectedSavedPickupId ? { ...saved, name: savedName.trim() } : saved)); setSavedName(savedName.trim()); setIsRenamingSaved(false); setToast({ message: "Consignor address name updated", tone: "success" }); }).catch((error) => { const details = getPssErrorDetails(error, "The consignor address could not be renamed."); setToast({ message: `Consignor address could not be renamed: ${details.message}`, tone: "error" }); }); };
-  const reuseSavedConsignee = (id: string) => { const saved = savedConsignees.find((item) => item.id === id); if (!saved) return; setSelectedSavedConsigneeId(id); setSavedConsigneeName(saved.name); setDelivery(saved.address); setDeliveryPerson(saved.contact); setDeliveryPinStatus({ state: "idle", message: "" }); };
+  const reuseSavedConsignee = (id: string) => { const saved = savedPickups.find((item) => item.id === id); if (!saved) return; setSelectedSavedConsigneeId(id); setDelivery(saved.address); setDeliveryPerson(saved.contact); setDeliveryPinStatus({ state: "idle", message: "" }); };
   const renameSavedConsignee = () => { if (!selectedSavedConsigneeId || !savedConsigneeName.trim()) return; void pssApi(`/v1/addresses/${selectedSavedConsigneeId}`, { method: "PATCH", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ label: savedConsigneeName.trim() }) }).then(() => { setSavedConsignees((current) => current.map((saved) => saved.id === selectedSavedConsigneeId ? { ...saved, name: savedConsigneeName.trim() } : saved)); setSavedConsigneeName(savedConsigneeName.trim()); setIsRenamingConsignee(false); setToast({ message: "Consignee address name updated", tone: "success" }); }).catch((error) => { const details = getPssErrorDetails(error, "The consignee address could not be renamed."); setToast({ message: `Consignee address could not be renamed: ${details.message}`, tone: "error" }); }); };
   const deleteSavedPickup = () => setPendingDelete("consignor");
   const deleteSavedConsignee = () => setPendingDelete("consignee");
@@ -723,10 +740,10 @@ export default function ShipmentBooking() {
       setNotice(kycStatus ? "Complete client verification before booking a shipment." : "Checking client verification. Please wait before continuing.");
       return;
     }
-    if (!selectedSavedPickupId) {
+    if (!selectedSavedPickupId || !selectedSavedConsigneeId) {
       setNotice(savedPickups.length
-        ? "Select a verified Delhivery warehouse in the Consignor section before continuing."
-        : "No verified Delhivery warehouse is available. Activate a warehouse in Warehouses before booking.");
+        ? "Select both the pickup and delivery warehouses before continuing."
+        : "No Delhivery warehouses are available. Add the addresses in Warehouses before booking.");
       return;
     }
     if (!invoices.length) {
@@ -817,8 +834,8 @@ export default function ShipmentBooking() {
       setBookingNotice("No active Delhivery B2B account is assigned to this client.");
       return;
     }
-    if (courier.provider.toLowerCase().includes("delhivery") && !selectedSavedPickupId) {
-      setBookingNotice("Select a verified Delhivery pickup warehouse in the Consignor section before booking. A manually entered consignor cannot be used as the provider facility.");
+    if (courier.provider.toLowerCase().includes("delhivery") && (!selectedSavedPickupId || !selectedSavedConsigneeId)) {
+      setBookingNotice("Select both pickup and delivery warehouses before booking. Booking addresses must come from Warehouses.");
       return;
     }
     setSingleSubmitting(true);
@@ -899,6 +916,7 @@ export default function ShipmentBooking() {
           consignee: deliveryPerson.name,
           provider: "delhivery",
           warehouse_id: selectedSavedPickupId || undefined,
+          destination_warehouse_id: selectedSavedConsigneeId || undefined,
           pricing_quote_id: reviewQuote?.quote_id,
           provider_account_id: courier.accountId || undefined,
           payment_mode: paymentMode,
@@ -1053,7 +1071,7 @@ export default function ShipmentBooking() {
       setBulkSubmitting(false);
     }
   };
-  const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoices([]); setPreparedInvoices([]); setInvoiceNumber(""); setOrderId(""); setBoxDimensions([{ length: "", width: "", height: "", boxCount: "" }]); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setRiskType("owner"); setCodAmount(""); setSelectedCourier(null); setSingleAttemptId(""); setSingleSubmitting(false); setBookingPhase("idle"); setShowReview(false); setSingleCompleted(false); setSingleProviderPending(false); setProviderReadiness("idle"); setProviderReadinessError(""); providerReadinessFingerprint.current = ""; providerReadinessRequest.current += 1; setBookingAmount(null); setReviewQuote(null); setReviewQuoteError(""); setBookingNotice(""); setBookingDiagnostic(null); setNotice(""); setInvoicePromptOpen(false); };
+  const resetBooking = () => { setPickup(emptyAddress); setDelivery(emptyAddress); setPickupPerson(emptyContact); setDeliveryPerson(emptyContact); setSelectedSavedPickupId(""); setSelectedSavedConsigneeId(""); setSavedName(""); setSavedConsigneeName(""); setShipmentDetails({ description: "", weight: "", pieces: "", value: "" }); setInvoices([]); setPreparedInvoices([]); setInvoiceNumber(""); setOrderId(""); setBoxDimensions([{ length: "", width: "", height: "", boxCount: "" }]); setEwayBill(null); setDocumentMode("invoice"); setPaymentMode("Prepaid"); setRiskType("owner"); setCodAmount(""); setSelectedCourier(null); setSingleAttemptId(""); setSingleSubmitting(false); setBookingPhase("idle"); setShowReview(false); setSingleCompleted(false); setSingleProviderPending(false); setProviderReadiness("idle"); setProviderReadinessError(""); providerReadinessFingerprint.current = ""; providerReadinessRequest.current += 1; setBookingAmount(null); setReviewQuote(null); setReviewQuoteError(""); setBookingNotice(""); setBookingDiagnostic(null); setNotice(""); setInvoicePromptOpen(false); };
   const addInvoiceFiles = async (files: File[]) => {
     const invalid = files.find((file) => !isAllowedDocument(file));
     if (invalid) { setNotice(`${invalid.name} must be a PDF, JPG, or PNG up to 10 MB`); return; }
@@ -1146,9 +1164,9 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
 
       <form onSubmit={submit} className="pss-booking-form space-y-4">
         {kycStatus?.approved !== true && <div role="alert" className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm"><div><p className="font-semibold text-amber-900 dark:text-amber-100">{kycStatus ? "Client verification is required before booking" : "Checking client verification"}</p><p className="mt-1 text-xs text-amber-800 dark:text-amber-200">{kycStatus ? "Finish the required verification items in Profile & Account. Booking stays disabled until PSS approves them." : "Booking is temporarily unavailable while the verification status loads."}</p>{kycStatus?.missing_fields?.length ? <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">Missing: {kycStatus.missing_fields.join(", ")}</p> : null}</div>{kycStatus && <a href="/dashboard/profileAccountManagement" className="rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-500/10 dark:text-amber-100">Open verification</a>}</div>}
-        {savedAddressesError && <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><p>Warehouses are unavailable right now. Booking is paused until a verified Delhivery warehouse can be loaded.</p><p className="mt-1 text-[11px] opacity-80">{savedAddressesError}</p></div>}
-        {!savedAddressesError && savedPickups.length === 0 && <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><p className="font-semibold">No verified Delhivery warehouse is available</p><p className="mt-1">Select or activate a warehouse in Warehouses before booking. A manually entered address cannot be submitted as the Delhivery pickup facility.</p></div>}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PartyFieldsCompact title="Consignor" tone="bg-amber-500/10 text-amber-600" address={pickup} setAddress={setPickup} person={pickupPerson} setPerson={setPickupPerson} pinStatus={pickupPinStatus} onPincodeChange={(value) => void lookupPincode("pickup", value)} onAddressPaste={handleAddressPaste("pickup")} warehouses={savedPickups} selectedWarehouseId={selectedSavedPickupId} onSelectWarehouse={reuseSavedPickup} onSearchWarehouse={searchSavedAddresses} warehouseSearchLoading={savedPickupSearchLoading} onLoadMoreWarehouses={loadMoreSavedAddresses} warehousesHaveMore={savedAddressHasMore} warehousesLoadingMore={savedAddressLoadingMore} /><PartyFieldsCompact title="Consignee" tone="bg-emerald-500/10 text-emerald-600" address={delivery} setAddress={setDelivery} person={deliveryPerson} setPerson={setDeliveryPerson} pinStatus={deliveryPinStatus} onPincodeChange={(value) => void lookupPincode("delivery", value)} onAddressPaste={handleAddressPaste("delivery")} /></div>
+        {savedAddressesError && <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><p>Warehouses are unavailable right now. Booking is paused until a warehouse can be loaded.</p><p className="mt-1 text-[11px] opacity-80">{savedAddressesError}</p></div>}
+        {!savedAddressesError && savedPickups.length === 0 && <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><p className="font-semibold">No Delhivery warehouse is available</p><p className="mt-1">Add the pickup and delivery addresses under Warehouses, then select them here. Delhivery verifies the selected pickup warehouse during booking.</p></div>}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PartyFieldsCompact title="Consignor" tone="bg-amber-500/10 text-amber-600" address={pickup} setAddress={setPickup} person={pickupPerson} setPerson={setPickupPerson} pinStatus={pickupPinStatus} onPincodeChange={(value) => void lookupPincode("pickup", value)} onAddressPaste={handleAddressPaste("pickup")} warehouses={savedPickups} selectedWarehouseId={selectedSavedPickupId} onSelectWarehouse={reuseSavedPickup} onSearchWarehouse={searchSavedAddresses} warehouseSearchLoading={savedPickupSearchLoading} onLoadMoreWarehouses={loadMoreSavedAddresses} warehousesHaveMore={savedAddressHasMore} warehousesLoadingMore={savedAddressLoadingMore} /><PartyFieldsCompact title="Consignee" tone="bg-emerald-500/10 text-emerald-600" address={delivery} setAddress={setDelivery} person={deliveryPerson} setPerson={setDeliveryPerson} pinStatus={deliveryPinStatus} onPincodeChange={(value) => void lookupPincode("delivery", value)} onAddressPaste={handleAddressPaste("delivery")} warehouses={savedPickups} selectedWarehouseId={selectedSavedConsigneeId} onSelectWarehouse={reuseSavedConsignee} onSearchWarehouse={searchSavedAddresses} warehouseSearchLoading={savedPickupSearchLoading} onLoadMoreWarehouses={loadMoreSavedAddresses} warehousesHaveMore={savedAddressHasMore} warehousesLoadingMore={savedAddressLoadingMore} /></div>
 
         <section className="rounded-xl border border-border bg-card p-4 shadow-xs">
           <div className="mb-4 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600"><FileText className="h-3.5 w-3.5" /></span><div><h2 className="text-sm font-semibold">Shipment documentation</h2><p className="text-xs text-muted-foreground">A Delhivery B2B invoice is required. A Delivery Challan may be added as supplementary documentation.</p></div></div>
@@ -1159,7 +1177,7 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4 shadow-xs"><div className="mb-3 flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600"><Package className="h-3.5 w-3.5" /></span><h2 className="text-sm font-semibold">Shipment details</h2></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><label className="space-y-1 text-xs font-semibold text-muted-foreground">Product description<input required aria-label="Product description" className={field} placeholder="Product description" value={shipmentDetails.description} onChange={(event) => update(setShipmentDetails, "description", event.target.value)} /></label><label className="space-y-1 text-xs font-semibold text-muted-foreground">Weight (kg)<input required aria-label="Weight in kilograms" className={field} placeholder="Weight (kg)" type="number" min="0.1" step="0.1" value={shipmentDetails.weight} onChange={(event) => update(setShipmentDetails, "weight", event.target.value)} /></label><label className="space-y-1 text-xs font-semibold text-muted-foreground">Pieces / boxes<input required aria-label="Pieces or boxes" className={field} placeholder="Pieces / boxes" type="number" min="1" step="1" value={shipmentDetails.pieces} onChange={(event) => update(setShipmentDetails, "pieces", event.target.value)} /></label><label className="space-y-1 text-xs font-semibold text-muted-foreground">Shipment value (₹)<input required aria-label="Shipment value in rupees" className={field} placeholder="Shipment value (₹)" type="number" min="1" value={shipmentDetails.value} onChange={(event) => update(setShipmentDetails, "value", event.target.value)} /></label></div><div className="mt-4 rounded-lg border border-border/70 p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-semibold">Shipment dimensions</p><p className="mt-1 text-[11px] text-muted-foreground">Add each matching box group. The box-count total must equal Pieces / boxes.</p></div><Ruler className="h-4 w-4 text-primary" /></div><div className="mt-3 grid grid-cols-4 gap-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><span>Length (cm)</span><span>Width (cm)</span><span>Height (cm)</span><span>Boxes</span></div><div className="mt-1 space-y-2">{boxDimensions.map((dimension, index) => <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_32px] gap-2"><input required type="number" min="0.1" step="0.1" aria-label={`Box ${index + 1} length in centimetres`} placeholder="Length" value={dimension.length} onChange={(event) => setBoxDimensions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, length: event.target.value } : item))} className={field} /><input required type="number" min="0.1" step="0.1" aria-label={`Box ${index + 1} width in centimetres`} placeholder="Width" value={dimension.width} onChange={(event) => setBoxDimensions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, width: event.target.value } : item))} className={field} /><input required type="number" min="0.1" step="0.1" aria-label={`Box ${index + 1} height in centimetres`} placeholder="Height" value={dimension.height} onChange={(event) => setBoxDimensions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, height: event.target.value } : item))} className={field} /><input required type="number" min="1" step="1" aria-label={`Box ${index + 1} count`} placeholder="Count" value={dimension.boxCount} onChange={(event) => setBoxDimensions((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, boxCount: event.target.value } : item))} className={field} /><button type="button" aria-label="Remove dimension row" disabled={boxDimensions.length === 1} onClick={() => setBoxDimensions((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg border border-input text-muted-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40">×</button></div>)}</div><div className="mt-3 flex items-center justify-between"><button type="button" onClick={() => setBoxDimensions((current) => [...current, { length: "", width: "", height: "", boxCount: "" }])} className="rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-accent">Add dimension group</button><span className="text-[11px] text-muted-foreground">{boxDimensions.reduce((sum, item) => sum + (Number(item.boxCount) || 0), 0)} of {shipmentDetails.pieces || 0} boxes</span></div></div>{Number(shipmentDetails.value) >= EWAY_THRESHOLD && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3"><div><p className="text-xs font-semibold text-amber-800 dark:text-amber-200">E-Way bill required</p><p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">Required for shipment values at or above ₹50,000, regardless of invoice or DC.</p></div><label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-amber-500/30 bg-background px-3 py-2 text-xs font-semibold text-foreground hover:bg-accent"><Upload className="h-3.5 w-3.5 text-primary" />{ewayBill ? ewayBill.name : "Upload E-Way bill"}<input type="file" required accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file && isAllowedDocument(file)) setEwayBill(file); else if (file) setNotice("E-Way bill must be a PDF, JPG, or PNG up to 10 MB"); }} /></label></div>}{Number(shipmentDetails.value) >= EWAY_THRESHOLD && <label htmlFor="eway-bill-number" className="mt-3 block space-y-1 text-xs font-semibold text-muted-foreground">E-Way bill number<input id="eway-bill-number" required aria-label="E-Way bill number, 12 digits" className={field} inputMode="numeric" maxLength={12} pattern="\d{12}" placeholder="12 digits" value={ewayBillNumber} onChange={(event) => setEwayBillNumber(event.target.value.replace(/\D/g, "").slice(0, 12))} /></label>}{Number(shipmentDetails.value) > 0 && Number(shipmentDetails.value) < EWAY_THRESHOLD && <p className="mt-2 text-[11px] text-muted-foreground">E-Way bill is not required below ₹50,000.</p>}<div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-xs font-semibold text-muted-foreground">Payment</span><button type="button" onClick={() => { setPaymentMode("Prepaid"); setCodAmount(""); }} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${paymentMode === "Prepaid" ? "border-primary bg-primary/5 text-primary" : "border-input text-muted-foreground"}`}>Prepaid</button><button type="button" onClick={() => setPaymentMode("COD")} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${paymentMode === "COD" ? "border-primary bg-primary/5 text-primary" : "border-input text-muted-foreground"}`}>COD</button>{paymentMode === "COD" && <label className="ml-0 w-44 space-y-1 text-xs font-semibold text-muted-foreground">COD amount (₹)<input required aria-label="Cash on delivery amount in rupees" className={`${field} ml-0`} placeholder="Amount to collect (₹)" type="number" min="1" value={codAmount} onChange={(event) => setCodAmount(event.target.value)} /></label>}</div></section>
-        <div className="flex flex-col gap-3 border-t border-border/70 pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="min-w-0 flex-1 text-xs text-muted-foreground">{kycStatus?.approved === true ? selectedSavedPickupId ? "You can review the booking before it is dispatched." : "Select a verified Delhivery warehouse before reviewing." : kycStatus ? "Booking is locked until PSS approves the Client verification." : "Booking is locked while verification status loads."}</p><button type="submit" disabled={kycStatus?.approved !== true || !selectedSavedPickupId} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" /> {kycStatus ? "Continue to review" : "Checking verification…"}</button></div>
+        <div className="flex flex-col gap-3 border-t border-border/70 pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="min-w-0 flex-1 text-xs text-muted-foreground">{kycStatus?.approved === true ? selectedSavedPickupId && selectedSavedConsigneeId ? "You can review the booking before it is dispatched." : "Select pickup and delivery warehouses before reviewing." : kycStatus ? "Booking is locked until PSS approves the Client verification." : "Booking is locked while verification status loads."}</p><button type="submit" disabled={kycStatus?.approved !== true || !selectedSavedPickupId || !selectedSavedConsigneeId} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" /> {kycStatus ? "Continue to review" : "Checking verification…"}</button></div>
         {notice && <p role="status" className="text-right text-xs font-medium text-primary">{notice}</p>}
       </form>
 

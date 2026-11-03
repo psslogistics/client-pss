@@ -9,9 +9,10 @@ if (!source.includes("contact_name: pickupPerson.name")) throw new Error("Saved 
 if (!source.includes("contact_name") || !/contact:\s*\{\s*name:\s*pick\(row\.contact_name,\s*row\.contactName/.test(source)) throw new Error("Saved warehouses must restore the consignor name after reload");
 if (!source.includes("state: pickup.state")) throw new Error("Saved warehouses must preserve the consignor state");
 if (!source.includes("row.state") || !/state:\s*pick\(row\.state,\s*parts\.length >= 4 \? parts\[2\]/.test(source)) throw new Error("Saved warehouses must restore the consignor state after reload");
-if (!source.includes('title="Consignee"')) throw new Error("Booking must render direct consignee fields");
+if (!source.includes('title="Consignee"')) throw new Error("Booking must render consignee fields");
 if (!source.includes('title="Consignor"')) throw new Error("Booking must render the warehouse-backed consignor fields");
-if (!source.includes('onSearchWarehouse={searchSavedAddresses}')) throw new Error("Booking must search warehouses for consignor addresses");
+if ((source.match(/onSearchWarehouse={searchSavedAddresses}/g) ?? []).length < 2) throw new Error("Booking must search warehouses for both address fields");
 if (source.includes('fetchConsigneeAddresses') || source.includes('consigneeAddressRows')) throw new Error("Booking must not read the deleted saved-consignee address collection");
-if (!source.includes('row.provider === "delhivery" && row.providerStatus === "active" && Boolean(row.providerReference && row.providerName)')) throw new Error("Booking must expose only provider-verified Delhivery warehouses");
+if (!source.includes('const delhiveryWarehouses =')) throw new Error("Booking must source both address fields from warehouses");
+if (!source.includes('selectedSavedConsigneeId')) throw new Error("Booking must retain the selected delivery warehouse identity");
 console.log("Client exact warehouse contract passed");
