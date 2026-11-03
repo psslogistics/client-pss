@@ -23,6 +23,7 @@ import { formatDate as formatClientDate, formatDateTime as formatClientDateTime 
 import { getPssErrorDetails, pssApi, pssApiFile } from "@/lib/pss-api";
 import { mergeProviderPdfs } from "@/lib/merge-pdf";
 import { invoiceNumberForLr } from "@/lib/invoice-contract";
+import { isProviderArtifactFilename } from "@/lib/document-classification";
 import { SkeletonProvider } from "@/components/ui/skeleton";
 import { DelhiveryLabelMenu } from "@/components/block/delhiveryLabelMenu";
 
@@ -449,7 +450,7 @@ export default function DelhiveryTrackingPane() {
         if (cancelled) return;
         const documents = (result.data ?? []).filter((document) => {
           const filename = String(document.original_filename ?? "").toLowerCase();
-          return !filename.startsWith("delhivery-pod-") && !filename.startsWith("eway-bill-");
+          return !isProviderArtifactFilename(filename);
         }).map((document) => ({
           id: String(document.id ?? ""),
           original_filename: String(document.original_filename || "Invoice document"),
