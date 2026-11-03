@@ -287,6 +287,7 @@ export default function ShipmentBooking() {
   const [orderId, setOrderId] = useState("");
   const [dcOpen, setDcOpen] = useState(false);
   const [savedPickups, setSavedPickups] = useState<SavedPickup[]>([]);
+  const [warehousesLoading, setWarehousesLoading] = useState(true);
   const [selectedSavedPickupId, setSelectedSavedPickupId] = useState("");
   const [savedName, setSavedName] = useState("");
   const [isRenamingSaved, setIsRenamingSaved] = useState(false);
@@ -380,7 +381,7 @@ export default function ShipmentBooking() {
       const message = `Warehouses are unavailable: ${getPssErrorDetails(error, "temporarily unavailable").message}`;
       setSavedAddressesError(message);
       setNotice(message);
-    });
+    }).finally(() => { if (!cancelled) setWarehousesLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -1178,7 +1179,7 @@ if (bulkCompleted) return <div className="mx-auto flex w-full max-w-xl flex-col 
       <form onSubmit={submit} className="pss-booking-form space-y-4">
         {kycStatus?.approved !== true && <div role="alert" className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm"><div><p className="font-semibold text-amber-900 dark:text-amber-100">{kycStatus ? "Client verification is required before booking" : "Checking client verification"}</p><p className="mt-1 text-xs text-amber-800 dark:text-amber-200">{kycStatus ? "Finish the required verification items in Profile & Account. Booking stays disabled until PSS approves them." : "Booking is temporarily unavailable while the verification status loads."}</p>{kycStatus?.missing_fields?.length ? <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">Missing: {kycStatus.missing_fields.join(", ")}</p> : null}</div>{kycStatus && <a href="/dashboard/profileAccountManagement" className="rounded-lg border border-amber-500/40 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-500/10 dark:text-amber-100">Open verification</a>}</div>}
         {savedAddressesError && <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><p>Warehouses are unavailable right now. Booking is paused until a warehouse can be loaded.</p><p className="mt-1 text-[11px] opacity-80">{savedAddressesError}</p></div>}
-        {!savedAddressesError && savedPickups.length === 0 && <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><p className="font-semibold">No Delhivery warehouse is available</p><p className="mt-1">Add the pickup and delivery addresses under Warehouses, then select them here. Delhivery verifies the selected pickup warehouse during booking.</p></div>}
+        {!warehousesLoading && !savedAddressesError && savedPickups.length === 0 && <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"><p className="font-semibold">No warehouse records are available</p><p className="mt-1">Add the pickup and delivery locations under Warehouses, then select them here. Delhivery verification status is shown on the warehouse record.</p></div>}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><PartyFieldsCompact title="Consignor" tone="bg-amber-500/10 text-amber-600" address={pickup} setAddress={setPickup} person={pickupPerson} setPerson={setPickupPerson} pinStatus={pickupPinStatus} onPincodeChange={(value) => void lookupPincode("pickup", value)} onAddressPaste={handleAddressPaste("pickup")} warehouses={savedPickups} selectedWarehouseId={selectedSavedPickupId} onSelectWarehouse={reuseSavedPickup} onSearchWarehouse={searchSavedAddresses} warehouseSearchLoading={savedPickupSearchLoading} onLoadMoreWarehouses={loadMoreSavedAddresses} warehousesHaveMore={savedAddressHasMore} warehousesLoadingMore={savedAddressLoadingMore} /><PartyFieldsCompact title="Consignee" tone="bg-emerald-500/10 text-emerald-600" address={delivery} setAddress={setDelivery} person={deliveryPerson} setPerson={setDeliveryPerson} pinStatus={deliveryPinStatus} onPincodeChange={(value) => void lookupPincode("delivery", value)} onAddressPaste={handleAddressPaste("delivery")} warehouses={savedPickups} selectedWarehouseId={selectedSavedConsigneeId} onSelectWarehouse={reuseSavedConsignee} onSearchWarehouse={searchSavedAddresses} warehouseSearchLoading={savedPickupSearchLoading} onLoadMoreWarehouses={loadMoreSavedAddresses} warehousesHaveMore={savedAddressHasMore} warehousesLoadingMore={savedAddressLoadingMore} /></div>
 
         <section className="rounded-xl border border-border bg-card p-4 shadow-xs">
