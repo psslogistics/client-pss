@@ -365,7 +365,7 @@ export default function ShipmentBooking() {
 
   useEffect(() => {
     let cancelled = false;
-    void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>("/v1/warehouses?limit=50&offset=0").then((warehouseResult) => {
+    void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>("/v1/warehouses?limit=50&offset=0", { cache: "no-store" }).then((warehouseResult) => {
       if (cancelled) return;
       const errors: string[] = [];
       const rows = warehouseResult.data ?? [];
@@ -390,7 +390,7 @@ export default function ShipmentBooking() {
     if (savedAddressSearchTimer.current) window.clearTimeout(savedAddressSearchTimer.current);
     setSavedPickupSearchLoading(true);
     savedAddressSearchTimer.current = window.setTimeout(() => {
-      void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=0&search=${encodeURIComponent(normalized)}`).then((result) => {
+      void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=0&search=${encodeURIComponent(normalized)}`, { cache: "no-store" }).then((result) => {
         if (sequence !== savedAddressSearchSequence.current) return;
         const rows = result.data ?? [];
         const mapped = dedupeSavedAddresses(rows.map(savedAddressRecord));
@@ -411,7 +411,7 @@ export default function ShipmentBooking() {
     const sequence = savedAddressSearchSequence.current;
     const { query, offset } = savedAddressPaging.current;
     setSavedAddressLoadingMore(true);
-    void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=${offset}&search=${encodeURIComponent(query)}`).then((result) => {
+    void pssApi<{ data: Array<Record<string, string>>; pagination?: { has_more?: boolean } }>(`/v1/warehouses?limit=50&offset=${offset}&search=${encodeURIComponent(query)}`, { cache: "no-store" }).then((result) => {
       if (sequence !== savedAddressSearchSequence.current) return;
       const rows = result.data ?? [];
       savedAddressPaging.current = { query, offset: offset + rows.length };
