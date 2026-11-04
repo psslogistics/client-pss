@@ -19,7 +19,6 @@ export default function PssRateCheck() {
   const [includeInsurance, setIncludeInsurance] = useState(false);
   const [riskType, setRiskType] = useState<RiskType>("owner");
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [rateServiceAvailable, setRateServiceAvailable] = useState(false);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const requestId = useRef(0);
   const [error, setError] = useState("");
@@ -32,20 +31,20 @@ export default function PssRateCheck() {
       pssApi<{ data: Account[] }>("/v1/provider-account-policies"),
       pssApi<{ data: Record<string, { available_for_client?: boolean; rate_enabled?: boolean }> }>("/v1/client-courier-capabilities"),
     ]).then(([accountsResult, capabilitiesResult]) => {
-      if (accountsResult.status === "rejected") { setError(accountsResult.reason instanceof Error ? accountsResult.reason.message : "Assigned Delhivery accounts could not be loaded."); return; }
-      if (capabilitiesResult.status === "rejected") { setError("Courier availability could not be confirmed for this account."); return; }
-      const delhivery = capabilitiesResult.value.data?.delhivery;
-      const available = delhivery?.available_for_client === true && delhivery.rate_enabled !== false;
-      setRateServiceAvailable(available);
-      setAccounts(available ? (accountsResult.value.data ?? []).filter((account) => account.provider.toLowerCase() === "delhivery" && isActiveDelhiveryB2BAccount(account.account_name) && account.enabled !== false && account.explicitly_configured === true) : []);
+      // PSS rate-card previews do not depend on live courier health. The
+      // provider capability result is still loaded for operational context,
+      // but it must not block an internal customer-charge calculation.
+      if (accountsResult.status === "fulfilled") {
+        setAccounts((accountsResult.value.data ?? []).filter((account) => account.provider.toLowerCase() === "delhivery" && isActiveDelhiveryB2BAccount(account.account_name) && account.enabled !== false && account.explicitly_configured === true));
+      }
+      if (capabilitiesResult.status === "rejected" && accountsResult.status === "rejected") setError("Rate-card preview is available, but courier account status could not be loaded.");
     });
   }, []);
 
   const update = (key: keyof typeof form, value: string) => { setError(""); setQuotes([]); setForm((current) => ({ ...current, [key]: value })); };
   const calculate = async () => {
     const currentRequestId = ++requestId.current;
-    const requestedAccounts = accounts;
-    if (!rateServiceAvailable || !requestedAccounts.length) { setError("The PSS courier rate service is not currently available for this account."); return; }
+    const requestedAccounts: Array<Account | null> = accounts.length ? accounts : [null];
     const weight = Number(form.weight_kg);
     const invoiceValue = Number(form.invoice_value);
     if (!form.weight_kg.trim() || !Number.isFinite(weight) || weight <= 0) { setError("Enter a weight greater than 0 kg before calculating."); return; }
@@ -53,17 +52,17 @@ export default function PssRateCheck() {
     setLoading(true); setError(""); setQuotes([]);
     try {
       const results = await Promise.allSettled(requestedAccounts.map(async (account) => {
-        const response = await pssApi<{ data: Quote }>("/v1/pricing/quotes", { method: "POST", body: JSON.stringify({ origin_pincode: form.origin_pincode, destination_pincode: form.destination_pincode, actual_weight_kg: weight, volumetric_weight_kg: 0, invoice_value: invoiceValue, provider_account_id: account.id, include_insurance: includeInsurance, risk_type: includeInsurance ? riskType : undefined, preview_only: true }) });
-        return { ...response.data, provider_account_id: account.id, provider_account_name: account.account_name };
+        const response = await pssApi<{ data: Quote }>("/v1/pricing/quotes", { method: "POST", body: JSON.stringify({ origin_pincode: form.origin_pincode, destination_pincode: form.destination_pincode, actual_weight_kg: weight, volumetric_weight_kg: 0, invoice_value: invoiceValue, ...(account ? { provider_account_id: account.id } : {}), include_insurance: includeInsurance, risk_type: includeInsurance ? riskType : undefined, preview_only: true }) });
+        return { ...response.data, provider_account_id: account?.id ?? response.data.provider_account_id ?? null, provider_account_name: account?.account_name ?? response.data.provider_account_name ?? null };
       }));
       if (currentRequestId !== requestId.current) return;
       const successful = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
-      if (!successful.length) throw new Error("No assigned Delhivery account could calculate this shipment.");
+      if (!successful.length) throw new Error("The PSS rate-card preview could not be calculated.");
       // Keep one client-facing quote per assigned account. Internal provider
       // account names remain routing data; the render layer uses approved
       // public labels below.
       setQuotes(successful);
-      if (successful.length < requestedAccounts.length) setError("Some assigned accounts could not return a quote.");
+      if (accounts.length > 0 && successful.length < accounts.length) setError("Some assigned accounts could not return a quote.");
     } catch (caught) { if (currentRequestId === requestId.current) setError(caught instanceof Error ? caught.message : "Unable to calculate the PSS rates."); }
     finally { if (currentRequestId === requestId.current) setLoading(false); }
   };
