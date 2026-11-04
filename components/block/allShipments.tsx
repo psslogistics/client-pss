@@ -140,7 +140,7 @@ export default function AllShipments() {
     const unsubscribe = subscribePssDataSync(refresh);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
-    const interval = window.setInterval(onFocus, 30_000);
+    const interval = window.setInterval(onFocus, 60_000);
     return () => { unsubscribe(); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); window.clearInterval(interval); };
   }, []);
   const loadMore = async () => { if (loadingMore || !hasMore) return; setLoadingMore(true); try { const statusQuery = apiStatusQuery(status); const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${offset}${statusQuery}`); const nextRows = (result.data ?? []).map(mapShipmentRow); setRows((current) => [...current, ...nextRows.filter((next) => !current.some((existing) => existing.id === next.id))]); setOffset(Number(result.pagination?.next_offset ?? offset + nextRows.length)); setHasMore(Boolean(result.pagination?.has_more)); } catch (error) { setNotice(getPssErrorDetails(error, "More shipments could not be loaded.").message); } finally { setLoadingMore(false); } };

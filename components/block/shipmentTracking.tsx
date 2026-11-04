@@ -238,7 +238,7 @@ export default function ShipmentTracking() {
     const unsubscribe = subscribePssDataSync(refreshWhenVisible);
     window.addEventListener("focus", refreshWhenVisible);
     document.addEventListener("visibilitychange", refreshWhenVisible);
-    const interval = window.setInterval(refreshWhenVisible, 30_000);
+    const interval = window.setInterval(refreshWhenVisible, 60_000);
     return () => { unsubscribe(); window.removeEventListener("focus", refreshWhenVisible); document.removeEventListener("visibilitychange", refreshWhenVisible); window.clearInterval(interval); };
   }, []);
   useEffect(() => { const timer = window.setTimeout(() => { const id = requestedId; if (!id) { setSelectedId(""); setMobileDetail(false); return; } const found = allShipments.find((s) => s.id === id || (s.pssTracking === id && !allShipments.some((candidate) => candidate.id !== s.id && candidate.pssTracking === id)) || (s.courierTracking === id && !allShipments.some((candidate) => candidate.id !== s.id && candidate.courierTracking === id))); if (found) { setSelectedId(found.id); setMobileDetail(true); setNotice(""); return; } if (!allShipments.length) return; void pssApi<{ data?: Record<string, unknown> }>(`/v1/shipments/${encodeURIComponent(id)}`).then((result) => { if (!result.data?.id) throw new Error(`No shipment matched reference ${id}`); const shipment = mapApiShipment(result.data, []); setAllShipments((current) => [shipment, ...current.filter((item) => item.id !== shipment.id)]); setSelectedId(shipment.id); setMobileDetail(true); setNotice(""); }).catch((error) => setNotice(getPssErrorDetails(error, `No shipment matched reference ${id}.`).message)); }, 0); return () => window.clearTimeout(timer); }, [allShipments, requestedId]);
