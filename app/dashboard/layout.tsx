@@ -204,19 +204,30 @@ function SidebarInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    const loadProfile = async () => {
+    const loadProfile = async (attempt = 0): Promise<void> => {
       // This is presentation-only data. Use the locally available session so the
       // shell does not add a blocking auth round-trip during the first render.
       const { data: sessionResult } = await supabase.auth.getSession();
       const user = sessionResult.session?.user;
-      if (!user || !active) return;
+      if (!active) return;
+      if (!user) {
+        if (attempt < 3) {
+          await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+          return loadProfile(attempt + 1);
+        }
+        return;
+      }
       const { data } = await supabase.from("profiles").select("display_name,email,company_name").eq("id", user.id).maybeSingle();
       if (active) setProfile({ display_name: data?.display_name ?? user.user_metadata?.full_name ?? null, email: data?.email ?? user.email ?? null, company_name: data?.company_name ?? null });
     };
     const initialTimer = window.setTimeout(() => void loadProfile(), 700);
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") void loadProfile();
+    });
     return () => {
       active = false;
       if (initialTimer !== undefined) window.clearTimeout(initialTimer);
+      authListener.subscription.unsubscribe();
     };
   }, [supabase]);
 
