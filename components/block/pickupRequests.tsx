@@ -102,6 +102,14 @@ const hasPickupDatePassed = (pickup: Pick<Pickup, "date" | "status">) =>
 type ProviderAccount = { id: string; provider: string; account_name: string; enabled?: boolean; status?: string };
 type SavedWarehouse = { id: string; source?: "warehouse" | "address"; name?: string; label?: string; address_kind?: string; address?: string; city?: string; state?: string; pincode?: string; contact_name?: string; phone?: string; contact?: string; provider_account_id?: string };
 
+// Keep the legacy address shape type-safe without reintroducing the deleted
+// consignor/consignee collections. If an older API payload ever supplies an
+// address record, it must remain visibly distinct and can never become a
+// warehouse_id during pickup scheduling.
+function savedLocationSource(source?: SavedWarehouse["source"]) {
+  return source === "address" ? { source: "address" as const } : { source: "warehouse" as const };
+}
+
 function savedWarehouseIdentity(row: SavedWarehouse) {
   return [row.provider_account_id, row.name ?? row.label, row.address, row.city, row.state, row.pincode].map((value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
 }
@@ -263,7 +271,7 @@ export default function PickupRequests() {
         failures.push(`courier accounts: ${getPssErrorDetails(accountsResult.reason, "temporarily unavailable").message}`);
       }
       if (capabilitiesResult.status === "rejected") failures.push(`available couriers: ${getPssErrorDetails(capabilitiesResult.reason, "temporarily unavailable").message}`);
-      const warehouses = warehouseResult.status === "fulfilled" ? (warehouseResult.value.data ?? []).map((warehouse) => ({ ...warehouse, source: "warehouse" as const })) : [];
+      const warehouses = warehouseResult.status === "fulfilled" ? (warehouseResult.value.data ?? []).map((warehouse) => ({ ...warehouse, ...savedLocationSource(warehouse.source) })) : [];
       if (warehouseResult.status === "rejected") failures.push(`warehouses: ${getPssErrorDetails(warehouseResult.reason, "temporarily unavailable").message}`);
       setWarehouses(dedupeSavedWarehouses(warehouses));
       setConfigurationError(failures.join("; "));
