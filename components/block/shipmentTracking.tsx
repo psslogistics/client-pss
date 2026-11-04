@@ -117,8 +117,15 @@ function mapApiShipment(row: Record<string, unknown>, trackingEvents: Array<Reco
   // The invoice/order reference is available before Delhivery issues an LR.
   // Prefer that persisted booking identity so failed or pending bookings do
   // not misleadingly display the generated LR placeholder.
-  const persistedInvoiceNumber = String(row.invoice_number ?? row.order_id ?? "").trim();
-  const invoiceNumber = persistedInvoiceNumber || invoiceNumberForLr(lrn);
+  const persistedInvoiceReference = String(row.invoice_reference ?? "").trim();
+  const persistedInvoiceNumber = String(row.invoice_number ?? "").trim();
+  const persistedOrderId = String(row.order_id ?? "").trim();
+  // Older rows used the generated INV-{LR} display value as order_id. Do not
+  // present that implementation placeholder as the customer's invoice.
+  const legacyGeneratedInvoice = /^INV-\d+$/i.test(persistedInvoiceNumber || persistedOrderId);
+  const invoiceNumber = persistedInvoiceReference ||
+    (legacyGeneratedInvoice ? "Invoice reference unavailable" : persistedInvoiceNumber || persistedOrderId) ||
+    (lrn ? invoiceNumberForLr(lrn) : "Invoice reference unavailable");
   const address = (value: unknown) => {
     if (typeof value === "string") {
       try { return address(JSON.parse(value)); } catch { return { name: "Not provided", line: "" }; }
