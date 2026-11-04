@@ -105,6 +105,9 @@ export default function AllShipments() {
   const [selectingAll, setSelectingAll] = useState(false);
   const hadRowsRef = useRef(false);
   const apiStatusQuery = (value: ShipmentStatus) => value === "All" ? "" : `&status=${encodeURIComponent(value === "In Transit" ? "in_transit" : value)}`;
+  // Keep the list request lightweight. Tracking history belongs to the
+  // dedicated Tracking surface; requesting every event for 50 rows made the
+  // production list hit the read timeout as shipment history grew.
   // This effect owns the remote shipment fetch and its loading lifecycle.
   useEffect(() => {
     let cancelled = false;
@@ -113,7 +116,7 @@ export default function AllShipments() {
     setLoading(true);
     setLoadError("");
     const statusQuery = apiStatusQuery(status);
-    void pssApi<{ data: Array<Record<string, unknown>>; stale_data?: boolean; pagination?: { next_offset?: number; has_more?: boolean; total?: number; status_counts?: Record<string, number> } }>(`/v1/shipments?limit=50&offset=0&include_tracking=1${statusQuery}`)
+    void pssApi<{ data: Array<Record<string, unknown>>; stale_data?: boolean; pagination?: { next_offset?: number; has_more?: boolean; total?: number; status_counts?: Record<string, number> } }>(`/v1/shipments?limit=50&offset=0${statusQuery}`)
       .then((result) => {
         if (cancelled) return;
         hadRowsRef.current = (result.data ?? []).length > 0;
@@ -140,7 +143,7 @@ export default function AllShipments() {
     const interval = window.setInterval(onFocus, 30_000);
     return () => { unsubscribe(); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); window.clearInterval(interval); };
   }, []);
-  const loadMore = async () => { if (loadingMore || !hasMore) return; setLoadingMore(true); try { const statusQuery = apiStatusQuery(status); const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${offset}&include_tracking=1${statusQuery}`); const nextRows = (result.data ?? []).map(mapShipmentRow); setRows((current) => [...current, ...nextRows.filter((next) => !current.some((existing) => existing.id === next.id))]); setOffset(Number(result.pagination?.next_offset ?? offset + nextRows.length)); setHasMore(Boolean(result.pagination?.has_more)); } catch (error) { setNotice(getPssErrorDetails(error, "More shipments could not be loaded.").message); } finally { setLoadingMore(false); } };
+  const loadMore = async () => { if (loadingMore || !hasMore) return; setLoadingMore(true); try { const statusQuery = apiStatusQuery(status); const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${offset}${statusQuery}`); const nextRows = (result.data ?? []).map(mapShipmentRow); setRows((current) => [...current, ...nextRows.filter((next) => !current.some((existing) => existing.id === next.id))]); setOffset(Number(result.pagination?.next_offset ?? offset + nextRows.length)); setHasMore(Boolean(result.pagination?.has_more)); } catch (error) { setNotice(getPssErrorDetails(error, "More shipments could not be loaded.").message); } finally { setLoadingMore(false); } };
   const statusCount = (statusName: ShipmentStatus) => { if (!Object.keys(serverStatusCounts).length) return statusName === "All" ? rows.length : statusName === "Active" ? rows.filter((row) => activeStatuses.has(row.status)).length : rows.filter((row) => row.status === statusName).length; const key = statusName.toLowerCase().replaceAll(" ", "_"); if (statusName === "All") return serverTotal ?? rows.length; if (statusName === "Booked") return ["created", "booked", "provider_pending", "manifested"].reduce((sum, keyName) => sum + Number(serverStatusCounts[keyName] ?? 0), 0); if (statusName === "Active") return countActiveShipmentStatuses(serverTotal ?? rows.length, serverStatusCounts); if (statusName === "In Transit") return Number(serverStatusCounts.picked_up ?? 0) + Number(serverStatusCounts.in_transit ?? 0); if (statusName === "Returned") return Number(serverStatusCounts.rto ?? 0) + Number(serverStatusCounts.returned ?? 0); return Number(serverStatusCounts[key] ?? 0); };
   const counts = statuses.reduce<Record<ShipmentStatus, number>>((result, item) => { result[item] = statusCount(item); return result; }, {} as Record<ShipmentStatus, number>);
   const matchesCurrentFilter = (row: ShipmentRow) => (!query.trim() || searchable(row).includes(query.trim().toLowerCase())) && (status === "All" || status === "Active" ? status === "All" || activeStatuses.has(row.status) : row.status === status);
@@ -173,7 +176,7 @@ export default function AllShipments() {
       const statusQuery = apiStatusQuery(status);
       const allRows: ShipmentRow[] = []; let pageOffset = 0; let more = true;
       while (more) {
-        const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${pageOffset}&include_tracking=1${statusQuery}`);
+        const result = await pssApi<{ data: Array<Record<string, unknown>>; pagination?: { next_offset?: number; has_more?: boolean } }>(`/v1/shipments?limit=50&offset=${pageOffset}${statusQuery}`);
         const pageRows = (result.data ?? []).map(mapShipmentRow);
         allRows.push(...pageRows); const nextOffset = Number(result.pagination?.next_offset ?? pageOffset + pageRows.length);
         more = Boolean(result.pagination?.has_more) && nextOffset > pageOffset; pageOffset = nextOffset;
