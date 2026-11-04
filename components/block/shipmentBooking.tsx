@@ -20,7 +20,7 @@ import Dropdown from "@/components/ui/dropdown";
 import ConfirmationToast, { type ConfirmationToastTone } from "@/components/ui/confirmationToast";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
 import { createClient } from "@/lib/supabase/client";
-import { readClientVerificationCache, writeClientVerificationCache, type ClientVerificationStatus } from "@/lib/client-verification-cache";
+import { readActiveClientVerificationCache, readClientVerificationCache, writeClientVerificationCache, type ClientVerificationStatus } from "@/lib/client-verification-cache";
 import { canonicalDelhiveryB2BAccountName, isActiveDelhiveryB2BAccount } from "@/lib/client-pricing-data";
 import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 
@@ -438,12 +438,17 @@ export default function ShipmentBooking() {
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
+    const activeCache = readActiveClientVerificationCache();
+    if (activeCache?.fresh) setKycStatus(activeCache.value);
     void (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user.id;
       const cached = userId ? readClientVerificationCache(userId) : null;
       if (cached && !cancelled) setKycStatus(cached.value);
       if (cached?.fresh) return;
+      // Never carry a cached approval across accounts. If auth rehydration
+      // resolves to a different account, clear the optimistic state first.
+      if (activeCache?.userId && activeCache.userId !== userId && !cancelled) setKycStatus(null);
       try {
         const response = await pssApi<{ data: ClientVerificationStatus }>("/v1/kyc-status");
         if (userId) writeClientVerificationCache(userId, response.data);
