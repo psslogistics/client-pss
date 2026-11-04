@@ -11,6 +11,12 @@ const requiredIds = [
   'exception-no-reference',
   'mps-two-stickers',
   'missing-provider-reference',
+  'provider-rejected',
+  'provider-timeout',
+  'missing-reference',
+  'duplicate-click',
+  'expired-session',
+  'persistence-failure',
   'cod-pending',
   'cod-paid',
   'pickup-failed',
@@ -36,5 +42,14 @@ assert(scenarios.get('invoice-paid').invoice_number === 'INV-321964753', 'paid i
 assert(scenarios.get('invoice-unpaid').invoice_number === 'INV-321964754', 'unpaid invoice fixture must use LR invoice numbering');
 assert(scenarios.get('kyc-draft').booking_allowed === false, 'draft KYC must be blocked from final booking');
 assert(scenarios.get('kyc-approved').booking_allowed === true, 'approved KYC must be allowed to book');
+for (const id of ['provider-rejected', 'provider-timeout', 'missing-reference', 'duplicate-click', 'expired-session', 'persistence-failure']) {
+  const scenario = scenarios.get(id);
+  assert(scenario.wallet_debit === false, `${id} must not create a wallet debit in simulation`);
+  assert(scenario.retry_allowed === false || scenario.retry_allowed === true, `${id} must declare retry policy`);
+  assert(typeof scenario.outcome === 'string', `${id} must declare a truthful outcome`);
+}
+assert(scenarios.get('duplicate-click').outcome === 'same_idempotency_key', 'duplicate click must reuse the same idempotency key');
+assert(scenarios.get('provider-timeout').investigate_by === 'idempotency_key', 'timeout must be investigated by idempotency key');
+assert(scenarios.get('persistence-failure').investigate_by === 'request_identity', 'persistence failure must be investigated by request identity');
 
 console.log(`Fixture matrix passed: ${requiredIds.length} required scenarios`);
