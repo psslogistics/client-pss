@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, FileText, LockKeyhole, Phone, ShieldCheck, Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { clearClientVerificationCache } from "@/lib/client-verification-cache";
 import { SkeletonFormSection } from "@/components/ui/skeleton";
 
 type KycStatus = "not_started" | "draft" | "submitted" | "under_review" | "needs_changes" | "approved" | "rejected" | "suspended";
@@ -58,7 +59,7 @@ export default function ClientKycForm() {
     setSaving(true); setError(""); setNotice("");
     const { error: updateError } = await supabase.from("client_kyc_profiles").update(fields).eq("client_id", profile.client_id);
     setSaving(false);
-    if (updateError) setError("KYC details could not be saved."); else { setProfile((current) => current ? { ...current, ...fields } : current); setNotice("KYC details saved."); }
+    if (updateError) setError("KYC details could not be saved."); else { clearClientVerificationCache(); setProfile((current) => current ? { ...current, ...fields } : current); setNotice("KYC details saved."); }
   };
 
   const sendOtp = async () => {
@@ -70,6 +71,7 @@ export default function ClientKycForm() {
       const { error: mobileError } = await supabase.from("client_kyc_profiles").update({ mobile_number: normalized }).eq("client_id", profile.client_id);
       setSaving(false);
       if (mobileError) { setError("The mobile number could not be saved."); return; }
+      clearClientVerificationCache();
       setProfile((current) => current ? { ...current, mobile_number: normalized } : current);
       setOtpSent(true); setError(""); setNotice("Mobile OTP is temporarily a placeholder. SMS verification will be enabled after the provider is configured."); return;
     }
@@ -111,6 +113,7 @@ export default function ClientKycForm() {
       setError(`The document record could not be saved. ${rowError.message}`);
       return;
     }
+    clearClientVerificationCache();
     setFiles((current) => ({ ...current, [type]: file })); setNotice(`${documentLabel(type)} document uploaded.`); await load();
   };
 
@@ -119,6 +122,7 @@ export default function ClientKycForm() {
     const { data, error: submitError } = await supabase.rpc("submit_client_kyc");
     setSaving(false);
     if (submitError) { setError(submitError.message.includes("mandatory") || submitError.message.includes("requires") ? submitError.message : "KYC could not be submitted."); return; }
+    clearClientVerificationCache();
     setProfile(data as KycProfile); setNotice("KYC request submitted to Super Admin for review.");
   };
 

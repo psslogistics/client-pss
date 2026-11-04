@@ -19,6 +19,8 @@ import {
 import Dropdown from "@/components/ui/dropdown";
 import ConfirmationToast, { type ConfirmationToastTone } from "@/components/ui/confirmationToast";
 import { getPssErrorDetails, pssApi } from "@/lib/pss-api";
+import { createClient } from "@/lib/supabase/client";
+import { readClientVerificationCache, writeClientVerificationCache, type ClientVerificationStatus } from "@/lib/client-verification-cache";
 import { canonicalDelhiveryB2BAccountName, isActiveDelhiveryB2BAccount } from "@/lib/client-pricing-data";
 import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 
@@ -269,7 +271,7 @@ function BulkPincodeField({ label, value, onChange }: { label: string; value: st
 }
 
 export default function ShipmentBooking() {
-  const [kycStatus, setKycStatus] = useState<{ approved: boolean; status: string; missing_fields: string[] } | null>(null);
+  const [kycStatus, setKycStatus] = useState<ClientVerificationStatus | null>(null);
   const [pickup, setPickup] = useState<Address>(emptyAddress);
   const [delivery, setDelivery] = useState<Address>(emptyAddress);
   const [pickupPerson, setPickupPerson] = useState<Contact>(emptyContact);
@@ -435,9 +437,23 @@ export default function ShipmentBooking() {
 
   useEffect(() => {
     let cancelled = false;
-    void pssApi<{ data: { approved: boolean; status: string; missing_fields: string[] } }>("/v1/kyc-status")
-      .then((response) => { if (!cancelled) setKycStatus(response.data); })
-      .catch(() => { if (!cancelled) setKycStatus({ approved: false, status: "unavailable", missing_fields: ["verification status"] }); });
+    const supabase = createClient();
+    void (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user.id;
+      const cached = userId ? readClientVerificationCache(userId) : null;
+      if (cached && !cancelled) setKycStatus(cached.value);
+      if (cached?.fresh) return;
+      try {
+        const response = await pssApi<{ data: ClientVerificationStatus }>("/v1/kyc-status");
+        if (userId) writeClientVerificationCache(userId, response.data);
+        if (!cancelled) setKycStatus(response.data);
+      } catch {
+        // A stale status can keep the form usable during a transient outage;
+        // without a prior result, fail closed as before.
+        if (!cancelled && !cached) setKycStatus({ approved: false, status: "unavailable", missing_fields: ["verification status"] });
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
 
