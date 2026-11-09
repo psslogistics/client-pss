@@ -25,7 +25,10 @@ export async function requireClientAccess() {
   if (roleLookupError) redirect('/auth-error?reason=role');
   if (role?.role_code !== 'client_user') redirect('/access-denied?reason=missing-role');
   if (accountError) redirect('/auth-error?reason=client-account');
-  const activeMembership = activeMemberships.find((membership) => accounts?.some((account) => account.id === membership.client_id && account.status === 'active'));
+  // A newly registered client is intentionally on_hold until KYC is approved.
+  // The client must still be able to enter the workspace to complete KYC;
+  // booking/provider actions remain gated by the KYC status separately.
+  const activeMembership = activeMemberships.find((membership) => accounts?.some((account) => account.id === membership.client_id && account.status !== 'disabled'));
   if (!activeMembership) redirect('/access-pending?reason=client-assignment');
   return { userId, profile: data, role, clientId: activeMembership.client_id };
 }

@@ -33,7 +33,10 @@ export async function updateSession(request: NextRequest) {
     if (roleLookupError) return NextResponse.redirect(new URL('/auth-error?reason=role', request.url))
     if (role?.role_code !== 'client_user') return NextResponse.redirect(new URL('/access-denied?reason=missing-role', request.url))
     if (accountError) return NextResponse.redirect(new URL('/auth-error?reason=client-account', request.url))
-    const assigned = activeMemberships.some((membership) => accounts?.some((account) => account.id === membership.client_id && account.status === 'active'))
+    // on_hold is the expected pre-KYC state. It must not block the client from
+    // reaching the workspace and submitting KYC; only disabled accounts are
+    // denied here. Booking remains gated by the approved KYC status.
+    const assigned = activeMemberships.some((membership) => accounts?.some((account) => account.id === membership.client_id && account.status !== 'disabled'))
     if (!assigned) return NextResponse.redirect(new URL('/access-pending?reason=client-assignment', request.url))
   }
   return response
