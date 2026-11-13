@@ -248,10 +248,10 @@ export default function PickupRequests() {
 
   useEffect(() => {
     if (!scheduleOpen || !form.provider || !form.providerAccountId) return;
-    const query = new URLSearchParams({ provider: form.provider, provider_account_id: form.providerAccountId, ...(form.pincode ? { pincode: form.pincode } : {}) });
+    const query = new URLSearchParams({ provider: form.provider, provider_account_id: form.providerAccountId, ...(form.pincode ? { pincode: form.pincode } : {}), ...(form.warehouseId ? { warehouse_id: form.warehouseId } : {}), ...(form.address ? { pickup_line: form.address } : {}), ...(form.city ? { city: form.city } : {}), ...(form.state ? { state: form.state } : {}) });
     setCandidateLoading(true); setCandidateError("");
     void pssApi<{ data?: PickupCandidate[] }>(`/v1/pickup-candidates?${query.toString()}`).then((result) => { setPickupCandidates(result.data ?? []); setSelectedCandidateIds([]); }).catch((error) => { const details = getPssErrorDetails(error, "Manifested shipments could not be loaded."); setCandidateError(details.message); }).finally(() => setCandidateLoading(false));
-  }, [scheduleOpen, form.provider, form.providerAccountId, form.pincode]);
+  }, [scheduleOpen, form.provider, form.providerAccountId, form.pincode, form.warehouseId, form.address, form.city, form.state]);
 
   useEffect(() => {
     let cancelled = false;
@@ -386,7 +386,7 @@ export default function PickupRequests() {
       const location = `${form.address}, ${form.city}, ${form.state}, ${form.pincode}, ${form.country}`;
       const selectedCandidates = pickupCandidates.filter((candidate) => selectedCandidateIds.includes(candidate.id));
       const manifested = selectedCandidates.length > 0;
-      const result = await pssApi<{ data: { id: string; status?: string; provider_status?: string; provider_reference?: string | null; requested_date?: string; requested_time_slot?: string } }>("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ requested_date: form.date, requested_time_slot: form.window, pickup_address: location, contact_name: form.customer, contact_phone: form.contact, contact_email: form.email || undefined, city: form.city, state: form.state, pincode: form.pincode, country: form.country, provider: form.provider, provider_account_id: form.providerAccountId, warehouse_id: form.warehouseId || undefined, selection_mode: manifested ? "manifested" : "blind", shipment_ids: manifested ? selectedCandidateIds : undefined, awb_number: manifested ? undefined : form.awbNumber.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean), pieces: manifested ? undefined : Number(form.pieces), total_weight_kg: manifested ? undefined : Number(form.weight), notes: form.notes }) });
+      const result = await pssApi<{ data: { id: string; status?: string; provider_status?: string; provider_reference?: string | null; requested_date?: string; requested_time_slot?: string } }>("/v1/pickups", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ requested_date: form.date, requested_time_slot: form.window, pickup_address: location, pickup_line: form.address, contact_name: form.customer, contact_phone: form.contact, contact_email: form.email || undefined, city: form.city, state: form.state, pincode: form.pincode, country: form.country, provider: form.provider, provider_account_id: form.providerAccountId, warehouse_id: form.warehouseId || undefined, selection_mode: manifested ? "manifested" : "blind", shipment_ids: manifested ? selectedCandidateIds : undefined, awb_number: manifested ? undefined : form.awbNumber.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean), pieces: manifested ? undefined : Number(form.pieces), total_weight_kg: manifested ? undefined : Number(form.weight), notes: form.notes }) });
       const pieces = manifested ? selectedCandidates.reduce((sum, item) => sum + Math.max(1, Number(item.pieces ?? 1)), 0) : Number(form.pieces) || 1;
       const weight = manifested ? selectedCandidates.reduce((sum, item) => sum + Math.max(0, Number(item.total_weight_kg ?? 0)), 0) : Number(form.weight);
       const providerReference = String(result.data.provider_reference ?? "").trim();

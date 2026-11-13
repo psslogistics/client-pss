@@ -9,6 +9,8 @@ const checks = [
   ["latest pickup requests sort first", source.includes('key: "createdAt", direction: "desc"') && source.includes("Date.parse(a.createdAt || \"\")") && source.includes("createdAt: String(row.created_at ?? \"\")")],
   ["invalid provider references remain unscheduled", source.includes('rawProviderReference && /^\\d+$/.test(rawProviderReference)') && source.includes('providerReference || "Not scheduled"')],
   ["saved addresses do not masquerade as warehouse IDs", source.includes('source: "warehouse" as const') && source.includes('source: "address" as const') && source.includes('warehouse.source === "warehouse" ? warehouse.id : ""')],
+  ["manifest candidates are scoped to the selected warehouse location", source.includes("warehouse_id") && source.includes("pickup_line") && source.includes("form.warehouseId, form.address, form.city, form.state")],
+  ["pickup submission sends the canonical warehouse line", source.includes("pickup_line: form.address")],
   ["standalone pickups allow optional AWB references", source.includes("Delhivery AWB(s) (optional)") && source.includes("Leave blank for a location-only pickup") && source.includes("awb_number: manifested ? undefined : form.awbNumber.split") && !source.includes('required={form.provider === "delhivery"}')],
   ["retry/reschedule/cancel actions exist", source.includes("retryPickup") && source.includes("reschedulePickup") && source.includes("cancelPickup")],
   ["refresh and calendar actions exist", source.includes("loadPickups(true)") && source.includes("Calendar View")],
