@@ -11,7 +11,7 @@ const checks = [
   ["saved addresses do not masquerade as warehouse IDs", source.includes('source: "warehouse" as const') && source.includes('source: "address" as const') && source.includes('warehouse.source === "warehouse" ? warehouse.id : ""')],
   ["manifest candidates are scoped to the selected warehouse location", source.includes("warehouse_id") && source.includes("pickup_line") && source.includes("form.warehouseId, form.address, form.city, form.state")],
   ["pickup submission sends the canonical warehouse line", source.includes("pickup_line: form.address")],
-  ["standalone pickups allow optional AWB references", source.includes("Delhivery AWB(s) (optional)") && source.includes("Leave blank for a location-only pickup") && source.includes("awb_number: manifested ? undefined : form.awbNumber.split") && !source.includes('required={form.provider === "delhivery"}')],
+  ["Delhivery standalone pickups require an AWB before submission", source.includes("Select a manifested shipment or enter at least one Delhivery AWB") && source.includes("requiresStandaloneAwb") && source.includes("hasStandaloneAwb") && source.includes("PROVIDER_REFERENCE_REQUIRED") === false],
   ["retry/reschedule/cancel actions exist", source.includes("retryPickup") && source.includes("reschedulePickup") && source.includes("cancelPickup")],
   ["refresh and calendar actions exist", source.includes("loadPickups(true)") && source.includes("Calendar View")],
   ["provider status polling and stale-slot resets exist", source.includes("setInterval") && source.includes("setRescheduleSlotOptions([])")],
