@@ -7,7 +7,7 @@ import { clearClientVerificationCache } from "@/lib/client-verification-cache";
 import { SkeletonFormSection } from "@/components/ui/skeleton";
 
 type KycStatus = "not_started" | "draft" | "submitted" | "under_review" | "needs_changes" | "approved" | "rejected" | "suspended";
-type KycProfile = { client_id: string; status: KycStatus; gst_number: string | null; pan_number: string | null; aadhaar_last4: string | null; mobile_number: string | null; phone_verified_at: string | null; review_notes: string | null };
+type KycProfile = { client_id: string; status: KycStatus; gst_number: string | null; pan_number: string | null; aadhaar_number: string | null; mobile_number: string | null; phone_verified_at: string | null; review_notes: string | null };
 type DocumentRow = { document_type: "aadhaar" | "gst" | "pan" | "other"; original_filename: string; status: string };
 
 const inputClass = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-4 focus:ring-primary/10";
@@ -35,13 +35,13 @@ export default function ClientKycForm() {
     const { data: membership } = await supabase.from("client_memberships").select("client_id").eq("user_id", user.id).eq("membership_status", "active").order("is_primary", { ascending: false }).limit(1).maybeSingle();
     if (!membership?.client_id) { setError("An active client assignment is required for KYC."); setLoading(false); return; }
     const [{ data: nextProfile, error: profileError }, { data: nextDocuments, error: documentError }] = await Promise.all([
-      supabase.from("client_kyc_profiles").select("client_id,status,gst_number,pan_number,aadhaar_last4,mobile_number,phone_verified_at,review_notes").eq("client_id", membership.client_id).maybeSingle(),
+      supabase.from("client_kyc_profiles").select("client_id,status,gst_number,pan_number,aadhaar_number,mobile_number,phone_verified_at,review_notes").eq("client_id", membership.client_id).maybeSingle(),
       supabase.from("client_kyc_documents").select("document_type,original_filename,status").eq("client_id", membership.client_id),
     ]);
     if (profileError || documentError) setError("KYC details could not be loaded.");
     let resolvedProfile = nextProfile as KycProfile | null;
     if (!resolvedProfile) {
-      const created = await supabase.from("client_kyc_profiles").insert({ client_id: membership.client_id, status: "draft" }).select("client_id,status,gst_number,pan_number,aadhaar_last4,mobile_number,phone_verified_at,review_notes").single();
+      const created = await supabase.from("client_kyc_profiles").insert({ client_id: membership.client_id, status: "draft" }).select("client_id,status,gst_number,pan_number,aadhaar_number,mobile_number,phone_verified_at,review_notes").single();
       if (!created.error) resolvedProfile = created.data as KycProfile;
     }
     setProfile(resolvedProfile);
@@ -54,7 +54,7 @@ export default function ClientKycForm() {
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, []);
 
-  const updateFields = async (fields: Partial<Pick<KycProfile, "gst_number" | "pan_number" | "aadhaar_last4">>) => {
+  const updateFields = async (fields: Partial<Pick<KycProfile, "gst_number" | "pan_number" | "aadhaar_number">>) => {
     if (!profile) return;
     setSaving(true); setError(""); setNotice("");
     const { error: updateError } = await supabase.from("client_kyc_profiles").update(fields).eq("client_id", profile.client_id);
@@ -129,7 +129,7 @@ export default function ClientKycForm() {
   const documentFor = (type: string) => documents.find((document) => document.document_type === type);
   const hasDocument = (type: string) => Boolean(documentFor(type));
   const mobileComplete = mobileOtpPlaceholder ? Boolean(profile?.mobile_number) : Boolean(profile?.phone_verified_at);
-  const complete = Boolean(profile?.gst_number && profile.pan_number && profile.aadhaar_last4 && mobileComplete && requiredDocuments.every(hasDocument));
+  const complete = Boolean(profile?.gst_number && profile.pan_number && profile.aadhaar_number && mobileComplete && requiredDocuments.every(hasDocument));
   const status = profile?.status ?? "not_started";
 
   if (loading) return <section className="rounded-xl border border-border bg-card p-5" role="status" aria-label="Loading KYC requirements" aria-busy="true"><SkeletonFormSection fields={4} /><SkeletonFormSection className="mt-5" fields={3} /></section>;
@@ -139,7 +139,7 @@ export default function ClientKycForm() {
       {notice && <div role="status" className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700">{notice}</div>}
       {error && <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</div>}
       {profile?.review_notes && <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-800">Super Admin note: {profile.review_notes}</div>}
-      <div className="grid gap-4 sm:grid-cols-3"><label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">GST number *</span><input className={inputClass} value={profile?.gst_number ?? ""} onChange={(event) => setProfile((current) => current ? { ...current, gst_number: event.target.value.toUpperCase() } : current)} onBlur={() => void updateFields({ gst_number: profile?.gst_number ?? "" })} placeholder="15-character GSTIN" /></label><label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">PAN number *</span><input className={inputClass} value={profile?.pan_number ?? ""} onChange={(event) => setProfile((current) => current ? { ...current, pan_number: event.target.value.toUpperCase() } : current)} onBlur={() => void updateFields({ pan_number: profile?.pan_number ?? "" })} placeholder="10-character PAN" /></label><label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">Aadhaar last 4 digits *</span><input className={inputClass} inputMode="numeric" maxLength={4} value={profile?.aadhaar_last4 ?? ""} onChange={(event) => setProfile((current) => current ? { ...current, aadhaar_last4: event.target.value.replace(/\D/g, "").slice(0, 4) } : current)} onBlur={() => void updateFields({ aadhaar_last4: profile?.aadhaar_last4 ?? "" })} placeholder="Last 4 digits" /></label></div>
+      <div className="grid gap-4 sm:grid-cols-3"><label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">GST number *</span><input className={inputClass} value={profile?.gst_number ?? ""} onChange={(event) => setProfile((current) => current ? { ...current, gst_number: event.target.value.toUpperCase() } : current)} onBlur={() => void updateFields({ gst_number: profile?.gst_number ?? "" })} placeholder="15-character GSTIN" /></label><label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">PAN number *</span><input className={inputClass} value={profile?.pan_number ?? ""} onChange={(event) => setProfile((current) => current ? { ...current, pan_number: event.target.value.toUpperCase() } : current)} onBlur={() => void updateFields({ pan_number: profile?.pan_number ?? "" })} placeholder="10-character PAN" /></label><label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">Aadhaar number *</span><input className={inputClass} inputMode="numeric" maxLength={12} value={profile?.aadhaar_number ?? ""} onChange={(event) => setProfile((current) => current ? { ...current, aadhaar_number: event.target.value.replace(/\D/g, "").slice(0, 12) } : current)} onBlur={() => void updateFields({ aadhaar_number: profile?.aadhaar_number ?? "" })} placeholder="12-digit Aadhaar number" /></label></div>
       <div className="rounded-xl border border-border/70 p-4"><div className="flex items-center gap-2 text-xs font-semibold"><Phone className="h-4 w-4 text-primary" />{mobileOtpPlaceholder ? "Mobile number" : "Active mobile number and OTP verification"}</div>{mobileOtpPlaceholder && <p className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-800">Mobile OTP is currently a placeholder. It does not send an SMS or mark the number as verified.</p>}<div className="mt-3 flex flex-col gap-2 sm:flex-row"><input className={inputClass} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91XXXXXXXXXX" disabled={Boolean(profile?.phone_verified_at)} /><button type="button" onClick={() => void sendOtp()} disabled={saving || Boolean(profile?.phone_verified_at)} className="h-10 shrink-0 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50">{mobileOtpPlaceholder ? "Save mobile number" : saving ? "Sending…" : "Send OTP"}</button></div>{otpSent && (mobileOtpPlaceholder ? <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-800"><Check className="h-3.5 w-3.5" />Mobile number saved. OTP verification is not required in placeholder mode.</p> : <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input className={inputClass} value={otp} onChange={(event) => setOtp(event.target.value)} placeholder="Enter OTP" inputMode="numeric" /><button type="button" onClick={() => void verifyOtp()} disabled={saving || !otp.trim()} className="h-10 shrink-0 rounded-lg border border-primary px-3 text-xs font-semibold text-primary disabled:opacity-50">Verify mobile</button></div>)}{profile?.phone_verified_at && <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700"><Check className="h-3.5 w-3.5" />Mobile number verified</p>}</div>
       <div className="grid gap-3 sm:grid-cols-3">{requiredDocuments.map((type) => {
         const persistedDocument = documentFor(type);
