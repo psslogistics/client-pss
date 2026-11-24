@@ -38,9 +38,11 @@ export default function PssRateCheck() {
       if (accountsResult.status === "fulfilled") {
         const eligibleAccounts = (accountsResult.value.data ?? []).filter((account) => {
           const provider = account.provider.trim().toLowerCase();
-          const accountType = account.account_type?.trim().toLowerCase() ?? "";
-          const isDelhiveryB2B = provider === "delhivery" && (!accountType || accountType.includes("b2b"));
-          return isDelhiveryB2B && account.enabled !== false && account.explicitly_configured === true && account.eligible_for_quotes !== false;
+          // Delhivery B2B accounts are stored with both `production` and
+          // `b2b` account_type values. The capability/eligibility flags are
+          // the source of truth; account_type is not a reliable product
+          // discriminator and must not hide valid configured accounts.
+          return provider === "delhivery" && account.enabled !== false && account.explicitly_configured === true && account.eligible_for_quotes !== false;
         });
         setAccounts(eligibleAccounts);
         setSelectedAccountId((current) => current === "all" || eligibleAccounts.some((account) => account.id === current) ? current : "all");
