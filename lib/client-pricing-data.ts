@@ -19,7 +19,7 @@ export function canonicalDelhiveryB2BAccountName(value: unknown) {
 
 const ACTIVE_DELHIVERY_B2B_ACCOUNT_LABELS: Record<string, string> = {
   PSSLOGISTICS10B2BC: "PSS Heavy Freight",
-  PSSCHANDIGARHCARGO6B2BC: "PSS Economy Freight",
+  PSSCHANDIGARCARGO6B2BC: "PSS Economy Freight",
   PSSBOOKSCFT10B2BC: "PSS Standard Freight",
   PSSLOGISTICS04B2BC: "PSS Freight Service",
 };
