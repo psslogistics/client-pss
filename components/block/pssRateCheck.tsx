@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Calculator, ChevronDown } from "lucide-react";
 import { pssApi } from "@/lib/pss-api";
-import { delhiveryB2BAccountLabel, isActiveDelhiveryB2BAccount } from "@/lib/client-pricing-data";
+import { delhiveryB2BAccountLabel } from "@/lib/client-pricing-data";
 import { PincodeLocationHint, usePincodeLocation } from "@/components/ui/pincodeLocation";
 
 const field = "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary";
 type Line = { code: string; label: string; amount: number; marker?: "*" };
-type Account = { id: string; provider: string; account_name: string; status?: string; enabled?: boolean; explicitly_configured?: boolean };
+type Account = { id: string; provider: string; account_name: string; account_type?: string; status?: string; enabled?: boolean; explicitly_configured?: boolean; eligible_for_quotes?: boolean };
 type Quote = { provider_account_id?: string | null; provider_account_name?: string | null; account_code?: string; lane: string; chargeableWeightKg: number; oda?: boolean; opa?: boolean; total: number; lines: Line[] };
 type RiskType = "owner" | "carrier";
 
@@ -35,7 +35,12 @@ export default function PssRateCheck() {
       // provider capability result is still loaded for operational context,
       // but it must not block an internal customer-charge calculation.
       if (accountsResult.status === "fulfilled") {
-        setAccounts((accountsResult.value.data ?? []).filter((account) => account.provider.toLowerCase() === "delhivery" && isActiveDelhiveryB2BAccount(account.account_name) && account.enabled !== false && account.explicitly_configured === true));
+        setAccounts((accountsResult.value.data ?? []).filter((account) => {
+          const provider = account.provider.trim().toLowerCase();
+          const accountType = account.account_type?.trim().toLowerCase() ?? "";
+          const isDelhiveryB2B = provider === "delhivery" && (!accountType || accountType.includes("b2b"));
+          return isDelhiveryB2B && account.enabled !== false && account.explicitly_configured === true && account.eligible_for_quotes !== false;
+        }));
       }
       if (capabilitiesResult.status === "rejected" && accountsResult.status === "rejected") setError("Rate-card preview is available, but courier account status could not be loaded.");
     });
